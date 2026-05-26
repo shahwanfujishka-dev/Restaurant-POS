@@ -19,7 +19,6 @@ void main() async {
   final apiService = Get.put(ApiService(), permanent: true);
   Get.put(SyncService(), permanent: true);
 
-  // Register before runApp so ThemeController.to is always available
   final themeController = Get.put(ThemeController(), permanent: true);
 
   final storage = GetStorage();
@@ -39,7 +38,7 @@ void main() async {
       );
 
       if (response.statusCode == 200 && response.data['status'] == 200) {
-        // ✅ Show Order Type selection instead of Home on entry
+        print(response.data);
         initialRoute = Routes.ORDER_TYPE;
       } else {
         await AppState.clearAllData();

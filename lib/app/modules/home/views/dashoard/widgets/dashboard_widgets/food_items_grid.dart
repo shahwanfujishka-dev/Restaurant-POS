@@ -31,11 +31,11 @@ class FoodItemsGrid extends GetView<DashboardController> {
             child: GridView.builder(
               padding: EdgeInsets.all(4.w),
               physics: const BouncingScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 180.0,
+              gridDelegate:  SliverGridDelegateWithFixedCrossAxisCount(
+                mainAxisExtent: 130.0,
                 mainAxisSpacing: 16,
                 crossAxisSpacing: 4,
-                childAspectRatio: 0.9,
+                childAspectRatio: 0.9, crossAxisCount: 4,
               ),
               itemCount: controller.filteredFoodItems.length,
               itemBuilder: (context, index) {

@@ -33,21 +33,30 @@ class FavoriteModel {
   final int id;
   final String name;
   final String? description;
+  final String? image;
   final int branchId;
 
   FavoriteModel({
     required this.id,
     required this.name,
     this.description,
+    this.image,
     required this.branchId,
   });
 
   factory FavoriteModel.fromJson(Map<String, dynamic> json) {
+    final dynamic idValue = json['fav_id'] ?? json['favp_id'] ?? json['id'] ?? 0;
+    final dynamic nameValue = json['fav_name'] ?? json['favp_name'] ?? json['name'] ?? '';
+    final dynamic imgValue = json['fav_img_url'] ?? json['favp_img_url'] ?? json['image'];
+
     return FavoriteModel(
-      id: json['favp_id'] ?? 0,
-      name: json['favp_name'] ?? '',
-      description: json['favp_description'],
-      branchId: json['branch_id'] ?? 0,
+      id: idValue is num ? idValue.toInt() : int.tryParse(idValue.toString()) ?? 0,
+      name: nameValue.toString(),
+      description: (json['favp_description'] ?? json['description'])?.toString(),
+      image: imgValue?.toString(),
+      branchId: (json['branch_id'] ?? 0) is num 
+          ? (json['branch_id'] ?? 0).toInt() 
+          : int.tryParse((json['branch_id'] ?? 0).toString()) ?? 0,
     );
   }
 }
@@ -78,7 +87,8 @@ class FoodItemModel {
   });
 
   factory FoodItemModel.fromJson(Map<String, dynamic> json, {String baseUrl = ""}) {
-    String imgUrl = json['prd_img_url']?.toString() ?? '';
+    // Check both API key (prd_img_url) and DB key (image)
+    String imgUrl = (json['prd_img_url'] ?? json['image'])?.toString() ?? '';
     if (imgUrl.isNotEmpty && baseUrl.isNotEmpty && !imgUrl.startsWith('http')) {
       imgUrl = baseUrl + imgUrl;
     }

@@ -105,11 +105,7 @@ class DashboardController extends GetxController {
 
       final localFavs = await _dbHelper.getFavorites();
       if (localFavs.isNotEmpty) {
-        favorites.assignAll(localFavs.map((f) => FavoriteModel.fromJson({
-          'favp_id': f['id'],
-          'favp_name': f['name'],
-          'favp_img_url': f['image'],
-        })).toList());
+        favorites.assignAll(localFavs.map((f) => FavoriteModel.fromJson(f)).toList());
       } else {
         final response = await _apiService.post("mobileapp/pos/list_favorite", data: {
           "usr_id": int.tryParse(AppState.userId) ?? 0,
@@ -121,9 +117,9 @@ class DashboardController extends GetxController {
           favorites.assignAll(favList);
 
           await _dbHelper.insertFavorites(data.map((json) => {
-            'id': json['fav_id'],
-            'name': json['fav_name'],
-            'image': json['fav_img_url'] ?? '',
+            'id': json['fav_id'] ?? json['favp_id'] ?? json['id'],
+            'name': json['fav_name'] ?? json['favp_name'] ?? json['name'] ?? '',
+            'image': json['fav_img_url'] ?? json['favp_img_url'] ?? json['image'] ?? '',
           }).toList());
         }
       }
@@ -195,22 +191,33 @@ class DashboardController extends GetxController {
     filteredFoodItems.clear();
 
     try {
-      if (selectedFavoriteId.value != null) {
-        final response = await _apiService.post("mobileapp/pos/get_product_list", data: {
-          "usr_id": int.tryParse(AppState.userId) ?? 0,
-          "fav_id": selectedFavoriteId.value,
-          "price_group_id": cartController.selectedPriceGroupId.value,
-        });
+      final pgId = cartController.selectedPriceGroupId.value;
 
-        if (response.statusCode == 200) {
-          final List<dynamic> data = response.data['data'] ?? [];
-          final String imageBaseUrl = response.data['url']?.toString() ?? "";
-          final fetchedProducts = data.map((json) => FoodItemModel.fromJson(json, baseUrl: imageBaseUrl)).toList();
+      if (selectedFavoriteId.value != null) {
+        // 1. Try local DB for favorite products
+        final List<Map<String, dynamic>> localFavProducts =
+            await _dbHelper.getFavoriteProducts(selectedFavoriteId.value!, pgId);
+
+        if (localFavProducts.isNotEmpty) {
+          final fetchedProducts = localFavProducts.map((json) => FoodItemModel.fromJson(json)).toList();
           filteredFoodItems.assignAll(fetchedProducts);
+        } else {
+          // 2. Fallback to API if local is empty
+          final response = await _apiService.post("mobileapp/pos/get_product_list", data: {
+            "usr_id": int.tryParse(AppState.userId) ?? 0,
+            "fav_id": selectedFavoriteId.value,
+            "price_group_id": pgId,
+          });
+
+          if (response.statusCode == 200) {
+            final List<dynamic> data = response.data['data'] ?? [];
+            final String imageBaseUrl = response.data['url']?.toString() ?? "";
+            final fetchedProducts = data.map((json) => FoodItemModel.fromJson(json, baseUrl: imageBaseUrl)).toList();
+            filteredFoodItems.assignAll(fetchedProducts);
+          }
         }
       } else {
         List<Map<String, dynamic>> localProducts;
-        final pgId = cartController.selectedPriceGroupId.value;
 
         if (searchKeyword.value.isNotEmpty) {
           localProducts = await _dbHelper.searchProducts(searchKeyword.value, priceGroupId: pgId);
@@ -300,6 +307,14 @@ class DashboardController extends GetxController {
           if (resolvedUnit.rate <= 0 && pgId != 0) {
             resolvedUnit = await _applyStockRateOverride(unit, productId, 0);
           }
+
+          // ⚡ NEW FALLBACK LOGIC: If no unit rate found, use (Product Base Rate * Unit Base Qty)
+          if (resolvedUnit.rate <= 0) {
+            final double fallbackRate = product.price * resolvedUnit.unitBaseQty;
+            log("⚡ Falling back to base rate calculation: ${product.price} * ${resolvedUnit.unitBaseQty} = $fallbackRate");
+            resolvedUnit = resolvedUnit.copyWith(rate: fallbackRate);
+          }
+
           productUnits.add(resolvedUnit);
 
           // Load common addons once
@@ -348,6 +363,14 @@ class DashboardController extends GetxController {
           if (resolvedUnit.rate <= 0 && pgId != 0) {
             resolvedUnit = await _applyStockRateOverride(unit, productId, 0);
           }
+
+          // ⚡ NEW FALLBACK LOGIC: If no unit rate found, use (Product Base Rate * Unit Base Qty)
+          if (resolvedUnit.rate <= 0) {
+            final double fallbackRate = product.price * resolvedUnit.unitBaseQty;
+            log("⚡ Falling back to base rate calculation (API): ${product.price} * ${resolvedUnit.unitBaseQty} = $fallbackRate");
+            resolvedUnit = resolvedUnit.copyWith(rate: fallbackRate);
+          }
+
           resolvedUnits.add(resolvedUnit);
         }
         productUnits.assignAll(resolvedUnits);

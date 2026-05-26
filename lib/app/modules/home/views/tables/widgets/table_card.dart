@@ -14,44 +14,50 @@ class TableCard extends StatelessWidget {
   final TableModel table;
   final VoidCallback onTap;
 
-  const TableCard({
-    super.key,
-    required this.table,
-    required this.onTap,
-  });
+  const TableCard({super.key, required this.table, required this.onTap});
 
-  Color _getCardColor(TableStatus status, AppColors colors) {
+  // ── Colors by status ───────────────────────────────────────────────────
+
+  Color _accentColor(TableStatus status) {
+    switch (status) {
+      case TableStatus.vacant:
+        return const Color(0xFF3B5BDB); // indigo
+      case TableStatus.partiallyOccupied:
+        return AppTheme.primaryGreen;
+      case TableStatus.fullyOccupied:
+        return AppTheme.redColor;
+    }
+  }
+
+  Color _cardBg(TableStatus status, AppColors colors) {
     if (colors.isDark) {
       switch (status) {
         case TableStatus.vacant:
           return colors.card;
         case TableStatus.partiallyOccupied:
-          // Subtle green tint for dark mode
-          return AppTheme.primaryGreen.withOpacity(0.12);
+          return AppTheme.primaryGreen.withOpacity(.1);
         case TableStatus.fullyOccupied:
-          // Subtle red tint for dark mode
-          return AppTheme.redColor.withOpacity(0.12);
+          return AppTheme.redColor.withOpacity(.1);
       }
-    } else {
-      switch (status) {
-        case TableStatus.vacant:
-          return colors.card;
-        case TableStatus.partiallyOccupied:
-          return AppTheme.greenTransLight.withOpacity(0.5);
-        case TableStatus.fullyOccupied:
-          return AppTheme.redColor.withOpacity(0.1);
-      }
+    }
+    switch (status) {
+      case TableStatus.vacant:
+        return colors.card;
+      case TableStatus.partiallyOccupied:
+        return AppTheme.greenTransLight.withOpacity(.35);
+      case TableStatus.fullyOccupied:
+        return AppTheme.redColor.withOpacity(.06);
     }
   }
 
-  Color _getBorderColor(TableStatus status, AppColors colors) {
+  String _statusLabel(TableStatus status, int occupied, int total) {
     switch (status) {
       case TableStatus.vacant:
-        return colors.border;
+        return 'Vacant';
       case TableStatus.partiallyOccupied:
-        return AppTheme.primaryGreen;
+        return '$occupied / $total Seats';
       case TableStatus.fullyOccupied:
-        return AppTheme.redColor;
+        return 'Full';
     }
   }
 
@@ -62,7 +68,7 @@ class TableCard extends StatelessWidget {
     final colors = AppColors.of(context);
 
     return GestureDetector(
-      onTapDown: (_) => scale.value = 0.96,
+      onTapDown: (_) => scale.value = 0.95,
       onTapCancel: () => scale.value = 1.0,
       onTapUp: (_) {
         scale.value = 1.0;
@@ -70,72 +76,152 @@ class TableCard extends StatelessWidget {
         onTap();
       },
       child: Obx(() {
-        // Calculate status based on actual occupied count from API data
-        final occupiedCount = controller.getOccupiedCountForTable(table);
-        final status = table.getStatus(occupiedCount);
+        final occupied = controller.getOccupiedCountForTable(table);
+        final status = table.getStatus(occupied);
+        final accent = _accentColor(status);
+        final fillPct =
+        table.chairCount > 0 ? occupied / table.chairCount : 0.0;
 
         return AnimatedScale(
           scale: scale.value,
-          duration: const Duration(milliseconds: 100),
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
           child: Container(
-            padding: EdgeInsets.all(6.w),
             decoration: BoxDecoration(
-              color: _getCardColor(status, colors),
-              borderRadius: BorderRadius.circular(12.r),
+              color: _cardBg(status, colors),
+              borderRadius: BorderRadius.circular(18.r),
               border: Border.all(
-                color: _getBorderColor(status, colors),
-                width: 1.w,
+                color: status == TableStatus.vacant
+                    ? colors.border
+                    : accent.withOpacity(.35),
+                width: 1.5,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(colors.isDark ? 0.3 : 0.05),
-                  blurRadius: 10,
+                  color: Colors.black.withOpacity(colors.isDark ? .25 : .04),
+                  blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
-                if (status != TableStatus.vacant)
-                  BoxShadow(
-                    color: _getBorderColor(status, colors).withOpacity(colors.isDark ? 0.15 : 0.2),
-                    blurRadius: 12,
-                    spreadRadius: 1,
-                  ),
               ],
             ),
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Column(
-                  children: [
-                    Text(
-                      table.name,
-                      style: AppTypography.cardTitle.copyWith(color: colors.text),
-                    ),
-                    Text(
-                      '${table.chairCount} Chairs',
-                      style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
-                    ),
-                  ],
-                ),
-                Icon(
-                  Icons.table_restaurant_rounded,
-                  size: AppTypography.iconXL,
-                  color: _getBorderColor(status, colors).withOpacity(colors.isDark ? 0.4 : 0.6),
-                ),
+                // ── Top accent bar ──
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                  height: 3.5.h,
                   decoration: BoxDecoration(
-                    color: _getBorderColor(status, colors).withOpacity(colors.isDark ? 0.2 : 0.1),
-                    borderRadius: BorderRadius.circular(8.r),
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(18.r),
+                    ),
+                    color: accent.withOpacity(
+                        status == TableStatus.vacant ? .3 : .85),
                   ),
-                  child: Text(
-                    status == TableStatus.vacant
-                        ? 'Vacant'
-                        : status == TableStatus.fullyOccupied
-                        ? 'Occupied'
-                        : '$occupiedCount / ${table.chairCount} Seats',
-                    style: AppTypography.cardInfo.copyWith(
-                      color: _getBorderColor(status, colors),
-                      fontWeight: FontWeight.bold,
+                ),
+
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(14.w, 12.h, 14.w, 12.h),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // ── Name + table number ──
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  table.name,
+                                  style: AppTypography.cardTitle
+                                      .copyWith(color: colors.text),
+                                ),
+                                SizedBox(height: 2.h),
+                                Text(
+                                  '${table.chairCount} chairs',
+                                  style: AppTypography.cardSubtitle
+                                      .copyWith(color: colors.subtext),
+                                ),
+                              ],
+                            ),
+                            // Subtle large table number
+                            Text(
+                              table.name.replaceAll(RegExp(r'[^0-9]'), '')
+                                  .padLeft(2, '0'),
+                              style: TextStyle(
+                                fontSize: AppTypography.sizeTable,
+                                fontWeight: FontWeight.w800,
+                                color: accent.withOpacity(
+                                    status == TableStatus.vacant ? .15 : .25),
+                                letterSpacing: -1,
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        // ── Table icon ──
+                        Center(
+                          child: Icon(
+                            Icons.table_restaurant_rounded,
+                            size: AppTypography.iconXL,
+                            color: accent.withOpacity(
+                                colors.isDark ? .35 : .55),
+                          ),
+                        ),
+
+                        // ── Status badge + fill bar ──
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Container(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: 9.w,
+                                    vertical: 4.h,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: accent.withOpacity(
+                                        colors.isDark ? .2 : .1),
+                                    borderRadius: BorderRadius.circular(20.r),
+                                  ),
+                                  child: Text(
+                                    _statusLabel(
+                                        status, occupied, table.chairCount),
+                                    style: AppTypography.cardInfo.copyWith(
+                                      color: accent,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                if (status != TableStatus.vacant)
+                                  Text(
+                                    '${(fillPct * 100).round()}%',
+                                    style: AppTypography.cardSubtitle.copyWith(
+                                      color: colors.subtext,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            SizedBox(height: 6.h),
+                            // Seat fill bar
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4.r),
+                              child: LinearProgressIndicator(
+                                value: fillPct,
+                                minHeight: 3.5.h,
+                                backgroundColor: colors.border,
+                                valueColor:
+                                AlwaysStoppedAnimation<Color>(accent),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),

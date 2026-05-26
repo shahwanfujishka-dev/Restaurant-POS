@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get_core/src/get_main.dart';
@@ -9,7 +8,6 @@ import 'package:get/get_state_manager/src/simple/get_controllers.dart';
 import 'package:get/get_utils/src/extensions/internacionalization.dart';
 import 'package:restaurant_pos/app/modules/home/controller/table_controller.dart';
 import 'package:restaurant_pos/app/modules/home/views/settings/settings_view.dart';
-
 import '../../../data/utils/AppState.dart';
 import '../../../theme/app_theme.dart';
 import '../views/dashoard/dashboard_page.dart';

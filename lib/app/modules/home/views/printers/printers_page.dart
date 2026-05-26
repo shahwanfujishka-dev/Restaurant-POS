@@ -96,6 +96,14 @@ class PrintersPage extends GetView<PrinterController> {
                 children: [
                   _buildHeaderActionBtn(
                     context,
+                    label: "Refresh",
+                    icon: Icons.refresh,
+                    onPressed: () => controller.refreshPrinters(),
+                    isPrimary: false,
+                  ),
+                  SizedBox(width: 12.w),
+                  _buildHeaderActionBtn(
+                    context,
                     label: "Add Manual IP",
                     icon: Icons.add,
                     onPressed: () => _showManualIpDialog(context),
@@ -222,8 +230,18 @@ class PrintersPage extends GetView<PrinterController> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Available Printers",
-                style: AppTypography.cardTitle.copyWith(color: colors.text)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("Available Printers",
+                    style: AppTypography.cardTitle.copyWith(color: colors.text)),
+                IconButton(
+                  icon: Icon(Icons.refresh, size: 20.w, color: colors.subtext),
+                  onPressed: () => controller.refreshPrinters(),
+                  tooltip: "Refresh list",
+                ),
+              ],
+            ),
             SizedBox(height: 6.h),
             _buildPrinterStatusRow(context, "Bluetooth", controller.bluetoothPrinters.length, Colors.blue),
             SizedBox(height: 4.h),
@@ -407,11 +425,11 @@ class PrintersPage extends GetView<PrinterController> {
           ),
           actions: [
             TextButton(onPressed: () => Get.back(), child: const Text("Cancel")),
-            ElevatedButton(
+            Obx(() => ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryGreen),
-              onPressed: () {
+              onPressed: controller.isCheckingConnection.value ? null : () async {
                 if (selectedTokenId != null && selectedPrinter != null) {
-                  controller.updateTokenPrinter(selectedTokenId!, selectedPrinter!);
+                  await controller.updateTokenPrinter(selectedTokenId!, selectedPrinter!);
                   Get.back();
                 } else {
                   Get.snackbar(
@@ -422,8 +440,14 @@ class PrintersPage extends GetView<PrinterController> {
                   );
                 }
               },
-              child: const Text("Save Assignment", style: TextStyle(color: Colors.white)),
-            ),
+              child: controller.isCheckingConnection.value
+                  ? SizedBox(
+                      width: 20.w,
+                      height: 20.w,
+                      child: const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                    )
+                  : const Text("Save Assignment", style: TextStyle(color: Colors.white)),
+            )),
           ],
         );
       }),

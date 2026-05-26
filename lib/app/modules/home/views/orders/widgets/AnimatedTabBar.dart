@@ -56,50 +56,62 @@ class _AnimatedTabBarState extends State<AnimatedTabBar> {
           width: 0.5,
         ),
       ),
-      child: Row(
-        children: List.generate(_tabs.length, (i) {
-          final isActive = selected == i;
-          final tabColor = _tabs[i].color;
-          return Expanded(
-            child: GestureDetector(
-              onTap: () => widget.tabController.animateTo(i),
-              child: AnimatedContainer(
-                height: AppTypography.foodIcon,
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeInOut,
-                decoration: BoxDecoration(
-                  color: isActive ? tabColor : Colors.transparent,
-                  borderRadius: BorderRadius.circular(5.r),
-                  boxShadow: isActive
-                      ? [BoxShadow(
-                    color: tabColor.withOpacity(0.35),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  )]
-                      : [],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      _tabs[i].icon,
-                      size: AppTypography.sizeCategory,
-                      color: isActive ? Colors.white : AppColors.of(context).subtext,
-                    ),
-                    SizedBox(width: 3.w),
-                    Text(
-                      _tabs[i].label,
-                      style: AppTypography.button.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: isActive ? Colors.white : AppColors.of(context).subtext,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: List.generate(_tabs.length, (i) {
+            final isActive = selected == i;
+            final tabColor = _tabs[i].color;
+
+            return Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4.w),
+              child: GestureDetector(
+                onTap: () => widget.tabController.animateTo(i),
+                child: AnimatedContainer(
+                  padding: EdgeInsets.symmetric(horizontal: 10.w),
+                  height: AppTypography.foodIcon,
+                  duration: const Duration(milliseconds: 150),
+                  curve: Curves.easeInOut,
+                  decoration: BoxDecoration(
+                    color: isActive ? tabColor : Colors.transparent,
+                    borderRadius: BorderRadius.circular(5.r),
+                    boxShadow: isActive
+                        ? [
+                      BoxShadow(
+                        color: tabColor.withOpacity(0.35),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      )
+                    ]
+                        : [],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min, // important
+                    children: [
+                      Icon(
+                        _tabs[i].icon,
+                        size: AppTypography.sizeCategory,
+                        color: isActive
+                            ? Colors.white
+                            : AppColors.of(context).subtext,
                       ),
-                    ),
-                  ],
+                      SizedBox(width: 4.w),
+                      Text(
+                        _tabs[i].label,
+                        style: AppTypography.button.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: isActive
+                              ? Colors.white
+                              : AppColors.of(context).subtext,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
-        }),
+            );
+          }),
+        ),
       ),
     );
   }

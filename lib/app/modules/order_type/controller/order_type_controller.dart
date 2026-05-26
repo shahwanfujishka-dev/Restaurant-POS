@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-
 import '../../../data/models/order_type.dart';
 import '../../../data/utils/AppState.dart';
 import '../../../routes/app_pages.dart';
@@ -33,7 +32,7 @@ class OrderTypeController extends GetxController {
     AppState.orderType = type; 
     isLoading.value = true;
 
-    // ✅ Crucial: Small delay to allow the UI to render the shimmer 
+    // ✅ Crucial: Small delay to allow the UI to render the shimmer
     // BEFORE the main thread blocks while building the Home screen.
     await Future.delayed(const Duration(milliseconds: 150));
 
@@ -46,7 +45,7 @@ class OrderTypeController extends GetxController {
     }
     
     // Reset isLoading after navigation to ensure it's ready for the next time
-    // the user opens the Order Type screen. We use a delay to ensure the 
+    // the user opens the Order Type screen. We use a delay to ensure the
     // navigation transition is visually completed.
     Future.delayed(const Duration(milliseconds: 800), () {
       if (Get.isRegistered<OrderTypeController>()) {
@@ -70,7 +69,11 @@ class OrderTypeController extends GetxController {
         final homeController = Get.find<HomeController>();
         final cart = Get.find<CartController>();
         
-        if (type == OrderType.dineIn && cart.selectedTableId.isEmpty) {
+        // Treat empty or "0" as no table selected
+        bool noTableSelected = cart.selectedTableId.isEmpty || cart.selectedTableId.value == "0";
+        
+        if (type == OrderType.dineIn && noTableSelected) {
+          // Force navigate to Tables page (index 1) to pick a table
           homeController.changeIndex(1);
         } else {
           homeController.changeIndex(0);

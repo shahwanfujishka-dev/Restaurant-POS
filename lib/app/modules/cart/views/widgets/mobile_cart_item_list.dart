@@ -19,6 +19,7 @@ class MobileCartItemList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+
     final colors = AppColors.of(context);
     return Obx(() {
       final visibleItems = controller.cartItems.where((item) => !item.isDeleted.value).toList();
@@ -34,7 +35,7 @@ class MobileCartItemList extends StatelessWidget {
 
       return ListView.builder(
         shrinkWrap: true,
-        padding: EdgeInsets.all(10.w),
+        padding: EdgeInsets.symmetric(horizontal:  10.w),
         itemCount: visibleItems.length,
         itemBuilder: (context, index) {
           final cartItem = visibleItems[index];

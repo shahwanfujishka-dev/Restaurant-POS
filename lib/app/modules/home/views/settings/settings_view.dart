@@ -16,6 +16,9 @@ class SettingsView extends GetView<SettingsController> {
     final colors = AppColors.of(context);
     return Scaffold(
       backgroundColor: colors.bg,
+      appBar: AppBar(
+        title: Text('settings'.tr),
+      ),
       body: ListView(
         padding: EdgeInsets.all(16.w),
         children: [
@@ -65,8 +68,8 @@ class SettingsView extends GetView<SettingsController> {
                 )),
                 Divider(height: 1, color: colors.border),
                 Obx(() => ListTile(
-                  onTap: controller.isMasterSyncing.value 
-                      ? null 
+                  onTap: controller.isMasterSyncing.value
+                      ? null
                       : controller.performManualMasterSync,
                   leading: CircleAvatar(
                     backgroundColor: AppTheme.primaryGreen.withOpacity(0.1),
@@ -77,8 +80,8 @@ class SettingsView extends GetView<SettingsController> {
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               color: AppTheme.primaryGreen,
-                              value: controller.masterSyncProgress.value > 0 
-                                  ? controller.masterSyncProgress.value 
+                              value: controller.masterSyncProgress.value > 0
+                                  ? controller.masterSyncProgress.value
                                   : null,
                             ),
                           )
@@ -96,7 +99,16 @@ class SettingsView extends GetView<SettingsController> {
               ],
             ),
           ),
-          
+          SizedBox(height: 24.h),
+          Text(
+            "About App",
+            style: AppTypography.cardTitle.copyWith(fontWeight: FontWeight.bold, color: colors.text),
+          ),
+          SizedBox(height: 12.h),
+          _buildInfoTile(context, Icons.info_outline, "Version", "1.0.0"),
+          // _buildInfoTile(context, Icons.person_outline, "User ID", AppState.userId),
+          _buildInfoTile(context, Icons.business_outlined, "Branch", AppState.username),
+
           SizedBox(height: 24.h),
           Text(
             "Account",
@@ -130,15 +142,6 @@ class SettingsView extends GetView<SettingsController> {
             ),
           ),
 
-          SizedBox(height: 24.h),
-          Text(
-            "About App",
-            style: AppTypography.cardTitle.copyWith(fontWeight: FontWeight.bold, color: colors.text),
-          ),
-          SizedBox(height: 12.h),
-          _buildInfoTile(context, Icons.info_outline, "Version", "1.0.0 (Build 3)"),
-          _buildInfoTile(context, Icons.person_outline, "User ID", AppState.userId),
-          _buildInfoTile(context, Icons.business_outlined, "Branch", AppState.username),
         ],
       ),
     );

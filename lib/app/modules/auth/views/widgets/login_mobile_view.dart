@@ -33,23 +33,47 @@ class LoginMobileView extends GetView<AuthController> {
                   children: [
                     Obx(() => Column(
                       children: [
-                        GestureDetector(
-                          onTap: () async {
-                            final result = await Get.toNamed('/qr-scanner');
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            GestureDetector(
+                              onTap: () async {
+                                final result = await Get.toNamed('/qr-scanner');
 
-                            if (result != null && result is Map<String, dynamic>) {
-                              controller.updateBranchConfig(result);
-                            }
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryGreen.withOpacity(0.1),
-                              shape: BoxShape.circle,
+                                if (result != null && result is Map<String, dynamic>) {
+                                  controller.updateBranchConfig(result);
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryGreen.withOpacity(0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(Icons.qr_code_scanner,
+                                    size: 32.sp, color: AppTheme.primaryGreen),
+                              ),
                             ),
-                            child: Icon(Icons.qr_code_scanner,
-                                size: 32.sp, color: AppTheme.primaryGreen),
-                          ),
+                            if (!controller.isVerified.value) ...[
+                              SizedBox(width: 16.w),
+                              Expanded(
+                                child: TextField(
+                                  controller: controller.qrCodeController,
+                                  style: TextStyle(color: colors.text, fontSize: 14.sp),
+                                  decoration: InputDecoration(
+                                    hintText: 'Or enter code',
+                                    hintStyle: TextStyle(color: colors.subtext),
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8.r),
+                                    ),
+                                  ),
+                                  onSubmitted: (value) => controller.processQrValue(value),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
 
                         SizedBox(height: 12.h),
@@ -62,14 +86,23 @@ class LoginMobileView extends GetView<AuthController> {
                               color: Colors.green.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: Text(
-                              "✓ ${controller.getBranchInfo()}",
-                              style: const TextStyle(color: Colors.green),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  "✓ ${controller.getBranchInfo()}",
+                                  style: const TextStyle(color: Colors.green),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.edit, size: 16, color: Colors.green),
+                                  onPressed: () => controller.isVerified.value = false,
+                                )
+                              ],
                             ),
                           )
                         else
                           const Text(
-                            "Scan QR to verify branch",
+                            "Scan QR or enter code to verify branch",
                             style: TextStyle(color: Colors.red),
                           ),
                       ],

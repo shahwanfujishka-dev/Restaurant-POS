@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:math' as math; // Fixed conflict with log()
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import '../../../../helper/snackbar_helper.dart';
 import '../../../data/models/order_model.dart';
+import '../../../data/models/order_type.dart';
 import '../../../data/services/api_services.dart';
 import '../../../data/services/database_helper.dart';
 import '../../../data/services/sync_service.dart'; // Import SyncService
@@ -13,6 +15,7 @@ import '../../../data/utils/AppState.dart';
 import 'package:get_storage/get_storage.dart';
 
 import '../../home/controller/dashboard_controller.dart';
+import '../../home/controller/order_controller.dart';
 import '../../home/controller/table_controller.dart';
 import '../../home/views/dashoard/models/dashboard_models.dart';
 
@@ -631,8 +634,24 @@ class CartController extends GetxController {
       .where((i) => !i.isDeleted.value)
       .fold(0, (sum, item) => sum + item.quantity.value);
 
-  Future<Map<String, dynamic>?> placeOrder({bool isDraft = false}) async {
+  Future<Map<String, dynamic>?> placeOrder({
+    bool isDraft = false,
+    int? payType,
+    double? cashAmt,
+    double? cardAmt,
+    int? cashLedgerId,
+    int? bankLedgerId,
+    bool isCompliment = false,
+    double discountAmount = 0,
+    double roundOffAmount = 0,
+  }) async {
     try {
+      // ✅ VALIDATION: Table selection required for Dine In
+      if (AppState.orderType == OrderType.dineIn && selectedTableId.value.isEmpty) {
+        showSafeSnackbar("Error", "Please select a table and chair first.");
+        return null;
+      }
+
       final now = DateTime.now();
       final dateStr = DateFormat('yyyy-MM-dd').format(now);
       final syncTime = "${DateFormat('yyMMddHHmmssSSS').format(now)}000";
@@ -852,6 +871,9 @@ class CartController extends GetxController {
         }
       }
 
+      final double finalTotal = isCompliment ? 0 : (totalWithTax - discountAmount + roundOffAmount).clamp(0, double.infinity);
+      final double finalDiscount = isCompliment ? totalWithTax : discountAmount;
+
       final body = {
         "usr_id": int.tryParse(AppState.userId) ?? 0,
         "cust_type": "1",
@@ -859,11 +881,11 @@ class CartController extends GetxController {
         "cust_name": "Cash Customer",
         "saleqt_date": dateStr,
         "sale_items": saleItems,
-        "sq_total": totalWithTax,
+        "sq_total": finalTotal,
         "advance_amount": 0,
-        "sale_pay_type": 0,
+        "sale_pay_type": payType ?? 0,
         "balance_amount": 0,
-        "sale_acc_ledger_id": 0,
+        "sale_acc_ledger_id": cashLedgerId ?? 0,
         "sq_tax": totalTax,
         "inv_type": 2,
         "pos_odr_type": AppState.orderType.id,
@@ -885,17 +907,17 @@ class CartController extends GetxController {
           "rt_status": 1,
           "prcgrp_id": selectedPriceGroupId.value,
         },
-        "res_status": isDraft ? 0 : 1,
+        "res_status": isDraft ? 0 : (isCompliment || (payType != null && payType != 0)) ? 3 : 1,
         "sq_inv_no": isEditing ? int.tryParse(editingOrderId.value) ?? 0 : 0,
-        "sq_disc": 0,
-        "sale_acc_ledger_id_bank": null,
-        "sale_acc_ledger_id_cash": null,
-        "card_amnt": null,
-        "cash_amnt": null,
-        "sales_roundoff": 0,
+        "sq_disc": finalDiscount,
+        "sale_acc_ledger_id_bank": bankLedgerId,
+        "sale_acc_ledger_id_cash": cashLedgerId,
+        "card_amnt": (payType == 3 || payType == 5) ? (cardAmt ?? finalTotal) : cardAmt,
+        "cash_amnt": (payType == 2) ? (cashAmt ?? finalTotal) : cashAmt,
+        "sales_roundoff": roundOffAmount,
         "table_name": selectedTableName.value,
         "sales_is_rest_pos": 1,
-        "is_compliment": 0,
+        "is_compliment": isCompliment ? 1 : 0,
         "is_pos_edit": isEditing,
         "is_split": false,
         "split_amnt": [],
@@ -950,16 +972,22 @@ class CartController extends GetxController {
               });
             }
           }
-          // Mark as synced locally with server's real ID
+
+          final prettyResponse = const JsonEncoder.withIndent('  ').convert(data);
+          log("✅ SUCCESS RESPONSE (placeOrder):\n$prettyResponse");
+
           final String serverId =
               data['id']?.toString() ??
-              data['preview']?['sales_odr_id']?.toString() ??
-              "";
+                  data['preview']?['sales_odr_id']?.toString() ?? "";
+          final String? invNo = data['preview']?['sales_odr_inv_no']?.toString();
+          final String finalStatus = isDraft ? 'draft' : ((isCompliment || (payType != null && payType != 0)) ? 'paid' : 'pending');
+
           await _dbHelper.updateOrderStatusByUuid(
             orderUuid,
-            isDraft ? 'draft' : 'pending',
+            finalStatus,
             isSynced: 1,
             serverId: serverId,
+            invNo: invNo, // Now captures real Invoice Number
           );
 
           _clearDashboardSearch();
@@ -998,8 +1026,24 @@ class CartController extends GetxController {
 
   Map<String, dynamic>? editingOrderFullData;
 
-  Future<Map<String, dynamic>?> updateOrder({bool isDraft = false}) async {
+  Future<Map<String, dynamic>?> updateOrder({
+    bool isDraft = false,
+    int? payType,
+    double? cashAmt,
+    double? cardAmt,
+    int? cashLedgerId,
+    int? bankLedgerId,
+    bool isCompliment = false,
+    double discountAmount = 0,
+    double roundOffAmount = 0,
+  }) async {
     try {
+      // ✅ VALIDATION: Table selection required for Dine In
+      if (AppState.orderType == OrderType.dineIn && selectedTableId.value.isEmpty) {
+        showSafeSnackbar("Error", "Please select a table and chair first.");
+        return null;
+      }
+
       final now = DateTime.now();
       final dateStr = DateFormat('yyyy-MM-dd').format(now);
       final syncTime = "${DateFormat('yyMMddHHmmssSSS').format(now)}000";
@@ -1015,6 +1059,12 @@ class CartController extends GetxController {
       if (wasDraft.value != isDraft) {
         hasAnyChange = true;
         log("║ Status changed: wasDraft ${wasDraft.value} -> isDraft $isDraft");
+      }
+
+      // If payment details are being passed, this is a settlement — always send
+      if (payType != null && payType != 0) {
+        hasAnyChange = true;
+        log("║ Payment settlement detected: payType=$payType → forcing update");
       }
 
       if (selectedTableId.value != originalTableId.value ||
@@ -1668,6 +1718,9 @@ class CartController extends GetxController {
         return {"no_change": true};
       }
 
+      final double finalTotal = isCompliment ? 0 : (totalWithTax - discountAmount + roundOffAmount).clamp(0, double.infinity);
+      final double finalDiscount = isCompliment ? totalWithTax : discountAmount;
+
       final body = {
         "usr_id": int.tryParse(AppState.userId) ?? 0,
         "cust_type": "1",
@@ -1675,17 +1728,17 @@ class CartController extends GetxController {
         "cust_name": "Cash Customer",
         "saleqt_date": dateStr,
         "sale_items": saleItems,
-        "sq_total": totalWithTax,
+        "sq_total": finalTotal,
         "advance_amount": 0,
-        "sale_pay_type": 2,
+        "sale_pay_type": payType ?? 2,
         "balance_amount": 0,
-        "sale_acc_ledger_id": 0,
+        "sale_acc_ledger_id": cashLedgerId ?? 0,
         "sq_tax": totalTax,
         "inv_type": 2,
         "pos_odr_type": AppState.orderType.id,
-        "address": null,
-        "phone_no": null,
-        "vat_no": null,
+        "address": "",
+        "phone_no": "",
+        "vat_no": "",
         "no_seats": selectedChairCount.value,
         "sale_agent": GetStorage().read('ledger_id'),
         "is_pos": true,
@@ -1704,17 +1757,17 @@ class CartController extends GetxController {
               : [],
           "prcgrp_id": selectedPriceGroupId.value,
         },
-        "res_status": isDraft ? 0 : 1,
+        "res_status": isDraft ? 0 : (isCompliment || (payType != null && payType != 0)) ? 3 : 1,
         "sq_inv_no": int.tryParse(editingInvNo.value) ?? 0,
-        "sq_disc": 0,
-        "sale_acc_ledger_id_bank": null,
-        "sale_acc_ledger_id_cash": null,
-        "card_amnt": null,
-        "cash_amnt": null,
-        "sales_roundoff": 0,
+        "sq_disc": finalDiscount,
+        "sale_acc_ledger_id_bank": bankLedgerId,
+        "sale_acc_ledger_id_cash": cashLedgerId,
+        "card_amnt": (payType == 3 || payType == 5) ? (cardAmt ?? finalTotal) : cardAmt,
+        "cash_amnt": (payType == 2) ? (cashAmt ?? finalTotal) : cashAmt,
+        "sales_roundoff": roundOffAmount,
         "table_name": selectedTableName.value,
         "sales_is_rest_pos": 1,
-        "is_compliment": 0,
+        "is_compliment": isCompliment ? 1 : 0,
         "is_pos_edit": true,
         "is_split": false,
         "split_amnt": [],
@@ -1759,6 +1812,12 @@ class CartController extends GetxController {
 
         if (response.statusCode == 200) {
           dynamic data = response.data;
+          // In CartController.updateOrder(), after successful response:
+          if (Get.isRegistered<OrdersController>()) {
+            final ordersController = Get.find<OrdersController>();
+            final parsedOrder = ordersController.parseOrderResponse(data);
+            ordersController.updateExistingOrder(parsedOrder);
+          }
           if (data is String) {
             data = jsonDecode(data);
           }
@@ -1771,9 +1830,7 @@ class CartController extends GetxController {
             }
           }
 
-          final prettyResponse = const JsonEncoder.withIndent(
-            '  ',
-          ).convert(data);
+          final prettyResponse = const JsonEncoder.withIndent('  ').convert(data);
           log("✅ SUCCESS RESPONSE (updateOrder):\n$prettyResponse");
 
           // Mark as synced locally
@@ -1787,6 +1844,10 @@ class CartController extends GetxController {
           return data;
         }
       } catch (apiError) {
+        if (apiError is DioException && apiError.response != null) {
+          log("❌ SERVER 500 BODY: ${apiError.response?.data}");
+          log("❌ SERVER 500 HEADERS: ${apiError.response?.headers}");
+        }
         log(
           "⚠️ API Update Failed (Offline): $apiError. Update preserved locally.",
         );

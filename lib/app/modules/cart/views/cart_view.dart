@@ -20,6 +20,7 @@ class CartView extends GetView<CartController> {
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       backgroundColor: colors.bg,
       appBar: AppBar(
         title: Text(
@@ -39,7 +40,12 @@ class CartView extends GetView<CartController> {
             shape: BoxShape.circle,
           ),
           child: IconButton(
-            icon: Icon(Icons.arrow_back, color: colors.text),
+            icon: Icon(
+              Theme.of(context).platform == TargetPlatform.iOS
+                  ? Icons.arrow_back_ios_new
+                  : Icons.arrow_back,
+              color: colors.text,
+            ),
             onPressed: () => Get.back(),
           ),
         ),
@@ -92,10 +98,16 @@ class CartView extends GetView<CartController> {
               return MobileCartItemList(controller: controller);
             }),
           ),
-          SizedBox(height: MediaQuery.of(context).size.height*0.38,)
+          // ✅ Reactive spacer that matches the bottomSheet's actual content height
+          // Obx(() => SizedBox(
+          //   height: controller.cartItems.isEmpty
+          //       ? 0
+          //       : controller.isEditing
+          //       ? MediaQuery.of(context).size.height * 0.40
+          //       : MediaQuery.of(context).size.height * 0.35,
+          // )),
         ],
       ),
-      bottomSheet: MobileCartSummary(controller: controller),
-    );
+      bottomNavigationBar: MobileCartSummary(controller: controller),    );
   }
 }

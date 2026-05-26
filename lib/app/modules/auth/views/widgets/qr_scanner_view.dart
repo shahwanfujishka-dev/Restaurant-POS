@@ -59,6 +59,7 @@ class _QrScannerViewState extends State<QrScannerView>
         isScanned = true;
 
         debugPrint("✅ Valid QR");
+        debugPrint("✅ $rawValue");
 
         Get.back(result: parsed);
       }

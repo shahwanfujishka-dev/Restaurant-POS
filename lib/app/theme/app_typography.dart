@@ -87,4 +87,6 @@ class AppTypography {
 
   static double get sizeDialogue =>
       ScreenType.isMobile() ? 200.sp : 150.sp;
+
+  static double get sizePayment => ScreenType.isMobile() ? 290.sp : 75.sp;
 }

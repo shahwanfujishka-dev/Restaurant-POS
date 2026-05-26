@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart' hide ScreenType;
 import 'package:shimmer/shimmer.dart';
@@ -15,78 +16,113 @@ class OrderTypeView extends GetView<OrderTypeController> {
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
-    return Scaffold(
-      backgroundColor: colors.bg,
-      appBar: AppBar(
-        backgroundColor: colors.card,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: colors.text),
-          onPressed: () => Get.back(),
+    final bool canShowBack = Navigator.canPop(context) && Get.previousRoute.isNotEmpty;
+
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        final shouldExit = await Get.dialog<bool>(
+          AlertDialog(
+            title: const Text('Exit App?'),
+            content: const Text('Are you sure you want to close the application?'),
+            actions: [
+              TextButton(
+                onPressed: () => Get.back(result: false),
+                child: const Text('No'),
+              ),
+              TextButton(
+                onPressed: () => Get.back(result: true),
+                child: const Text('Yes', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+        );
+        if (shouldExit == true) {
+          SystemChannels.platform.invokeMethod('SystemNavigator.pop');
+        }
+      },
+      child: Scaffold(
+        backgroundColor: colors.bg,
+        appBar: AppBar(
+          backgroundColor: colors.card,
+          elevation: 0,
+          leading: canShowBack
+              ? IconButton(
+                  icon: Icon(
+                    Theme.of(context).platform == TargetPlatform.iOS
+                        ? Icons.arrow_back_ios_new
+                        : Icons.arrow_back,
+                    color: colors.text,
+                  ),
+                  onPressed: () => Get.back(),
+                )
+              : null,
+          automaticallyImplyLeading: false,
+          title: Text(
+            'order_type'.tr.isEmpty ? 'Order Type' : 'order_type'.tr,
+            style: TextStyle(color: colors.text),
+          ),
+          centerTitle: true,
         ),
-        title: Text(
-          'order_type'.tr.isEmpty ? 'Order Type' : 'order_type'.tr,
-          style: TextStyle(color: colors.text),
-        ),
-        centerTitle: true,
-      ),
-      body: SafeArea(
-        child: Center(
-          child: Container(
-            constraints: BoxConstraints(maxWidth: ScreenType.isMobile() ? 400.w : 200.w),
-            padding: EdgeInsets.symmetric(horizontal: 24.w),
-            child: Obx(() {
-              if (controller.isLoading.value) {
-                return _buildShimmerLoading(context);
-              }
-              return Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'select_order_type'.tr.isEmpty ? 'Select Order Type' : 'select_order_type'.tr,
-                    style: AppTypography.headline1.copyWith(
-                      color: AppTheme.primaryGreen,
-                      fontSize: 12.sp,
+        body: SafeArea(
+          child: Center(
+            child: Container(
+              constraints: BoxConstraints(maxWidth: ScreenType.isMobile() ? 400.w : 200.w),
+              padding: EdgeInsets.symmetric(horizontal: 24.w),
+              child: Obx(() {
+                if (controller.isLoading.value) {
+                  return _buildShimmerLoading(context);
+                }
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'select_order_type'.tr.isEmpty ? 'Select Order Type' : 'select_order_type'.tr,
+                      style: AppTypography.headline1.copyWith(
+                        color: AppTheme.primaryGreen,
+                        fontSize: 12.sp,
+                      ),
                     ),
-                  ),
-                  SizedBox(height: 8.h),
-                  Text(
-                    'order_type_desc'.tr.isEmpty
-                        ? 'How would you like to serve the customer?'
-                        : 'order_type_desc'.tr,
-                    style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
-                    textAlign: TextAlign.center,
-                  ),
-                  SizedBox(height: 20.h),
-                  _buildTypeCard(
-                    context: context,
-                    type: OrderType.dineIn,
-                    icon: Icons.restaurant,
-                    color: Colors.blue.shade600,
-                    description: 'serve_at_table'.tr.isEmpty ? 'Serve at the table' : 'serve_at_table'.tr,
-                    isSelected: controller.selectedType.value == OrderType.dineIn,
-                  ),
-                  SizedBox(height: 16.h),
-                  _buildTypeCard(
-                    context: context,
-                    type: OrderType.pickUp,
-                    icon: Icons.takeout_dining,
-                    color: Colors.orange.shade600,
-                    description: 'customer_collects'.tr.isEmpty ? 'Customer collects the order' : 'customer_collects'.tr,
-                    isSelected: controller.selectedType.value == OrderType.pickUp,
-                  ),
-                  SizedBox(height: 16.h),
-                  _buildTypeCard(
-                    context: context,
-                    type: OrderType.delivery,
-                    icon: Icons.delivery_dining,
-                    color: Colors.purple.shade600,
-                    description: 'send_to_address'.tr.isEmpty ? 'Send to customer address' : 'send_to_address'.tr,
-                    isSelected: controller.selectedType.value == OrderType.delivery,
-                  ),
-                ],
-              );
-            }),
+                    SizedBox(height: 8.h),
+                    Text(
+                      'order_type_desc'.tr.isEmpty
+                          ? 'How would you like to serve the customer?'
+                          : 'order_type_desc'.tr,
+                      style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+                      textAlign: TextAlign.center,
+                    ),
+                    SizedBox(height: 20.h),
+                    _buildTypeCard(
+                      context: context,
+                      type: OrderType.dineIn,
+                      icon: Icons.restaurant,
+                      color: Colors.blue.shade600,
+                      description: 'serve_at_table'.tr.isEmpty ? 'Serve at the table' : 'serve_at_table'.tr,
+                      isSelected: controller.selectedType.value == OrderType.dineIn,
+                    ),
+                    SizedBox(height: 16.h),
+                    _buildTypeCard(
+                      context: context,
+                      type: OrderType.pickUp,
+                      icon: Icons.takeout_dining,
+                      color: Colors.orange.shade600,
+                      description: 'customer_collects'.tr.isEmpty ? 'Customer collects the order' : 'customer_collects'.tr,
+                      isSelected: controller.selectedType.value == OrderType.pickUp,
+                    ),
+                    SizedBox(height: 16.h),
+                    _buildTypeCard(
+                      context: context,
+                      type: OrderType.delivery,
+                      icon: Icons.delivery_dining,
+                      color: Colors.purple.shade600,
+                      description: 'send_to_address'.tr.isEmpty ? 'Send to customer address' : 'send_to_address'.tr,
+                      isSelected: controller.selectedType.value == OrderType.delivery,
+                    ),
+                  ],
+                );
+              }),
+            ),
           ),
         ),
       ),

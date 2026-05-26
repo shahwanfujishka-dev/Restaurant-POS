@@ -15,10 +15,12 @@ class HomeBinding extends Bindings {
   void dependencies() {
     Get.lazyPut<HomeController>(() => HomeController());
     Get.lazyPut<DashboardController>(() => DashboardController());
-    Get.lazyPut<TablesController>(() => TablesController());
-    Get.lazyPut<SettingsController>(() => SettingsController());
-    Get.put(OrderTypeController(), permanent: true); // ✅ Make OrderType reactive globally
-    Get.put(PrinterController());
+
+    // ✅ Make core controllers permanent to prevent "not found" errors and background job crashes
+    Get.put(TablesController(), permanent: true);
+    Get.put(SettingsController(), permanent: true);
+    Get.put(OrderTypeController(), permanent: true);
+    Get.put(PrinterController(), permanent: true);
     Get.put(OrdersController(), permanent: true);
     Get.put(CartController(), permanent: true);
   }

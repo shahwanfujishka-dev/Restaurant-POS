@@ -4,11 +4,15 @@ import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
 import 'package:get/get_state_manager/src/simple/get_view.dart';
+import 'package:get/get.dart' hide ScreenType;
 
 import '../../../../../../../helper/screen_type.dart';
+import '../../../../../../data/models/order_type.dart';
+import '../../../../../../data/utils/AppState.dart';
 import '../../../../../../theme/app_theme.dart';
 import '../../../../../../theme/app_typography.dart';
 import '../../../../../cart/controller/cart_controller.dart';
+import '../../../../../order_type/controller/order_type_controller.dart';
 import '../../../../controller/dashboard_controller.dart';
 import '../../../../controller/home_controller.dart';
 import '../../models/dashboard_models.dart';
@@ -46,23 +50,35 @@ class MainContent extends GetView<DashboardController> {
 
   Widget _buildMobileLayout(BuildContext context) {
     final cartController = Get.find<CartController>();
+    final orderTypeController = Get.find<OrderTypeController>();
     final colors = AppColors.of(context);
     return Column(
       children: [
         Obx(() {
+          final currentType = orderTypeController.selectedType.value ?? AppState.orderType;
+          final isDineIn = currentType == OrderType.dineIn;
+          final isEditing = cartController.isEditing;
+
+          // Only show this bar if it's Dine In (and a table is selected) or if we are Editing an order
+          if (!isDineIn && !isEditing) return const SizedBox.shrink();
+          if (isDineIn && !cartController.hasSelectedTable && !isEditing) return const SizedBox.shrink();
+
           return GestureDetector(
-            onTap: () => Get.find<HomeController>().changeIndex(1),
-            child: cartController.hasSelectedTable
-                ? Container(
+            onTap: () {
+              if (isDineIn) {
+                Get.find<HomeController>().changeIndex(1);
+              }
+            },
+            child: Container(
               width: double.infinity,
               padding: EdgeInsets.symmetric(vertical: 8.h, horizontal: 16.w),
               decoration: BoxDecoration(
-                color: cartController.isEditing
+                color: isEditing
                     ? Colors.blue.withOpacity(0.1)
                     : AppTheme.primaryGreen.withOpacity(0.1),
                 border: Border(
                   bottom: BorderSide(
-                      color: cartController.isEditing
+                      color: isEditing
                           ? Colors.blue.withOpacity(0.2)
                           : AppTheme.primaryGreen.withOpacity(0.2)
                   ),
@@ -71,8 +87,8 @@ class MainContent extends GetView<DashboardController> {
               child: Row(
                 children: [
                   Icon(
-                      Icons.table_restaurant,
-                      color: cartController.isEditing ? Colors.blue : AppTheme.primaryGreen,
+                      isDineIn ? Icons.table_restaurant : Icons.shopping_bag_outlined,
+                      color: isEditing ? Colors.blue : AppTheme.primaryGreen,
                       size: 22.sp
                   ),
                   SizedBox(width: 12.w),
@@ -82,7 +98,7 @@ class MainContent extends GetView<DashboardController> {
                       children: [
                         Row(
                           children: [
-                            if (cartController.isEditing)
+                            if (isEditing)
                               Container(
                                 padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
                                 margin: EdgeInsets.only(right: 8.w),
@@ -95,39 +111,50 @@ class MainContent extends GetView<DashboardController> {
                                   style: TextStyle(color: Colors.white, fontSize: 8.sp, fontWeight: FontWeight.bold),
                                 ),
                               ),
-                            Text(
-                              "(${cartController.selectedAreaName.value})",
-                              style: AppTypography.cardSubtitle.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: cartController.isEditing ? Colors.blue : AppTheme.primaryGreen,
-                                fontSize: 10.sp,
+                            if (isDineIn) ...[
+                              Text(
+                                "(${cartController.selectedAreaName.value})",
+                                style: AppTypography.cardSubtitle.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: isEditing ? Colors.blue : AppTheme.primaryGreen,
+                                  fontSize: 10.sp,
+                                ),
                               ),
-                            ),
-                            Text(
-                              ' - ${cartController.selectedTableName.value}',
-                              style: AppTypography.cardSubtitle.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: cartController.isEditing ? Colors.blue : AppTheme.primaryGreen,
+                              Text(
+                                ' - ${cartController.selectedTableName.value}',
+                                style: AppTypography.cardSubtitle.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: isEditing ? Colors.blue : AppTheme.primaryGreen,
+                                ),
                               ),
-                            ),
+                            ] else if (!isEditing)
+                              Text(
+                                currentType.displayName.toUpperCase(),
+                                style: AppTypography.cardSubtitle.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.primaryGreen,
+                                  fontSize: 10.sp,
+                                ),
+                              ),
                           ],
                         ),
-                        Text(
-                          'Chair ${cartController.selectedChairCount.value}',
-                          style: AppTypography.cardSubtitle.copyWith(
-                            fontSize: 11.sp,
-                            color: colors.subtext,
+                        if (isDineIn)
+                          Text(
+                            'Chair ${cartController.selectedChairCount.value}',
+                            style: AppTypography.cardSubtitle.copyWith(
+                              fontSize: 11.sp,
+                              color: colors.subtext,
+                            ),
                           ),
-                        ),
                       ],
                     ),
                   ),
-                  if (cartController.isEditing)
+                  if (isEditing)
                     TextButton(
                       onPressed: () => cartController.stopEditing(),
                       child: const Text("Cancel", style: TextStyle(color: Colors.red)),
                     )
-                  else ...[
+                  else if (isDineIn) ...[
                     Text(
                       'Change',
                       style: TextStyle(
@@ -140,8 +167,7 @@ class MainContent extends GetView<DashboardController> {
                   ]
                 ],
               ),
-            )
-                : const SizedBox.shrink(),
+            ),
           );
         }),
         _buildSearchBar(context),
@@ -266,7 +292,7 @@ class MainContent extends GetView<DashboardController> {
       }
 
       return Container(
-        padding: EdgeInsets.symmetric(horizontal: 12.w),
+        padding: EdgeInsets.symmetric(horizontal: 2.w),
         height: 40.h,
         decoration: BoxDecoration(
           color: AppTheme.primaryGreen.withOpacity(0.05),
@@ -279,6 +305,7 @@ class MainContent extends GetView<DashboardController> {
         ),
         child: DropdownButtonHideUnderline(
           child: DropdownButton<int?>(
+            padding: EdgeInsets.symmetric(horizontal: 5.w),
             dropdownColor: colors.card,
             value: controller.selectedFavoriteId.value,
             icon: Icon(
@@ -304,18 +331,12 @@ class MainContent extends GetView<DashboardController> {
             items: [
               DropdownMenuItem<int?>(
                 value: null,
-                child: Padding(
-                  padding: EdgeInsets.only(right: 8.w),
-                  child: Text("ALL", style: TextStyle(color: colors.text)),
-                ),
+                child: Text("ALL", style: TextStyle(color: colors.text)),
               ),
               ...controller.favorites.map<DropdownMenuItem<int?>>((FavoriteModel fav) {
                 return DropdownMenuItem<int?>(
                   value: fav.id,
-                  child: Padding(
-                    padding: EdgeInsets.only(right: 8.w),
-                    child: Text(fav.name.toUpperCase(), style: TextStyle(color: colors.text)),
-                  ),
+                  child: Text(fav.name.toUpperCase(), style: TextStyle(color: colors.text)),
                 );
               }),
             ],

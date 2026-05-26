@@ -22,6 +22,10 @@ class AppState {
   static String get username => _storage.read('usr_name') ?? '';
   static String get userId => _storage.read('usr_id')?.toString() ?? '';
   static String get serverUrl => _storage.read('base_url') ?? '';
+  static String get ledgerId => _storage.read('ledger_id')?.toString() ?? '0';
+  static String get cashLedgerId => _storage.read('usr_cash_ledger_id')?.toString() ?? '0';
+  static String get bankLedgerId => _storage.read('usr_bank_ledger_id')?.toString() ?? '0';
+
 
   // Order Type Persistence
   static OrderType get orderType {
@@ -45,6 +49,8 @@ class AppState {
     _storage.write('usr_name', profile['usr_name']);
     _storage.write('ledger_id', profile['ledger_id']);
     _storage.write('user_profile', profile);
+    _storage.write('usr_cash_ledger_id', profile['usr_cash_ledger_id']);
+    _storage.write('usr_bank_ledger_id', profile['usr_bank_ledger_id']);
   }
 
   static Future<void> clearAllData() async {

@@ -27,6 +27,7 @@ class AuthController extends GetxController {
 
   final TextEditingController usernameController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
+  final TextEditingController qrCodeController = TextEditingController();
 
   @override
   void onInit() {
@@ -84,13 +85,39 @@ class AuthController extends GetxController {
     isPasswordVisible.value = !isPasswordVisible.value;
   }
 
+  Future<void> processQrValue(String rawValue) async {
+    if (rawValue.isEmpty) return;
+
+    try {
+      String decodedString = rawValue;
+
+      if (!rawValue.trim().startsWith('{')) {
+        try {
+          final decodedBytes = base64Decode(rawValue);
+          decodedString = utf8.decode(decodedBytes);
+        } catch (_) {}
+      }
+
+      final parsed = jsonDecode(decodedString);
+
+      if (parsed is Map<String, dynamic>) {
+        await updateBranchConfig(parsed);
+      } else {
+        Get.snackbar("Error", "Invalid configuration format", backgroundColor: Colors.red, colorText: Colors.white);
+      }
+    } catch (e) {
+      debugPrint("❌ Manual Entry Error: $e");
+      Get.snackbar("Error", "Invalid configuration code", backgroundColor: Colors.red, colorText: Colors.white);
+    }
+  }
+
   Future<void> updateBranchConfig(Map<String, dynamic> config) async {
     final String url = config['server_url'] ?? config['servel_url'] ?? '';
     final String code = config['company_code'] ?? '';
     final String bId = config['branch_id']?.toString() ?? '';
 
     if (url.isEmpty || code.isEmpty || bId.isEmpty) {
-      Get.snackbar("Error", "Invalid QR Code", backgroundColor: Colors.red, colorText: Colors.white);
+      Get.snackbar("Error", "Invalid Branch Configuration", backgroundColor: Colors.red, colorText: Colors.white);
       return;
     }
 
@@ -150,6 +177,7 @@ class AuthController extends GetxController {
 
           isVerified.value = true;
           Get.snackbar("✓ Verified", "Branch verified: $code", backgroundColor: Colors.green, colorText: Colors.white);
+          qrCodeController.clear();
         }
       }
     } catch (e) {

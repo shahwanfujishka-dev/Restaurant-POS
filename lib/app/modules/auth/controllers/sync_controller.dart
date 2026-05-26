@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:get/get_core/src/get_main.dart';
@@ -5,6 +6,7 @@ import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_navigation/src/extension_navigation.dart';
 import 'package:get/get_rx/src/rx_types/rx_types.dart';
 import 'package:get/get_state_manager/src/simple/get_controllers.dart';
+import 'package:intl/intl.dart';
 import '../../../data/services/api_services.dart';
 import '../../../data/services/database_helper.dart';
 import '../../../data/utils/AppState.dart';
@@ -79,6 +81,17 @@ class SyncController extends GetxController {
           "limit": 500,
           "sync_time": "",
         }),
+        _apiService.post('mobileapp/sales/get_branch_all_cash_account', data: {
+          "usr_id": userId,
+        }),
+        _apiService.post('mobileapp/sales/get_branch_bank_account', data: {
+          "usr_id": userId,
+        }),
+        // Fetch Today's Sold Orders during Sync
+        _apiService.post("mobileapp/pos/get_sold_pos_order_list", data: {
+          "usr_id": userId,
+          "date": DateFormat('yyyy-MM-dd').format(DateTime.now()),
+        }),
       ]);
 
       progress.value = 0.10;
@@ -88,6 +101,21 @@ class SyncController extends GetxController {
       final tablesResponse   = apiResults[1];
       final favoritesResponse = apiResults[2];
       final vatResponse       = apiResults[3];
+      final cashAccResponse   = apiResults[4];
+      final bankAccResponse   = apiResults[5];
+      final soldOrdersResponse = apiResults[6];
+
+      // Save Sold Orders and their details
+      if (soldOrdersResponse.statusCode == 200) {
+        final List<dynamic> soldData = soldOrdersResponse.data['data'] ?? [];
+        await _dbHelper.cacheSoldOrders(soldData);
+        log("SyncController: Cached ${soldData.length} sold orders summary. Fetching details...");
+        
+        // Background fetch details for sold orders to ensure offline availability
+        for (var order in soldData) {
+           _fetchAndCacheSoldOrderDetails(order['sales_odr_inv_no']);
+        }
+      }
 
       // Save VAT type
       if (vatResponse.statusCode == 200) {
@@ -95,6 +123,18 @@ class SyncController extends GetxController {
         if (data != null && data['vat_type'] != null) {
           await _dbHelper.saveSetting('vat_type', data['vat_type'].toString());
         }
+      }
+
+      // Save Cash & Bank Accounts
+      if (cashAccResponse.statusCode == 200) {
+        final List<dynamic> data = cashAccResponse.data['data'] ?? [];
+        await _dbHelper.insertLedgers(data.cast<Map<String, dynamic>>(), 'cash');
+        log("SyncController: Cached ${data.length} cash accounts.");
+      }
+      if (bankAccResponse.statusCode == 200) {
+        final List<dynamic> data = bankAccResponse.data['data'] ?? [];
+        await _dbHelper.insertLedgers(data.cast<Map<String, dynamic>>(), 'bank');
+        log("SyncController: Cached ${data.length} bank accounts.");
       }
 
       // Process Categories
@@ -129,11 +169,14 @@ class SyncController extends GetxController {
       if (favoritesResponse.statusCode == 200) {
         final List<dynamic> favData = favoritesResponse.data['data'] ?? [];
         for (var json in favData) {
-          favorites.add({
-            'id': json['fav_id'],
-            'name': json['fav_name'],
-            'image': json['fav_img_url'] ?? '',
-          });
+          final dynamic fId = json['fav_id'] ?? json['favp_id'] ?? json['id'];
+          if (fId != null) {
+            favorites.add({
+              'id': fId,
+              'name': json['fav_name'] ?? json['favp_name'] ?? json['name'] ?? '',
+              'image': json['fav_img_url'] ?? json['favp_img_url'] ?? json['image'] ?? '',
+            });
+          }
         }
       }
 
@@ -161,11 +204,11 @@ class SyncController extends GetxController {
       }
 
       final posCategories = categories.where((c) => c['cat_pos'] == "1").toList();
-      totalCount.value = priceGroupIds.length * (1 + posCategories.length);
+      totalCount.value = priceGroupIds.length * (1 + posCategories.length + favorites.length);
       syncedCount.value = 0;
 
       // 3. Sync Products
-      await _syncProductsParallel(posCategories, priceGroupIds);
+      await _syncProductsParallel(posCategories, priceGroupIds, favorites);
 
       // Process Stock Unit Rates
       try {
@@ -222,15 +265,48 @@ class SyncController extends GetxController {
     }
   }
 
+  Future<void> _fetchAndCacheSoldOrderDetails(dynamic invNo) async {
+    try {
+      final int userId = int.tryParse(AppState.userId) ?? 0;
+      final response = await _apiService.post("mobileapp/pos/get_sold_pos_data", data: {
+        "usr_id": userId,
+        "sales_odr_inv_no": invNo,
+        "is_reprint": 1,
+      });
+
+      if (response.statusCode == 200) {
+        final data = response.data['data'];
+        if (data != null && data['preview'] != null) {
+          final preview = data['preview'];
+          final String serverId = (preview['sales_odr_id'] ?? '').toString();
+          if (serverId.isNotEmpty) {
+            await _dbHelper.updateOrderStatusByUuid(
+              serverId,
+              'paid',
+              payload: jsonEncode(preview),
+              isSynced: 1,
+              invNo: invNo.toString(),
+              serverId: serverId,
+            );
+            log("SyncController: Cached details (get_sold_pos_data) for order #$invNo");
+          }
+        }
+      }
+    } catch (e) {
+      log("SyncController: Error fetching sold order details for $invNo: $e");
+    }
+  }
+
   Future<void> _syncProductsParallel(
       List<Map<String, dynamic>> posCategories,
       Set<int> priceGroupIds,
+      List<Map<String, dynamic>> favorites,
       ) async {
     final pgList = priceGroupIds.toList();
     final chunks = _chunked(pgList, 2);
     for (final chunk in chunks) {
       await Future.wait(chunk.map((pgId) async {
-        await _syncProductsForPriceGroup(pgId, posCategories);
+        await _syncProductsForPriceGroup(pgId, posCategories, favorites);
       }));
     }
   }
@@ -238,6 +314,7 @@ class SyncController extends GetxController {
   Future<void> _syncProductsForPriceGroup(
       int pgId,
       List<Map<String, dynamic>> posCategories,
+      List<Map<String, dynamic>> favorites,
       ) async {
     statusMessage.value = "Syncing products (PG $pgId)...";
 
@@ -256,12 +333,21 @@ class SyncController extends GetxController {
         }
       }));
     }
+
+    // 3. Favorite-specific items
+    for (var fav in favorites) {
+      final dynamic fId = fav['id'] ?? fav['fav_id'] ?? fav['favp_id'];
+      final int favId = fId is int ? fId : int.tryParse(fId.toString()) ?? 0;
+      if (favId > 0) {
+        await _fetchAndInsertProducts(pgId: pgId, favId: favId);
+      }
+      _updateProgress();
+    }
   }
 
   void _updateProgress() {
     syncedCount.value++;
     if (totalCount.value > 0) {
-      // Products take up 0.15 to 0.90 (75% of the total bar)
       progress.value = 0.15 + (0.75 * syncedCount.value / totalCount.value);
     }
   }
@@ -270,6 +356,7 @@ class SyncController extends GetxController {
     required int pgId,
     String? catId,
     String? forceCatId,
+    int? favId,
   }) async {
     final requestData = <String, dynamic>{
       "usr_id":         int.tryParse(AppState.userId) ?? 0,
@@ -277,44 +364,59 @@ class SyncController extends GetxController {
       "keyword":        "",
     };
     if (catId != null) requestData["category_id"] = int.tryParse(catId) ?? 0;
+    if (favId != null) requestData["fav_id"] = favId;
 
-    final res = await _apiService.post(
-      "mobileapp/pos/get_product_list",
-      data: requestData,
-    );
-    if (res.statusCode != 200) return;
+    try {
+      final res = await _apiService.post(
+        "mobileapp/pos/get_product_list",
+        data: requestData,
+      );
+      if (res.statusCode != 200) return;
 
-    final List<dynamic> rawData = res.data['data'] ?? [];
-    if (rawData.isEmpty) return;
+      final List<dynamic> rawData = res.data['data'] ?? [];
+      if (rawData.isEmpty) return;
 
-    final String baseUrl = res.data['url']?.toString() ?? "";
+      final String baseUrl = res.data['url']?.toString() ?? "";
 
-    final List<Map<String, dynamic>> products = [];
-    for (int i = 0; i < rawData.length; i++) {
-      final json = rawData[i];
-      final String prdId = (json['prd_id'] ?? '').toString();
+      final List<Map<String, dynamic>> products = [];
+      final List<String> favoriteProductIds = [];
 
-      String imgUrl = json['prd_img_url']?.toString() ?? '';
-      if (imgUrl.isNotEmpty && baseUrl.isNotEmpty && !imgUrl.startsWith('http')) {
-        imgUrl = baseUrl + imgUrl;
+      for (int i = 0; i < rawData.length; i++) {
+        final json = rawData[i];
+        final String prdId = (json['prd_id'] ?? '').toString();
+
+        String imgUrl = json['prd_img_url']?.toString() ?? '';
+        if (imgUrl.isNotEmpty && baseUrl.isNotEmpty && !imgUrl.startsWith('http')) {
+          imgUrl = baseUrl + imgUrl;
+        }
+
+        products.add({
+          'id':             prdId,
+          'price_group_id': pgId,
+          'name':           (json['prd_name']        ?? '').toString(),
+          'category_id':    forceCatId ?? (json['prd_cat_id'] ?? '').toString().trim(),
+          'price':          (json['sale_rate']        as num? ?? 0.0).toDouble(),
+          'prd_tax':        (json['prd_tax']          as num? ?? 0.0).toDouble(),
+          'image':          imgUrl,
+          'unit_display':   (json['unit_display']     ?? '').toString(),
+          'tax_cat_id':     (json['prd_tax_cat_id']   as num? ?? 0).toInt(),
+          'tax_per':        (json['tax_per']           as num? ?? 0.0).toDouble(),
+          'sort_order':     i,
+        });
+
+        if (favId != null) {
+          favoriteProductIds.add(prdId);
+        }
       }
 
-      products.add({
-        'id':             prdId,
-        'price_group_id': pgId,
-        'name':           (json['prd_name']        ?? '').toString(),
-        'category_id':    forceCatId ?? (json['prd_cat_id'] ?? '').toString().trim(),
-        'price':          (json['sale_rate']        as num? ?? 0.0).toDouble(),
-        'prd_tax':        (json['prd_tax']          as num? ?? 0.0).toDouble(),
-        'image':          imgUrl,
-        'unit_display':   (json['unit_display']     ?? '').toString(),
-        'tax_cat_id':     (json['prd_tax_cat_id']   as num? ?? 0).toInt(),
-        'tax_per':        (json['tax_per']           as num? ?? 0.0).toDouble(),
-        'sort_order':     i,
-      });
-    }
+      await _dbHelper.insertProducts(products);
 
-    await _dbHelper.insertProducts(products);
+      if (favId != null && favoriteProductIds.isNotEmpty) {
+        await _dbHelper.insertFavoriteProducts(favId, pgId, favoriteProductIds);
+      }
+    } catch (e) {
+      log("SyncController: Error in _fetchAndInsertProducts: $e");
+    }
   }
 
   List<List<T>> _chunked<T>(List<T> list, int size) {

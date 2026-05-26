@@ -52,6 +52,7 @@ dependencies:
   mobile_scanner: ^7.0.0
   device_info_plus: ^9.0.2
   permission_handler:
+  google_nav_bar: ^5.0.7
 
 dev_dependencies:
   flutter_test:

@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:developer';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -19,9 +22,15 @@ import '../../controller/cart_controller.dart';
 class MobileCartSummary extends StatelessWidget {
   final CartController controller;
 
-  const MobileCartSummary({super.key, required this.controller});
+  MobileCartSummary({super.key, required this.controller});
 
-  void _handlePlaceOrUpdateOrder({bool isDraft = false}) async {
+  void _handlePlaceOrUpdateOrder({
+    bool isDraft = false,
+    int? payType,
+    double? cashAmt,
+    double? cardAmt,
+    bool isCompliment = false,
+  }) async {
     if (controller.cartItems.isEmpty || controller.isProcessing.value) return;
 
     if (AppState.orderType.id == 0 && !controller.hasSelectedTable) {
@@ -45,13 +54,28 @@ class MobileCartSummary extends StatelessWidget {
       controller.isProcessing.value = true;
 
       final responseData = controller.isEditing
-          ? await controller.updateOrder(isDraft: isDraft)
-          : await controller.placeOrder(isDraft: isDraft);
+          ? await controller.updateOrder(
+              isDraft: isDraft,
+              payType: payType,
+              cashAmt: cashAmt,
+              cardAmt: cardAmt,
+              isCompliment: isCompliment,
+            )
+          : await controller.placeOrder(
+              isDraft: isDraft,
+              payType: payType,
+              cashAmt: cashAmt,
+              cardAmt: cardAmt,
+              isCompliment: isCompliment,
+            );
 
       if (responseData == null) {
         showSafeSnackbar("Error", "Failed to process order. Please try again.");
         return;
       }
+
+      // ✅ Log Success Response to Console
+      log("Order Success Response: ${jsonEncode(responseData)}");
 
       if (responseData is Map && responseData['no_change'] == true) {
         controller.stopEditing();
@@ -97,6 +121,62 @@ class MobileCartSummary extends StatelessWidget {
     }
   }
 
+  void _navigateToCashier() {
+    if (controller.cartItems.isEmpty || controller.isProcessing.value) return;
+
+    if (AppState.orderType.id == 0 && !controller.hasSelectedTable) {
+      showSafeSnackbar("table_required".tr, "select_table_msg".tr);
+      return;
+    }
+
+    final hasValidItems = controller.cartItems.any(
+      (item) => !item.isDeleted.value && item.quantity.value > 0,
+    );
+
+    if (!hasValidItems) {
+      showSafeSnackbar(
+        "Empty Order",
+        "Please add at least one item before proceeding to receipt.",
+      );
+      return;
+    }
+
+    final List<OrderItem> items = controller.cartItems
+        .where((ci) => !ci.isDeleted.value && ci.quantity.value > 0)
+        .map((ci) => OrderItem(
+              subId: ci.subId,
+              product: ci.product,
+              unit: ci.unit,
+              selectedAddons: ci.selectedAddons,
+              quantity: ci.quantity.value,
+              priceAtOrder: ci.unit.rate,
+              addonParentPrdId: ci.addonprntId,
+              addonParentUnitId: ci.addonuntId,
+              unitId: ci.unit.unitId,
+            ))
+        .toList();
+
+    // Construct a temporary OrderModel to pass to CashierView
+    final tempOrder = OrderModel(
+      id: controller.editingOrderId.value.isEmpty ? "PENDING" : controller.editingOrderId.value,
+      invNo: controller.editingInvNo.value.isEmpty ? "NEW" : controller.editingInvNo.value,
+      tableId: controller.selectedTableId.value,
+      tableName: controller.selectedTableName.value,
+      chairNumber: controller.selectedChairCount.value,
+      sales_odr_pos_status: 1,
+      items: items,
+      status: OrderStatus.pending,
+      createdAt: DateTime.now(),
+      totalAmount: controller.grandTotal,
+      totalTax: controller.totalTaxAmount,
+      sales_odr_order_type: AppState.orderType.id,
+      areaId: controller.selectedAreaId.value,
+      priceGroupId: controller.selectedPriceGroupId.value,
+    );
+
+    Get.toNamed(Routes.CASHIER, arguments: tempOrder);
+  }
+
   void _runBackgroundTasks({
     required dynamic responseData,
     required bool isDraft,
@@ -134,31 +214,39 @@ class MobileCartSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
-    return Obx(() {
-      if (controller.cartItems.isEmpty) return const SizedBox.shrink();
 
-      return Container(
-        height: MediaQuery.of(context).size.height * 0.34,
+    return Obx(() {
+      if (controller.cartItems.isEmpty) {
+        return const SizedBox.shrink();
+      }
+
+      final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+
+      return AnimatedContainer(
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+        padding: EdgeInsets.only(
+          left: 8.w,
+          right: 8.w,
+          top: 6.w,
+          bottom: bottomInset > 0 ? bottomInset : 8.h,
+        ),
         decoration: BoxDecoration(
           color: colors.card,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(colors.isDark ? 0.3 : 0.05),
-                blurRadius: 20,
-                offset: const Offset(0, -5)),
-          ],
-          borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(24.r), topRight: Radius.circular(24.r)),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: EdgeInsets.all(6.w),
-            child: Column(
-              children: [
-                _buildSummaryCard(context),
-              ],
+              color: Colors.black.withOpacity(colors.isDark ? 0.35 : 0.08),
+              blurRadius: 20,
+              offset: const Offset(0, -6),
             ),
-          ),
+          ],
+        ),
+
+        child: AnimatedSize(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+          child: _buildSummaryCard(context),
         ),
       );
     });
@@ -172,6 +260,7 @@ class MobileCartSummary extends StatelessWidget {
       if (controller.cartItems.isEmpty) return const SizedBox.shrink();
 
       final showTax = dashboardController.vatType.value == 0;
+      final double grandTotalValue = showTax ? controller.grandTotal : controller.totalAmount;
 
       return Container(
         decoration: BoxDecoration(
@@ -205,45 +294,58 @@ class MobileCartSummary extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildSummaryHeader(context),
-              SizedBox(height: 8.h),
+              SizedBox(height: 4.h),
               _buildTotalRow(context, label: 'subtotal'.tr, value: controller.totalAmount, isBold: false),
               if (showTax) ...[
-                SizedBox(height: 5.h),
+                SizedBox(height: 4.h),
                 _buildTotalRow(context, label: 'tax'.tr, value: controller.totalTaxAmount, isBold: false),
               ],
-              SizedBox(height: 5.h),
+              SizedBox(height: 4.h),
               _buildDivider(context),
-              SizedBox(height: 12.h),
+              SizedBox(height: 7.h),
               _buildTotalRow(
                   context,
                   label: 'grand_total'.tr,
-                  value: showTax ? controller.grandTotal : controller.totalAmount,
+                  value: grandTotalValue,
                   isBold: true
               ),
-              SizedBox(height: 10.h),
+              SizedBox(height: 5.h),
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 10.w),
-                child: Row(
+                child: Column(
                   children: [
-                    Expanded(
-                      flex: 2,
-                      child: PrimaryButton(
-                        isLoading: controller.isProcessing.value,
-                        height: 48.h,
-                        onPressed: () => _handlePlaceOrUpdateOrder(isDraft: true),
-                        color: colors.isDark ? Colors.orange.shade900 : Colors.orange.shade700,
-                        text: "Hold",
-                        icon: Icons.pause,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: PrimaryButton(
+                            isLoading: controller.isProcessing.value,
+                            height: 48.h,
+                            onPressed: () => _handlePlaceOrUpdateOrder(isDraft: true),
+                            color: colors.isDark ? Colors.orange.shade900 : Colors.orange.shade700,
+                            text: "Hold",
+                            icon: Icons.pause,
+                          ),
+                        ),
+                        SizedBox(width: 8.w),
+                        Expanded(
+                          flex: 2,
+                          child: PrimaryButton(
+                            isLoading: controller.isProcessing.value,
+                            onPressed: () => _handlePlaceOrUpdateOrder(isDraft: false),
+                            text: controller.isEditing ? "Update KOT" : 'place_order'.tr,
+                          ),
+                        ),
+                      ],
                     ),
-                    SizedBox(width: 8.w),
-                    Expanded(
-                      flex: 2,
-                      child: PrimaryButton(
-                        isLoading: controller.isProcessing.value,
-                        onPressed: () => _handlePlaceOrUpdateOrder(isDraft: false),
-                        text: controller.isEditing ? "Update KOT" : 'place_order'.tr,
-                      ),
+                    SizedBox(height: 8.h),
+                    PrimaryButton(
+                      isLoading: controller.isProcessing.value,
+                      height: 48.h,
+                      onPressed: _navigateToCashier,
+                      color: colors.isDark ? Colors.redAccent.shade700 : Colors.redAccent.shade400,
+                      text: "Receipt",
+                      icon: Icons.receipt,
                     ),
                   ],
                 ),
@@ -264,6 +366,7 @@ class MobileCartSummary extends StatelessWidget {
     final colors = AppColors.of(context);
     final color = controller.isEditing ? Colors.blue : AppTheme.primaryGreen;
     return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Container(
           padding: EdgeInsets.all(8.w),
@@ -298,31 +401,23 @@ class MobileCartSummary extends StatelessWidget {
 
   Widget _buildTotalRow(BuildContext context, {required String label, required double value, required bool isBold}) {
     final colors = AppColors.of(context);
+    final accentColor = controller.isEditing ? Colors.blue : AppTheme.primaryGreen;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label,
-            style: isBold
-                ? AppTypography.cardTitle.copyWith(
-                    fontSize: 15.sp,
-                    fontWeight: FontWeight.w600,
-                    color: colors.text,
-                  )
-                : AppTypography.cardSubtitle.copyWith(
-                    fontSize: 14.sp,
-                    color: colors.subtext,
-                  )),
-        Text(value.toStringAsFixed(2),
-            style: isBold
-                ? AppTypography.cardTitle.copyWith(
-                    fontSize: 18.sp,
-                    fontWeight: FontWeight.bold,
-                    color: controller.isEditing ? Colors.blue : AppTheme.primaryGreen,
-                  )
-                : AppTypography.cardTitle.copyWith(
-                    fontSize: 15.sp,
-                    color: colors.text,
-                  )),
+        Text(
+          label,
+          style: isBold
+              ? AppTypography.cardTitle.copyWith(fontWeight: FontWeight.w600, color: colors.text)
+              : AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+        ),
+        Text(
+          value.toStringAsFixed(2),
+          style: isBold
+              ? AppTypography.cardTitle.copyWith(fontWeight: FontWeight.bold, color: accentColor)
+              : AppTypography.cardTitle.copyWith(color: colors.text),
+        ),
       ],
     );
   }

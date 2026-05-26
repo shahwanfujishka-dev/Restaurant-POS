@@ -14,6 +14,7 @@ import '../../../../data/models/order_model.dart';
 import '../../../../routes/app_pages.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/app_typography.dart';
+import '../../../cart/controller/cart_controller.dart';
 import '../../controller/dashboard_controller.dart';
 import '../../controller/order_controller.dart';
 import '../../controller/printer_controller.dart';
@@ -24,22 +25,25 @@ class OrdersPage extends GetView<OrdersController> {
 
   @override
   Widget build(BuildContext context) {
-    final DashboardController dashboardController = Get.find<DashboardController>();
+    final DashboardController dashboardController =
+        Get.find<DashboardController>();
     final colors = AppColors.of(context);
 
     return DefaultTabController(
       length: 4,
-      child: Builder( // ← Builder gives a context that has the TabController
+      child: Builder(
         builder: (context) {
-          final tabController = DefaultTabController.of(context); // ← get it here once
+          final tabController = DefaultTabController.of(context);
           return Scaffold(
             backgroundColor: colors.bg,
             appBar: PreferredSize(
               preferredSize: Size.fromHeight(60.h),
               child: Container(
                 color: colors.card,
-                padding: EdgeInsets.symmetric(horizontal: 30.w, vertical: 10.h),
-                child: AnimatedTabBar(tabController: tabController), // ← pass directly
+                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 10.h),
+                child: AnimatedTabBar(
+                  tabController: tabController,
+                ),
               ),
             ),
             body: Obx(() {
@@ -47,12 +51,27 @@ class OrdersPage extends GetView<OrdersController> {
                 return const Center(child: FoodItemShimmer());
               }
               return TabBarView(
-                controller: tabController, // ← same controller instance
+                controller: tabController,
                 children: [
-                  _buildOrderList(context, controller.dineInOrders, dashboardController),
-                  _buildOrderList(context, controller.deliveryOrders, dashboardController),
-                  _buildOrderList(context, controller.pickupOrders, dashboardController),
-                  _buildOrderList(context, controller.paidOrders, dashboardController),
+                  _buildOrderList(
+                    context,
+                    controller.dineInOrders,
+                    dashboardController,
+                  ),
+                  _buildOrderList(
+                    context,
+                    controller.deliveryOrders,
+                    dashboardController,
+                  ),
+                  _buildOrderList(
+                    context,
+                    controller.pickupOrders,
+                    dashboardController,
+                  ),
+                  _buildPaidOrderList(
+                    context,
+                    dashboardController,
+                  ),
                 ],
               );
             }),
@@ -62,7 +81,84 @@ class OrdersPage extends GetView<OrdersController> {
     );
   }
 
-  Widget _buildOrderList(BuildContext context, List<OrderModel> orders, DashboardController dashboardController) {
+  Widget _buildPaidOrderList(
+    BuildContext context,
+    DashboardController dashboardController,
+  ) {
+    final colors = AppColors.of(context);
+    return Column(
+      children: [
+        // Date Selector Header
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+          color: colors.card,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.calendar_today, size: 18.sp, color: colors.subtext),
+                  SizedBox(width: 8.w),
+                  Obx(() => Text(
+                        DateFormat('EEEE, MMM d, yyyy')
+                            .format(controller.selectedSoldDate.value),
+                        style: AppTypography.cardSubtitle.copyWith(
+                          color: colors.text,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      )),
+                ],
+              ),
+              TextButton.icon(
+                onPressed: () async {
+                  final DateTime? picked = await showDatePicker(
+                    context: context,
+                    initialDate: controller.selectedSoldDate.value,
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime.now(),
+                    builder: (context, child) {
+                      return Theme(
+                        data: Theme.of(context).copyWith(
+                          colorScheme: ColorScheme.light(
+                            primary: AppTheme.primaryGreen,
+                            onPrimary: Colors.white,
+                            onSurface: colors.text,
+                          ),
+                          dialogBackgroundColor: colors.card,
+                        ),
+                        child: child!,
+                      );
+                    },
+                  );
+                  if (picked != null) {
+                    controller.changeSoldDate(picked);
+                  }
+                },
+                icon: Icon(Icons.edit_calendar, size: 18.sp),
+                label: Text('change_date'.tr),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppTheme.primaryGreen,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Obx(() => _buildOrderList(
+                context,
+                controller.paidOrders,
+                dashboardController,
+              )),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOrderList(
+    BuildContext context,
+    List<OrderModel> orders,
+    DashboardController dashboardController,
+  ) {
     final colors = AppColors.of(context);
 
     if (orders.isEmpty) {
@@ -166,11 +262,15 @@ class OrdersPage extends GetView<OrdersController> {
   }
 }
 
-void _showOrderDetailsDialog(BuildContext context, OrderModel order, DashboardController dashboardController) {
+void _showOrderDetailsDialog(
+  BuildContext context,
+  OrderModel order,
+  DashboardController dashboardController,
+) {
   final controller = Get.find<OrdersController>();
   final colors = AppColors.of(context);
-  final displayColor = order.status.value == OrderStatus.draft
-      ? _getStatusColor(OrderStatus.draft)
+  final displayColor = (order.status.value == OrderStatus.paid || order.status.value == OrderStatus.draft)
+      ? _getStatusColor(order.status.value)
       : _getOrderTypeColor(order.sales_odr_order_type);
 
   Get.dialog(
@@ -178,10 +278,11 @@ void _showOrderDetailsDialog(BuildContext context, OrderModel order, DashboardCo
       backgroundColor: colors.card,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
       child: Obx(() {
-        final currentOrder = controller.orders.firstWhere(
-              (o) => o.id == order.id,
-          orElse: () => order,
-        );
+        final currentOrder = controller.orders.firstWhereOrNull(
+          (o) => o.id == order.id,
+        ) ?? controller.soldOrders.firstWhereOrNull(
+          (o) => o.id == order.id,
+        ) ?? order;
 
         return Container(
           width: 0.4.sw,
@@ -212,16 +313,22 @@ void _showOrderDetailsDialog(BuildContext context, OrderModel order, DashboardCo
                   ),
                   Row(
                     children: [
-                      currentOrder.sales_odr_pos_status == 1 ?
-                      IconButton(
-                        onPressed: () {
-                          final printerController =
-                          Get.find<PrinterController>();
-                          printerController.printKOT(currentOrder);
-                        },
-                        icon: const Icon(Icons.print, color: Colors.blue),
-                        tooltip: 'print_order'.tr,
-                      ):SizedBox.shrink(),
+                      (currentOrder.sales_odr_pos_status == 1 || currentOrder.status.value == OrderStatus.paid)
+                          ? IconButton(
+                              onPressed: () {
+                                final printerController =
+                                    Get.find<PrinterController>();
+                                if (currentOrder.status.value == OrderStatus.paid) {
+                                  printerController.printReceipt(currentOrder, currentOrder.totalAmount, 0);
+                                } else {
+                                  printerController.printKOT(currentOrder);
+                                }
+                              },
+                              icon: const Icon(Icons.print, color: Colors.blue),
+                              tooltip: 'print_order'.tr,
+                            )
+                          : const SizedBox.shrink(),
+                      if (currentOrder.status.value != OrderStatus.paid)
                       IconButton(
                         onPressed: () {
                           Get.back();
@@ -243,6 +350,7 @@ void _showOrderDetailsDialog(BuildContext context, OrderModel order, DashboardCo
               ),
               Divider(color: colors.border),
               SizedBox(height: 5.h),
+              if(currentOrder.status.value != OrderStatus.paid)
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -330,7 +438,7 @@ void _showOrderDetailsDialog(BuildContext context, OrderModel order, DashboardCo
                 ),
               SizedBox(height: 10.h),
               Container(
-                padding: EdgeInsets.symmetric(horizontal : 4.w, vertical: 2 .h),
+                padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
                 decoration: BoxDecoration(
                   color: displayColor.withOpacity(0.05),
                   borderRadius: BorderRadius.circular(12.r),
@@ -349,7 +457,7 @@ void _showOrderDetailsDialog(BuildContext context, OrderModel order, DashboardCo
                             ),
                           ),
                           Text(
-                            '${currentOrder.totalTax.toStringAsFixed(2)}',
+                            currentOrder.totalTax.toStringAsFixed(2),
                             style: AppTypography.cardTitle.copyWith(
                               fontWeight: FontWeight.bold,
                               color: displayColor,
@@ -380,21 +488,22 @@ void _showOrderDetailsDialog(BuildContext context, OrderModel order, DashboardCo
                 ),
               ),
               SizedBox(height: 16.h),
-              if (currentOrder.status.value != OrderStatus.paid && currentOrder.status.value != OrderStatus.cancelled && currentOrder.status.value != OrderStatus.draft)
+              if (currentOrder.status.value != OrderStatus.paid &&
+                  currentOrder.status.value != OrderStatus.cancelled &&
+                  currentOrder.status.value != OrderStatus.draft)
                 ElevatedButton(
                   onPressed: () {
                     Get.back();
-                    Get.toNamed(Routes.CASHIER, arguments: currentOrder);
+                    controller.goToCashier(currentOrder);
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: displayColor,
                     minimumSize: Size(double.infinity, 48.h),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12.r),
+                    ),
                   ),
-                  child: Text(
-                    "Settle Order",
-                    style: AppTypography.button,
-                  ),
+                  child: Text("Settle Order", style: AppTypography.button),
                 ),
             ],
           ),
@@ -423,8 +532,8 @@ class _MobileOrderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = Get.find<OrdersController>();
     final colors = AppColors.of(context);
-    final displayColor = order.status.value == OrderStatus.draft
-        ? _getStatusColor(OrderStatus.draft)
+    final displayColor = (order.status.value == OrderStatus.paid || order.status.value == OrderStatus.draft)
+        ? _getStatusColor(order.status.value)
         : _getOrderTypeColor(order.sales_odr_order_type);
 
     return TweenAnimationBuilder(
@@ -486,7 +595,8 @@ class _MobileOrderCard extends StatelessWidget {
                             ),
                             Row(
                               children: [
-                                if (order.status.value != OrderStatus.paid && order.status.value != OrderStatus.cancelled)
+                                if (order.status.value != OrderStatus.paid &&
+                                    order.status.value != OrderStatus.cancelled)
                                   IconButton(
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(),
@@ -497,7 +607,8 @@ class _MobileOrderCard extends StatelessWidget {
                                     ),
                                   ),
                                 SizedBox(width: 4.w),
-                                if (order.status.value != OrderStatus.paid && order.status.value != OrderStatus.cancelled)
+                                if (order.status.value != OrderStatus.paid &&
+                                    order.status.value != OrderStatus.cancelled)
                                   IconButton(
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(),
@@ -525,7 +636,11 @@ class _MobileOrderCard extends StatelessWidget {
                             padding: EdgeInsets.only(top: 4.h),
                             child: Text(
                               "PENDING SYNC",
-                              style: TextStyle(color: Colors.orange, fontSize: 10.sp, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                color: Colors.orange,
+                                fontSize: 10.sp,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         SizedBox(height: 12.h),
@@ -542,6 +657,7 @@ class _MobileOrderCard extends StatelessWidget {
                                   ),
                                 ),
                                 SizedBox(width: 8.w),
+                                if(order.status.value != OrderStatus.paid)
                                 Container(
                                   padding: EdgeInsets.symmetric(
                                     horizontal: 6.w,
@@ -552,7 +668,7 @@ class _MobileOrderCard extends StatelessWidget {
                                     borderRadius: BorderRadius.circular(4.r),
                                   ),
                                   child: Obx(
-                                        () => Text(
+                                    () => Text(
                                       controller.getElapsedTime(
                                         order.createdAt,
                                       ),
@@ -608,8 +724,8 @@ class _OrderTicket extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = Get.find<OrdersController>();
     final colors = AppColors.of(context);
-    final displayColor = order.status.value == OrderStatus.draft
-        ? _getStatusColor(OrderStatus.draft)
+    final displayColor = (order.status.value == OrderStatus.paid || order.status.value == OrderStatus.draft)
+        ? _getStatusColor(order.status.value)
         : _getOrderTypeColor(order.sales_odr_order_type);
 
     return TweenAnimationBuilder(
@@ -659,26 +775,28 @@ class _OrderTicket extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (order.status.value != OrderStatus.paid && order.status.value != OrderStatus.cancelled)
+                        if (order.status.value != OrderStatus.paid &&
+                            order.status.value != OrderStatus.cancelled)
                           IconButton(
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
                             onPressed: onEdit,
                             icon: Icon(
                               Icons.edit_note,
-                              size: 7.sp,
+                              size: 14.sp,
                               color: displayColor,
                             ),
                           ),
                         SizedBox(width: 4.w),
-                        if (order.status.value != OrderStatus.paid && order.status.value != OrderStatus.cancelled)
+                        if (order.status.value != OrderStatus.paid &&
+                            order.status.value != OrderStatus.cancelled)
                           IconButton(
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
                             onPressed: onDelete,
                             icon: Icon(
                               Icons.delete_outline,
-                              size: 7.sp,
+                              size: 14.sp,
                               color: Colors.red,
                             ),
                           ),
@@ -703,38 +821,32 @@ class _OrderTicket extends StatelessWidget {
                             color: colors.text,
                           ),
                         ),
-                        // if (order.isUnsynced)
-                        //   Text(
-                        //     "OFFLINE",
-                        //     style: TextStyle(color: Colors.orange, fontSize: 2.sp, fontWeight: FontWeight.bold),
-                        //   ),
                         SizedBox(height: 4.h),
-// In _MobileOrderCard build method
-// After the existing Row with time and amount, add:
-
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: EdgeInsets.symmetric(horizontal: 2.w, vertical: 1.h),
-                                  decoration: BoxDecoration(
-                                    color: Colors.orange.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(4.r),
+                            if(order.status.value != OrderStatus.paid)
+                            Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 4.w,
+                                vertical: 2.h,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(4.r),
+                              ),
+                              child: Obx(
+                                () => Text(
+                                  controller.getElapsedTime(
+                                    order.createdAt,
                                   ),
-                                  child: Obx(
-                                        () => Text(
-                                      controller.getElapsedTime(order.createdAt),
-                                      style: TextStyle(
-                                        color: Colors.orange.shade700,
-                                        fontSize: 4.sp,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
+                                  style: TextStyle(
+                                    color: Colors.orange.shade700,
+                                    fontSize: 10.sp,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                              ],
+                              ),
                             ),
                           ],
                         ),
@@ -769,13 +881,17 @@ class _OrderTicket extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    // ✅ ADD PAY BUTTON HERE
                     if (order.status.value != OrderStatus.paid &&
-                        order.status.value != OrderStatus.cancelled)
+                        order.status.value != OrderStatus.cancelled && order.status.value != OrderStatus.draft)
                       GestureDetector(
-                        onTap: () => Get.toNamed(Routes.CASHIER, arguments: order),
+                        onTap: () {
+                          controller.goToCashier(order);
+                        },
                         child: Container(
-                          padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 6.h),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 12.w,
+                            vertical: 6.h,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white.withOpacity(0.25),
                             borderRadius: BorderRadius.circular(6.r),
@@ -785,7 +901,7 @@ class _OrderTicket extends StatelessWidget {
                             'PAY',
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 4.sp,
+                              fontSize: 10.sp,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 1,
                             ),
@@ -847,6 +963,8 @@ Color _getOrderTypeColor(int type) {
       return Colors.blue;
     case 2: // Pickup
       return AppTheme.primaryGreen;
+      case 3: // Paid
+      return Colors.teal;
     default:
       return AppTheme.primaryGreen;
   }
@@ -874,11 +992,11 @@ Color _getStatusColor(OrderStatus status) {
 }
 
 void _showMobileOrderDetails(
-    BuildContext context,
-    OrderModel order, {
-      required VoidCallback onEdit,
-      required VoidCallback onDelete,
-    }) {
+  BuildContext context,
+  OrderModel order, {
+  required VoidCallback onEdit,
+  required VoidCallback onDelete,
+}) {
   final colors = AppColors.of(context);
   Get.bottomSheet(
     Container(
@@ -913,10 +1031,10 @@ class _OrderDetailsContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final DashboardController dashboardController =
-    Get.find<DashboardController>();
+        Get.find<DashboardController>();
     final colors = AppColors.of(context);
-    final displayColor = order.status.value == OrderStatus.draft
-        ? _getStatusColor(OrderStatus.draft)
+    final displayColor = (order.status.value == OrderStatus.paid || order.status.value == OrderStatus.draft)
+        ? _getStatusColor(order.status.value)
         : _getOrderTypeColor(order.sales_odr_order_type);
 
     return Container(
@@ -924,10 +1042,11 @@ class _OrderDetailsContent extends StatelessWidget {
       padding: EdgeInsets.all(isMobile ? 24.w : 20.w),
       child: Obx(() {
         final controller = Get.find<OrdersController>();
-        final currentOrder = controller.orders.firstWhere(
-              (o) => o.id == order.id,
-          orElse: () => order,
-        );
+        final currentOrder = controller.orders.firstWhereOrNull(
+          (o) => o.id == order.id,
+        ) ?? controller.soldOrders.firstWhereOrNull(
+          (o) => o.id == order.id,
+        ) ?? order;
 
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -966,15 +1085,21 @@ class _OrderDetailsContent extends StatelessWidget {
                 ),
                 Row(
                   children: [
-                    if (currentOrder.sales_odr_pos_status == 1)
+                    if (currentOrder.sales_odr_pos_status == 1 || currentOrder.status.value == OrderStatus.paid)
                       IconButton(
                         onPressed: () {
-                          final printerController = Get.find<PrinterController>();
-                          printerController.printKOT(currentOrder);
+                          final printerController =
+                              Get.find<PrinterController>();
+                          if (currentOrder.status.value == OrderStatus.paid) {
+                            printerController.printReceipt(currentOrder, currentOrder.totalAmount, 0);
+                          } else {
+                            printerController.printKOT(currentOrder);
+                          }
                         },
                         icon: const Icon(Icons.print, color: Colors.blue),
                       ),
-                    if (currentOrder.status.value != OrderStatus.paid && currentOrder.status.value != OrderStatus.cancelled)
+                    if (currentOrder.status.value != OrderStatus.paid &&
+                        currentOrder.status.value != OrderStatus.cancelled)
                       IconButton(
                         onPressed: () {
                           Get.back();
@@ -982,13 +1107,17 @@ class _OrderDetailsContent extends StatelessWidget {
                         },
                         icon: const Icon(Icons.edit, color: Colors.blue),
                       ),
-                    if (currentOrder.status.value != OrderStatus.paid && currentOrder.status.value != OrderStatus.cancelled)
+                    if (currentOrder.status.value != OrderStatus.paid &&
+                        currentOrder.status.value != OrderStatus.cancelled)
                       IconButton(
                         onPressed: () {
                           Get.back();
                           onDelete();
                         },
-                        icon: const Icon(Icons.delete_outline, color: Colors.red),
+                        icon: const Icon(
+                          Icons.delete_outline,
+                          color: Colors.red,
+                        ),
                       ),
                     IconButton(
                       onPressed: () => Get.back(),
@@ -1000,6 +1129,7 @@ class _OrderDetailsContent extends StatelessWidget {
             ),
             Divider(color: colors.border),
             SizedBox(height: 5.h),
+            if(currentOrder.status.value != OrderStatus.paid)
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -1139,21 +1269,21 @@ class _OrderDetailsContent extends StatelessWidget {
               ),
             ),
             SizedBox(height: 20.h),
-            if (currentOrder.status.value != OrderStatus.paid && currentOrder.status.value != OrderStatus.cancelled)
+            if (currentOrder.status.value != OrderStatus.paid &&
+                currentOrder.status.value != OrderStatus.cancelled)
               ElevatedButton(
                 onPressed: () {
                   Get.back();
-                  Get.toNamed(Routes.CASHIER, arguments: currentOrder);
+                  controller.goToCashier(currentOrder);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: displayColor,
                   minimumSize: Size(double.infinity, 48.h),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12.r),
+                  ),
                 ),
-                child: Text(
-                  "Settle Order",
-                  style: AppTypography.button,
-                ),
+                child: Text("Settle Order", style: AppTypography.button),
               ),
             if (isMobile) SizedBox(height: 20.h),
           ],

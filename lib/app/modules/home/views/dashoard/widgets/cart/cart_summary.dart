@@ -21,7 +21,13 @@ class CartSummary extends StatelessWidget {
 
   const CartSummary({super.key, required this.controller});
 
-  void _handlePlaceOrUpdateOrder({bool isDraft = false}) async {
+  void _handlePlaceOrUpdateOrder({
+    bool isDraft = false,
+    int? payType,
+    double? cashAmt,
+    double? cardAmt,
+    bool isCompliment = false,
+  }) async {
     if (controller.cartItems.isEmpty || controller.isProcessing.value) return;
 
     // ✅ Table/Chair validation only required for Dine-In (id: 0)
@@ -46,13 +52,27 @@ class CartSummary extends StatelessWidget {
       controller.isProcessing.value = true;
 
       final responseData = controller.isEditing
-          ? await controller.updateOrder(isDraft: isDraft)
-          : await controller.placeOrder(isDraft: isDraft);
+          ? await controller.updateOrder(
+              isDraft: isDraft,
+              payType: payType,
+              cashAmt: cashAmt,
+              cardAmt: cardAmt,
+              isCompliment: isCompliment,
+            )
+          : await controller.placeOrder(
+              isDraft: isDraft,
+              payType: payType,
+              cashAmt: cashAmt,
+              cardAmt: cardAmt,
+              isCompliment: isCompliment,
+            );
 
       if (responseData == null) {
         showSafeSnackbar("Error", "Failed to process order. Please try again.");
         return;
       }
+
+      debugPrint("Order Success Response: $responseData");
 
       if (responseData is Map && responseData['no_change'] == true) {
         controller.stopEditing();
@@ -98,6 +118,70 @@ class CartSummary extends StatelessWidget {
     }
   }
 
+  void _navigateToCashier() {
+    if (controller.cartItems.isEmpty || controller.isProcessing.value) return;
+
+    if (AppState.orderType.id == 0 && !controller.hasSelectedTable) {
+      showSafeSnackbar("table_required".tr, "select_table_msg".tr);
+      return;
+    }
+
+    final hasValidItems = controller.cartItems.any(
+      (item) => !item.isDeleted.value && item.quantity.value > 0,
+    );
+
+    if (!hasValidItems) {
+      showSafeSnackbar(
+        "Empty Order",
+        "Please add at least one item before proceeding to receipt.",
+      );
+      return;
+    }
+
+    final dashboardController = Get.find<DashboardController>();
+    final bool showTax = dashboardController.vatType.value == 0;
+
+    // Use current totals from cart
+    final double totalTax = showTax ? controller.totalTaxAmount : 0.0;
+    final double totalWithTax = showTax ? controller.grandTotal : controller.totalAmount;
+
+    // Map cart items to order items to pass to cashier view
+    final items = controller.cartItems
+        .where((ci) => !ci.isDeleted.value && ci.quantity.value > 0)
+        .map((ci) => OrderItem(
+              subId: ci.subId,
+              product: ci.product,
+              unit: ci.unit,
+              selectedAddons: List.from(ci.selectedAddons),
+              quantity: ci.quantity.value,
+              priceAtOrder: ci.unit.rate,
+              addonParentPrdId: ci.addonprntId,
+              addonParentUnitId: ci.addonuntId,
+              unitId: ci.unit.unitId,
+            ))
+        .toList();
+
+    // Construct a temporary OrderModel to pass to CashierView
+    final tempOrder = OrderModel(
+      id: controller.editingOrderId.value.isEmpty ? "PENDING" : controller.editingOrderId.value,
+      invNo: controller.editingInvNo.value.isEmpty ? "NEW" : controller.editingInvNo.value,
+      tableId: controller.selectedTableId.value,
+      tableName: controller.selectedTableName.value,
+      chairNumber: controller.selectedChairCount.value,
+      sales_odr_pos_status: 1,
+      items: items,
+      status: OrderStatus.pending,
+      createdAt: DateTime.now(),
+      totalAmount: totalWithTax,
+      totalTax: totalTax,
+      sales_odr_order_type: AppState.orderType.id,
+      areaId: controller.selectedAreaId.value,
+      priceGroupId: controller.selectedPriceGroupId.value,
+    );
+
+    Get.toNamed(Routes.CASHIER, arguments: tempOrder);
+  }
+
   void _runBackgroundTasks({
     required dynamic responseData,
     required bool isDraft,
@@ -141,6 +225,7 @@ class CartSummary extends StatelessWidget {
       if (controller.cartItems.isEmpty) return const SizedBox.shrink();
 
       final showTax = dashboardController.vatType.value == 0;
+      final double grandTotalValue = showTax ? controller.grandTotal : controller.totalAmount;
 
       return Container(
         decoration: BoxDecoration(
@@ -163,33 +248,37 @@ class CartSummary extends StatelessWidget {
             ),
           ],
           border: Border.all(
-            color: controller.isEditing 
-                ? Colors.blue.withOpacity(0.2) 
+            color: controller.isEditing
+                ? Colors.blue.withOpacity(0.2)
                 : AppTheme.primaryGreen.withOpacity(0.2),
           ),
         ),
         child: Padding(
-          padding: EdgeInsets.all(3.w),
+          padding: EdgeInsets.symmetric(horizontal: 4.w, vertical :3.h),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildSummaryHeader(context),
-              SizedBox(height: 8.h),
-              _buildTotalRow(context, label: 'subtotal'.tr, value: controller.totalAmount, isBold: false),
+              SizedBox(height: 1.h),
+              _buildTotalRow(context, label: 'subtotal'.tr,
+                  value: controller.totalAmount,
+                  isBold: false),
               if (showTax) ...[
-                SizedBox(height: 5.h),
-                _buildTotalRow(context, label: 'tax'.tr, value: controller.totalTaxAmount, isBold: false),
+                SizedBox(height: 1.h),
+                _buildTotalRow(context, label: 'tax'.tr,
+                    value: controller.totalTaxAmount,
+                    isBold: false),
               ],
-              SizedBox(height: 5.h),
+              SizedBox(height: 2.h),
               _buildDivider(context),
-              SizedBox(height: 12.h),
+              SizedBox(height: 2.h),
               _buildTotalRow(
                   context,
                   label: 'grand_total'.tr,
-                  value: showTax ? controller.grandTotal : controller.totalAmount,
+                  value: grandTotalValue,
                   isBold: true
               ),
-              SizedBox(height: 10.h),
+              SizedBox(height: 3.h),
               Row(
                 children: [
                   Expanded(
@@ -198,26 +287,43 @@ class CartSummary extends StatelessWidget {
                       isLoading: controller.isProcessing.value,
                       height: 48.h,
                       onPressed: () => _handlePlaceOrUpdateOrder(isDraft: true),
-                      color: colors.isDark ? Colors.orange.shade900 : Colors.orange.shade700,
+                      color: colors.isDark ? Colors.orange.shade900 : Colors
+                          .orange.shade700,
                       text: "Hold",
-                      icon: Icons.pause,
+                      // icon: Icons.pause,
                     ),
                   ),
-                  SizedBox(width: 8.w),
+                  SizedBox(width: 2.w),
                   Expanded(
                     flex: 2,
                     child: PrimaryButton(
                       isLoading: controller.isProcessing.value,
-                      onPressed: () => _handlePlaceOrUpdateOrder(isDraft: false),
-                      text: controller.isEditing ? "Update KOT" : 'place_order'.tr,
+                      onPressed: () =>
+                          _handlePlaceOrUpdateOrder(isDraft: false),
+                      text: controller.isEditing ? "Update KOT" : 'place_order'
+                          .tr,
                     ),
                   ),
                 ],
               ),
+              SizedBox(height: 2.h),
+              PrimaryButton(
+                isLoading: controller.isProcessing.value,
+                height: 48.h,
+                onPressed: _navigateToCashier,
+                color: colors.isDark ? Colors.redAccent.shade700 : Colors.redAccent.shade400,
+                text: "Receipt",
+              ),
               if (controller.isEditing && !controller.isProcessing.value)
                 TextButton(
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.all(3.w),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                   onPressed: controller.stopEditing,
-                  child: const Text("Cancel Edit", style: TextStyle(color: Colors.red)),
+                  child: const Text(
+                      "Cancel Edit", style: TextStyle(color: Colors.red)),
                 )
             ],
           ),

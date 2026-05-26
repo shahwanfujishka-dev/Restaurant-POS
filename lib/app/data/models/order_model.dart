@@ -54,9 +54,8 @@ class OrderModel {
   final int? areaId;
   final String? areaName;
   final int? priceGroupId;
-  final int sales_odr_order_type; // 0-dine in, 1-delivery, 2-pickup
-
-  final bool isUnsynced; // ✅ Track if this order is stored only locally
+  final int sales_odr_order_type;
+  bool isUnsynced; // ✅ Removed final to allow updating sync status in UI
 
   OrderModel({
     required this.id,
@@ -76,4 +75,43 @@ class OrderModel {
     this.sales_odr_order_type = 0,
     this.isUnsynced = false,
   }) : status = status.obs;
+
+  // ✅ Add copyWith method
+  OrderModel copyWith({
+    String? id,
+    String? invNo,
+    String? tableId,
+    String? tableName,
+    int? chairNumber,
+    int? sales_odr_pos_status,
+    List<OrderItem>? items,
+    OrderStatus? status,
+    DateTime? createdAt,
+    double? totalAmount,
+    double? totalTax,
+    int? areaId,
+    String? areaName,
+    int? priceGroupId,
+    int? sales_odr_order_type,
+    bool? isUnsynced,
+  }) {
+    return OrderModel(
+      id: id ?? this.id,
+      invNo: invNo ?? this.invNo,
+      tableId: tableId ?? this.tableId,
+      tableName: tableName ?? this.tableName,
+      chairNumber: chairNumber ?? this.chairNumber,
+      sales_odr_pos_status: sales_odr_pos_status ?? this.sales_odr_pos_status,
+      items: items ?? this.items,
+      status: status ?? this.status.value,
+      createdAt: createdAt ?? this.createdAt,
+      totalAmount: totalAmount ?? this.totalAmount,
+      totalTax: totalTax ?? this.totalTax,
+      areaId: areaId ?? this.areaId,
+      areaName: areaName ?? this.areaName,
+      priceGroupId: priceGroupId ?? this.priceGroupId,
+      sales_odr_order_type: sales_odr_order_type ?? this.sales_odr_order_type,
+      isUnsynced: isUnsynced ?? this.isUnsynced,
+    );
+  }
 }

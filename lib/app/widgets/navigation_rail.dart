@@ -8,19 +8,28 @@ class PosSidebar extends StatelessWidget {
   final int selectedIndex;
   final Function(int) onItemSelected;
   final VoidCallback onLogout;
+  final bool showTables;
 
   const PosSidebar({
     super.key,
     required this.selectedIndex,
     required this.onItemSelected,
     required this.onLogout,
+    this.showTables = true,
   });
 
   static const double _itemHeight = 90;
 
+  int _getDisplayIndex() {
+    if (showTables || selectedIndex == 0) return selectedIndex;
+    return selectedIndex - 1;
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
+    final displayIndex = _getDisplayIndex();
+
     return Container(
       width: 30.w,
       decoration: BoxDecoration(
@@ -42,7 +51,7 @@ class PosSidebar extends StatelessWidget {
           AnimatedPositioned(
             duration: const Duration(milliseconds: 350),
             curve: Curves.easeInOutCubic,
-            top: 5.h + (selectedIndex * _itemHeight),
+            top: 5.h + (displayIndex * _itemHeight),
             left: 1.w,
             right: 1.w,
             height: 75.h,
@@ -63,7 +72,7 @@ class PosSidebar extends StatelessWidget {
           Column(
             children: [
               _navItem(context, Icons.dashboard, "dashboard".tr, 0),
-              _navItem(context, Icons.table_restaurant, "tables".tr, 1),
+              if (showTables) _navItem(context, Icons.table_restaurant, "tables".tr, 1),
               _navItem(context, Icons.receipt, "orders".tr, 2),
               _navItem(context, Icons.print, "printers".tr, 3),
               _navItem(context, Icons.settings_outlined, "settings".tr, 4),

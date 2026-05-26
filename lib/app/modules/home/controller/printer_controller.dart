@@ -15,6 +15,7 @@ import 'package:intl/intl.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import 'package:restaurant_pos/helper/snackbar_helper.dart';
 import '../../../data/models/order_model.dart';
 import '../../../data/services/database_helper.dart';
 import '../views/dashoard/models/dashboard_models.dart';
@@ -74,6 +75,7 @@ class PrinterController extends GetxController {
   var currentWifiName = "".obs;
   var selectedBluetoothPrinter = Rxn<PrinterModel>();
   var selectedWifiPrinter = Rxn<PrinterModel>();
+  var isCheckingConnection = false.obs;
 
   // Permission state
   var isBluetoothPermissionGranted = true.obs;
@@ -215,10 +217,51 @@ class PrinterController extends GetxController {
     }
   }
 
+  Future<bool> checkPrinterConnection(PrinterModel printer) async {
+    isCheckingConnection.value = true;
+    bool isConnected = false;
+    try {
+      if (printer.type == 'wifi') {
+        try {
+          final socket = await Socket.connect(printer.address, 9100,
+              timeout: const Duration(seconds: 3));
+          socket.destroy();
+          isConnected = true;
+        } catch (_) {
+          isConnected = false;
+        }
+      } else {
+        isConnected = await PrintBluetoothThermal.connect(
+            macPrinterAddress: printer.address);
+      }
+    } catch (e) {
+      debugPrint("Connection check error: $e");
+      isConnected = false;
+    } finally {
+      isCheckingConnection.value = false;
+    }
+    return isConnected;
+  }
+
   Future<void> updateTokenPrinter(
       int tokenPrinterId,
       PrinterModel printer,
       ) async {
+    
+    // Check connection first
+    bool isConnected = await checkPrinterConnection(printer);
+    
+    if (!isConnected) {
+      showSafeSnackbar(
+        "Connection Warning",
+        "Could not connect to ${printer.name}. The assignment will be saved, but printing may fail if it remains unreachable.",
+        // snackPosition: SnackPosition.BOTTOM,
+        // backgroundColor: Colors.orange,
+        // colorText: Colors.white,
+        // duration: const Duration(seconds: 4),
+      );
+    }
+
     var assignment = tokenPrinterAssignments.firstWhereOrNull(
           (a) => a.tokenPrinterId == tokenPrinterId,
     );
@@ -248,14 +291,16 @@ class PrinterController extends GetxController {
       }
     }
 
-    Get.snackbar(
-      "Saved",
-      "Token Printer $tokenPrinterId linked to ${printer.name}",
-      snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: Colors.green,
-      colorText: Colors.white,
-      duration: const Duration(seconds: 1),
-    );
+    if (isConnected) {
+      showSafeSnackbar(
+        "Saved",
+        "Token Printer $tokenPrinterId linked to ${printer.name} (Connected)",
+        // snackPosition: SnackPosition.BOTTOM,
+        // backgroundColor: Colors.green,
+        // colorText: Colors.white,
+        // duration: const Duration(seconds: 2),
+      );
+    }
   }
 
   Future<void> removeTokenPrinterAssignment(int tokenPrinterId) async {
@@ -274,6 +319,14 @@ class PrinterController extends GetxController {
     }
   }
 
+  Future<void> refreshPrinters() async {
+    bluetoothPrinters.clear();
+    wifiPrinters.clear();
+    await _initWifi();
+    await scanBluetoothPrinters();
+    await scanWifiPrinters();
+  }
+
   Future<void> scanBluetoothPrinters() async {
     if (scanningBluetooth.value) return;
 
@@ -289,11 +342,11 @@ class PrinterController extends GetxController {
     try {
       if (await FlutterBluePlus.adapterState.first !=
           BluetoothAdapterState.on) {
-        Get.snackbar(
+        showSafeSnackbar(
           "Bluetooth Off",
           "Please enable Bluetooth",
-          backgroundColor: Colors.orange,
-          colorText: Colors.white,
+          // backgroundColor: Colors.orange,
+          // colorText: Colors.white,
         );
         scanningBluetooth.value = false;
         return;
@@ -489,13 +542,13 @@ class PrinterController extends GetxController {
         PosColumn(text: "Order: ${order.invNo}", width: 6),
         PosColumn(text: DateFormat('dd/MM/yy HH:mm').format(order.createdAt), width: 6, styles: const PosStyles(align: PosAlign.right)),
       ]);
-      
+
       // ✅ Added Table and Chair count for Bluetooth Receipt
       bytes += generator.text(
         "Table: ${order.tableName}",
         styles: const PosStyles(align: PosAlign.center),
       );
-      
+
       bytes += generator.text("-" * 48);
 
       for (var item in order.items.where((i) => !i.isRemoved)) {
@@ -726,37 +779,32 @@ class PrinterController extends GetxController {
     await _distributeToPrinters(order, cancelledItems, status: "CANCELLED");
   }
 
-  /// ✅ Helper to resolve the correct Token Printer ID for an item
   int? _resolveTokenPrinterId(OrderItem item) {
-    if (!Get.isRegistered<DashboardController>()) return item.tokenPrinterId;
-    final dashboardController = Get.find<DashboardController>();
-
-    // 1. Try directly from OrderItem (might be populated from Cart)
-    if (item.tokenPrinterId != null && item.tokenPrinterId != 0) {
+    // 1. Direct from item
+    if (item.tokenPrinterId != null && item.tokenPrinterId! > 0) {
       return item.tokenPrinterId;
     }
 
-    // 2. Try from FoodItemModel (often populated from cat_token_printer in DB)
-    if (item.product.tokenPrinterId != null && item.product.tokenPrinterId != 0) {
+    // 2. From product model
+    if (item.product.tokenPrinterId != null && item.product.tokenPrinterId! > 0) {
       return item.product.tokenPrinterId;
     }
 
-    // 3. Fallback: Lookup in the full category list (allCategoriesForPrinters)
-    // This is important for items in categories not explicitly shown in POS view
-    final category = dashboardController.allCategoriesForPrinters.firstWhereOrNull(
-          (c) => c.id == item.product.categoryId,
-    );
-    if (category != null && category.tokenPrinterId != 0) {
-      return category.tokenPrinterId;
-    }
+    if (!Get.isRegistered<DashboardController>()) return null;
+    final dash = Get.find<DashboardController>();
 
-    // 4. Final Fallback: Check the standard categories list
-    final mainCategory = dashboardController.categories.firstWhereOrNull(
-          (c) => c.id == item.product.categoryId,
+    // 3. Exact category ID match
+    final cat = dash.allCategoriesForPrinters.firstWhereOrNull(
+          (c) => c.id.toString() == item.product.categoryId.toString(),
     );
-    return mainCategory?.tokenPrinterId;
+    if (cat != null && cat.tokenPrinterId != 0) return cat.tokenPrinterId;
+
+    // 4. Fallback: any assignment that has a printer set
+    //    (last resort — use first assigned printer)
+    final firstAssigned = tokenPrinterAssignments
+        .firstWhereOrNull((a) => a.printerAddress.value.isNotEmpty);
+    return firstAssigned?.tokenPrinterId;
   }
-
   Future<void> _distributeToPrinters(OrderModel order, List<OrderItem> items, {required String status}) async {
     debugPrint("📍 DISTRIBUTING TO PRINTERS - Status: $status, Items: ${items.length}");
 
@@ -923,21 +971,24 @@ class PrinterController extends GetxController {
       if (removedItems.isNotEmpty) {
         debugPrint("🔵 Printing ${removedItems.length} removed items");
         bytes += generator.text('=' * 48, styles: const PosStyles(bold: true));
+        
+        String sectionTitle = status == "CANCELLED" ? "ORDER CANCELLED" : "QUANTITY DECREASED / REMOVED";
+        
         bytes += generator.text(
-          "QUANTITY DECREASED / REMOVED",
+          sectionTitle,
           styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2),
         );
         bytes += generator.text('=' * 48, styles: const PosStyles(bold: true));
         bytes += generator.row([
           PosColumn(text: "Item", width: 8, styles: const PosStyles(bold: true)),
-          PosColumn(text: "Qty Removed", width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
+          PosColumn(text: status == "CANCELLED" ? "Qty" : "Qty Removed", width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
         ]);
         bytes += generator.text('-' * 48);
 
         for (var item in removedItems) {
           debugPrint("🔵 Printing removed: ${item.product.name} x${item.quantity}");
           bytes += generator.row([
-            PosColumn(text: "✗ ${item.product.name}", width: 8, styles: const PosStyles(bold: true)),
+            PosColumn(text: status == "CANCELLED" ? item.product.name : "${item.product.name}", width: 8, styles: const PosStyles(bold: true)),
             PosColumn(text: "${item.quantity} ${item.unit.unitDisplay}", width: 4,
                 styles: const PosStyles(align: PosAlign.right, bold: true)),
           ]);
@@ -955,14 +1006,17 @@ class PrinterController extends GetxController {
       if (newItems.isNotEmpty) {
         debugPrint("🔵 Printing ${newItems.length} new/updated items");
         bytes += generator.text('=' * 48, styles: const PosStyles(bold: true));
+        
+        String sectionTitle = status == "Modified" ? "QUANTITY INCREASED / NEW" : "ORDER ITEMS";
+        
         bytes += generator.text(
-          "QUANTITY INCREASED / NEW",
+          sectionTitle,
           styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2),
         );
         bytes += generator.text('=' * 48, styles: const PosStyles(bold: true));
         bytes += generator.row([
           PosColumn(text: "Item", width: 8, styles: const PosStyles(bold: true)),
-          PosColumn(text: "Qty Added", width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
+          PosColumn(text: status == "Modified" ? "Qty Added" : "Qty", width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
         ]);
         bytes += generator.text('-' * 48);
 
@@ -1049,6 +1103,9 @@ class PrinterController extends GetxController {
     if (status == "Modified") {
       printer.text("*** ORDER MODIFIED ***",
           styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
+    } else if (status == "CANCELLED") {
+      printer.text("*** ORDER CANCELLED ***",
+          styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
     } else {
       printer.text("*** NEW ORDER ***",
           styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
@@ -1080,18 +1137,19 @@ class PrinterController extends GetxController {
     // ─── QUANTITY DECREASES / REMOVED SECTION ───
     if (removedItems.isNotEmpty) {
       printer.hr();
-      printer.text("QUANTITY DECREASED / REMOVED",
+      String sectionTitle = status == "CANCELLED" ? "CANCELLED ITEMS" : "QUANTITY DECREASED / REMOVED";
+      printer.text(sectionTitle,
           styles: const PosStyles(align: PosAlign.center, bold: true));
       printer.hr();
       printer.row([
         PosColumn(text: "Item", width: 8, styles: const PosStyles(bold: true)),
-        PosColumn(text: "Qty Removed", width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
+        PosColumn(text: status == "CANCELLED" ? "Qty" : "Qty Removed", width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
       ]);
       printer.text('-' * 42);
 
       for (var item in removedItems) {
         printer.row([
-          PosColumn(text: "✗ ${item.product.name}", width: 8, styles: const PosStyles(bold: true)),
+          PosColumn(text: status == "CANCELLED" ? item.product.name : "${item.product.name}", width: 8, styles: const PosStyles(bold: true)),
           PosColumn(text: "${item.quantity} ${item.unit.unitDisplay}", width: 4,
               styles: const PosStyles(align: PosAlign.right, bold: true)),
         ]);
@@ -1108,12 +1166,13 @@ class PrinterController extends GetxController {
     // ─── QUANTITY INCREASES / NEW SECTION ───
     if (newItems.isNotEmpty) {
       printer.hr();
-      printer.text("QUANTITY INCREASED / NEW",
+      String sectionTitle = status == "Modified" ? "QUANTITY INCREASED / NEW" : "ORDER ITEMS";
+      printer.text(sectionTitle,
           styles: const PosStyles(align: PosAlign.center, bold: true));
       printer.hr();
       printer.row([
         PosColumn(text: "Item", width: 8, styles: const PosStyles(bold: true)),
-        PosColumn(text: "Qty Added", width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
+        PosColumn(text: status == "Modified" ? "Qty Added" : "Qty", width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
       ]);
       printer.text('-' * 42);
 
@@ -1121,7 +1180,7 @@ class PrinterController extends GetxController {
         // Show if this is a partial increase
         String qtyDisplay = item.quantity.toString();
         printer.row([
-          PosColumn(text: "✓ ${item.product.name}", width: 8, styles: const PosStyles(bold: true)),
+          PosColumn(text: "${item.product.name}", width: 8, styles: const PosStyles(bold: true)),
           PosColumn(text: "$qtyDisplay ${item.unit.unitDisplay}", width: 4,
               styles: const PosStyles(align: PosAlign.right, bold: true)),
         ]);

@@ -12,7 +12,7 @@ import '../utils/AppState.dart';
 import 'api_services.dart';
 import 'database_helper.dart';
 
-class SyncService extends GetxService {
+class SyncService extends GetxService with WidgetsBindingObserver {
   final ApiService _apiService = Get.find<ApiService>();
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
 
@@ -25,13 +25,31 @@ class SyncService extends GetxService {
   @override
   void onInit() {
     super.onInit();
+    WidgetsBinding.instance.addObserver(this);
     _startPeriodicSync();
+  }
+
+  @override
+  void onClose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _syncTimer?.cancel();
+    super.onClose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (AppState.isBackgroundSyncEnabled) {
+        log("SyncService: App resumed, triggering sync...");
+        syncPendingOrders();
+      }
+    }
   }
 
   void _startPeriodicSync() {
     _syncTimer?.cancel();
-    // Check every 5 minutes if background sync is enabled
-    _syncTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
+    // Check every 1 minute if background sync is enabled for better responsiveness
+    _syncTimer = Timer.periodic(const Duration(minutes: 2), (timer) {
       if (AppState.isBackgroundSyncEnabled) {
         syncPendingOrders();
       }
@@ -41,12 +59,12 @@ class SyncService extends GetxService {
   /// Entry point to trigger a sync of all pending orders and payments
   Future<void> syncPendingOrders() async {
     if (isSyncing.value) return;
-    isSyncing.value = true;
 
     try {
       // 1. Sync Orders first
       final unsyncedOrders = await _dbHelper.getUnsyncedOrders();
       if (unsyncedOrders.isNotEmpty) {
+        isSyncing.value = true;
         log("SyncService: Found ${unsyncedOrders.length} unsynced orders.");
         for (var order in unsyncedOrders) {
           await _syncOrder(order);
@@ -56,6 +74,7 @@ class SyncService extends GetxService {
       // 2. Sync Payments
       final unsyncedPayments = await _dbHelper.getUnsyncedPayments();
       if (unsyncedPayments.isNotEmpty) {
+        isSyncing.value = true;
         log("SyncService: Found ${unsyncedPayments.length} unsynced payments.");
         for (var payment in unsyncedPayments) {
           await _syncPayment(payment);
@@ -117,6 +136,12 @@ class SyncService extends GetxService {
           "limit": 500,
           "sync_time": "",
         }),
+        _apiService.post('mobileapp/sales/get_branch_all_cash_account', data: {
+          "usr_id": userId,
+        }),
+        _apiService.post('mobileapp/sales/get_branch_bank_account', data: {
+          "usr_id": userId,
+        }),
       ]);
 
       masterSyncProgress.value = 0.1;
@@ -125,6 +150,8 @@ class SyncService extends GetxService {
       final tablesResponse   = apiResults[1];
       final favoritesResponse = apiResults[2];
       final vatResponse       = apiResults[3];
+      final cashAccResponse   = apiResults[4];
+      final bankAccResponse   = apiResults[5];
 
       // Save VAT type
       if (vatResponse.statusCode == 200) {
@@ -132,6 +159,18 @@ class SyncService extends GetxService {
         if (data != null && data['vat_type'] != null) {
           await _dbHelper.saveSetting('vat_type', data['vat_type'].toString());
         }
+      }
+
+      // Save Cash & Bank Accounts
+      if (cashAccResponse.statusCode == 200) {
+        final List<dynamic> data = cashAccResponse.data['data'] ?? [];
+        await _dbHelper.insertLedgers(data.cast<Map<String, dynamic>>(), 'cash');
+        log("SyncService: Cached ${data.length} cash accounts.");
+      }
+      if (bankAccResponse.statusCode == 200) {
+        final List<dynamic> data = bankAccResponse.data['data'] ?? [];
+        await _dbHelper.insertLedgers(data.cast<Map<String, dynamic>>(), 'bank');
+        log("SyncService: Cached ${data.length} bank accounts.");
       }
 
       // 3. Process Categories
@@ -166,11 +205,14 @@ class SyncService extends GetxService {
       if (favoritesResponse.statusCode == 200) {
         final List<dynamic> favData = favoritesResponse.data['data'] ?? [];
         for (var json in favData) {
-          favoritesData.add({
-            'id': json['fav_id'],
-            'name': json['fav_name'],
-            'image': json['fav_img_url'] ?? '',
-          });
+          final dynamic fId = json['fav_id'] ?? json['favp_id'] ?? json['id'];
+          if (fId != null) {
+            favoritesData.add({
+              'id': fId,
+              'name': json['fav_name'] ?? json['favp_name'] ?? json['name'] ?? '',
+              'image': json['fav_img_url'] ?? json['favp_img_url'] ?? json['image'] ?? '',
+            });
+          }
         }
       }
 
@@ -200,7 +242,7 @@ class SyncService extends GetxService {
       final posCategories = categoriesList.where((c) => c['cat_pos'] == "1").toList();
 
       // 7. Sync Products
-      await _syncProductsInParallel(priceGroupIds, posCategories);
+      await _syncProductsInParallel(priceGroupIds, posCategories, favoritesData);
 
       // 8. Process Stock Unit Rates (New)
       try {
@@ -247,9 +289,9 @@ class SyncService extends GetxService {
     }
   }
 
-  Future<void> _syncProductsInParallel(Set<int> priceGroupIds, List<Map<String, dynamic>> posCategories) async {
+  Future<void> _syncProductsInParallel(Set<int> priceGroupIds, List<Map<String, dynamic>> posCategories, List<Map<String, dynamic>> favorites) async {
     final pgList = priceGroupIds.toList();
-    int totalToSync = pgList.length * (1 + posCategories.length);
+    int totalToSync = pgList.length * (1 + posCategories.length + favorites.length);
     int syncedSoFar = 0;
 
     const pgChunkSize = 2;
@@ -261,6 +303,7 @@ class SyncService extends GetxService {
         syncedSoFar++;
         _updateMasterProgress(syncedSoFar, totalToSync);
 
+        // Categories
         const catChunkSize = 5;
         for (int j = 0; j < posCategories.length; j += catChunkSize) {
           final catChunk = posCategories.sublist(j, (j + catChunkSize > posCategories.length) ? posCategories.length : j + catChunkSize);
@@ -270,6 +313,17 @@ class SyncService extends GetxService {
             syncedSoFar++;
             _updateMasterProgress(syncedSoFar, totalToSync);
           }));
+        }
+
+        // Favorites
+        for (var fav in favorites) {
+          final dynamic fId = fav['id'] ?? fav['fav_id'] ?? fav['favp_id'];
+          final int favId = fId is int ? fId : int.tryParse(fId.toString()) ?? 0;
+          if (favId > 0) {
+            await _fetchAndInsertProducts(pgId: pgId, favId: favId);
+          }
+          syncedSoFar++;
+          _updateMasterProgress(syncedSoFar, totalToSync);
         }
       }));
     }
@@ -285,6 +339,7 @@ class SyncService extends GetxService {
     required int pgId,
     String? catId,
     String? forceCatId,
+    int? favId,
   }) async {
     final requestData = <String, dynamic>{
       "usr_id":         int.tryParse(AppState.userId) ?? 0,
@@ -292,6 +347,7 @@ class SyncService extends GetxService {
       "keyword":        "",
     };
     if (catId != null) requestData["category_id"] = int.tryParse(catId) ?? 0;
+    if (favId != null) requestData["fav_id"] = favId;
 
     try {
       final res = await _apiService.post(
@@ -306,6 +362,8 @@ class SyncService extends GetxService {
       final String baseUrl = res.data['url']?.toString() ?? "";
 
       final List<Map<String, dynamic>> products = [];
+      final List<String> favoriteProductIds = [];
+
       for (int i = 0; i < rawData.length; i++) {
         final json = rawData[i];
         final String prdId = (json['prd_id'] ?? '').toString();
@@ -328,9 +386,17 @@ class SyncService extends GetxService {
           'tax_per':        (json['tax_per']           as num? ?? 0.0).toDouble(),
           'sort_order':     i,
         });
+
+        if (favId != null) {
+          favoriteProductIds.add(prdId);
+        }
       }
 
       await _dbHelper.insertProducts(products);
+
+      if (favId != null && favoriteProductIds.isNotEmpty) {
+        await _dbHelper.insertFavoriteProducts(favId, pgId, favoriteProductIds);
+      }
     } catch (e) {
       log("SyncService: Failed to fetch products: $e");
     }
@@ -349,17 +415,13 @@ class SyncService extends GetxService {
       final Map<String, dynamic> payload = jsonDecode(payloadStr);
       final bool isEdit = payload['is_pos_edit'] == true;
 
-      // ── Validate edit payloads before sending ──────────────────────────
       if (isEdit) {
         final int sqInvNo = (payload['sq_inv_no'] as num? ?? 0).toInt();
         final List processingTable =
             (payload['res_table']?['processing_table'] as List?) ?? [];
 
         if (sqInvNo == 0 || processingTable.isEmpty) {
-          log("SyncService: ⚠️ Skipping edit $uuid — "
-              "sq_inv_no=$sqInvNo, processingTable=${processingTable.length}. "
-              "Cannot update without server identity.");
-          // Mark as synced so it stops retrying a permanently broken payload
+          log("SyncService: ⚠️ Skipping edit $uuid — invalid payload.");
           await _dbHelper.updateOrderStatusByUuid(uuid, order['status'], isSynced: 1);
           return;
         }
@@ -371,10 +433,6 @@ class SyncService extends GetxService {
 
       log("SyncService: Syncing $uuid via $endpoint "
           "(isEdit: $isEdit, sq_inv_no: ${payload['sq_inv_no']})");
-      log("SyncService: Payload preview → "
-          "items: ${(payload['sale_items'] as List?)?.length}, "
-          "total: ${payload['sq_total']}, "
-          "table: ${payload['res_table']?['rt_id']}");
 
       final response = await _apiService.post(endpoint, data: payload);
 
@@ -382,27 +440,45 @@ class SyncService extends GetxService {
         dynamic data = response.data;
         if (data is String) data = jsonDecode(data);
 
-        // Check for application-level errors (status:0 in message)
+        // ✅ Log the raw response so you can always debug key paths
+        log("SyncService: RAW response → $data");
+
         if (data is Map && data['message'] is Map) {
           final msg = data['message'] as Map;
           if (msg['status'] == 0) {
             log("SyncService: ❌ Server rejected $uuid: ${msg['msg']}");
-            return; // Leave is_synced=0 to retry later
+            return;
           }
         }
 
-        if (data is Map && (data['status'] == 200 || data['id'] != null)) {
-          final String serverId = data['id']?.toString() ?? "";
-          final String? invNo = data['preview']?['sales_odr_inv_no']?.toString();
+        if (data is Map) {
+          // ✅ Server wraps everything under data['message']['preview']
+          final message = data['message'];
+          final preview = message is Map ? message['preview'] : null;
 
-          await _dbHelper.updateOrderStatusByUuid(
-            uuid,
-            order['status'],
-            isSynced: 1,
-            serverId: serverId.isNotEmpty ? serverId : null,
-            invNo: invNo,
-          );
-          log("SyncService: ✅ Synced $uuid → serverId: $serverId, invNo: $invNo");
+          final String serverId =
+              preview?['sq_id']?.toString() ??
+                  preview?['sales_odr_id']?.toString() ??
+                  data['id']?.toString() ?? '';
+
+          final String? invNo =
+              preview?['sq_inv_no']?.toString() ??
+                  preview?['sales_odr_inv_no']?.toString() ??
+                  data['inv_no']?.toString();
+
+          if (serverId.isNotEmpty && serverId != '0') {
+            await _dbHelper.updateOrderStatusByUuid(
+              uuid,
+              order['status'],
+              isSynced: 1,
+              serverId: serverId,
+              invNo: invNo,
+            );
+            log("SyncService: ✅ Synced $uuid → serverId: $serverId, invNo: $invNo");
+          } else {
+            log("SyncService: ⚠️ Server returned 200 but no serverId for $uuid — will retry");
+            log("SyncService: Response keys were: ${data.keys.toList()}");
+          }
         }
       }
     } catch (e) {
@@ -410,41 +486,57 @@ class SyncService extends GetxService {
     }
   }
 
+// lib/app/data/services/sync_service.dart
+
   Future<void> _syncPayment(Map<String, dynamic> payment) async {
     final String orderUuid = payment['order_uuid'];
     final int localPaymentId = payment['id'];
 
     try {
       final db = await _dbHelper.database;
-      final List<Map<String, dynamic>> orders = await db.query('orders', where: 'uuid = ? OR server_id = ?', whereArgs: [orderUuid, orderUuid]);
+      final List<Map<String, dynamic>> orders = await db.query('orders',
+          where: 'uuid = ? OR server_id = ?',
+          whereArgs: [orderUuid, orderUuid]);
 
       if (orders.isEmpty) return;
 
       final order = orders.first;
       final String? serverId = order['server_id'];
-      final String? invNo = order['inv_no'] ?? order['uuid'];
+      final String? invNo = order['inv_no'];
 
-      if (serverId == null || serverId.isEmpty) return;
+      // Wait for the order itself to sync if it hasn't yet
+      if (serverId == null || serverId.isEmpty || serverId.startsWith('ORD-')) {
+        log("SyncService: Order $orderUuid not yet synced, skipping payment.");
+        return;
+      }
+
+      final Map<String, int> payTypeMap = {
+        'cash': 2, 'card': 5, 'bank': 3, 'credit': 1, 'multiple': 4, 'compliment': 2,
+      };
 
       final body = {
         "usr_id": _payloadUserId(order),
         "sales_odr_id": int.tryParse(serverId),
+        // ✅ use sq_inv_no to match what server returns
         "sales_odr_inv_no": int.tryParse(invNo ?? "0"),
-        "payment_method": payment['method'],
+        "sale_pay_type": payTypeMap[payment['method'].toString().toLowerCase()] ?? 2,
         "amount_paid": payment['amount'],
         "received_amount": payment['amount'],
         "change_given": 0,
         "settle_date": payment['created_at'].split('T')[0],
+        "sale_acc_ledger_id_cash": payment['cash_ledger_id'],
+        "sale_acc_ledger_id_bank": payment['bank_ledger_id'],
+        "sq_disc": payment['discount_amount'] ?? 0,
       };
 
       final response = await _apiService.post("mobileapp/pos/settle_sales_order", data: body);
 
       if (response.statusCode == 200) {
         await _dbHelper.updatePaymentSyncStatus(localPaymentId, 1);
-        log("SyncService: Successfully synced payment for order $serverId");
+        log("SyncService: ✅ Synced payment for order $serverId");
       }
     } catch (e) {
-      log("SyncService: Failed to sync payment for $orderUuid: $e");
+      log("SyncService: ❌ Payment sync failed: $e");
     }
   }
 
@@ -456,11 +548,5 @@ class SyncService extends GetxService {
       }
     } catch (_) {}
     return 0;
-  }
-
-  @override
-  void onClose() {
-    _syncTimer?.cancel();
-    super.onClose();
   }
 }

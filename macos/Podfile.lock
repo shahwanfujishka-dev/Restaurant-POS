@@ -1,0 +1,55 @@
+PODS:
+  - device_info_plus (0.0.1):
+    - FlutterMacOS
+  - flutter_blue_plus_darwin (0.0.2):
+    - Flutter
+    - FlutterMacOS
+  - FlutterMacOS (1.0.0)
+  - mobile_scanner (7.0.0):
+    - Flutter
+    - FlutterMacOS
+  - network_info_plus (0.0.1):
+    - FlutterMacOS
+  - print_bluetooth_thermal (0.0.1):
+    - FlutterMacOS
+  - sqflite_darwin (0.0.4):
+    - Flutter
+    - FlutterMacOS
+
+DEPENDENCIES:
+  - device_info_plus (from `Flutter/ephemeral/.symlinks/plugins/device_info_plus/macos`)
+  - flutter_blue_plus_darwin (from `Flutter/ephemeral/.symlinks/plugins/flutter_blue_plus_darwin/darwin`)
+  - FlutterMacOS (from `Flutter/ephemeral`)
+  - mobile_scanner (from `Flutter/ephemeral/.symlinks/plugins/mobile_scanner/darwin`)
+  - network_info_plus (from `Flutter/ephemeral/.symlinks/plugins/network_info_plus/macos`)
+  - print_bluetooth_thermal (from `Flutter/ephemeral/.symlinks/plugins/print_bluetooth_thermal/macos`)
+  - sqflite_darwin (from `Flutter/ephemeral/.symlinks/plugins/sqflite_darwin/darwin`)
+
+EXTERNAL SOURCES:
+  device_info_plus:
+    :path: Flutter/ephemeral/.symlinks/plugins/device_info_plus/macos
+  flutter_blue_plus_darwin:
+    :path: Flutter/ephemeral/.symlinks/plugins/flutter_blue_plus_darwin/darwin
+  FlutterMacOS:
+    :path: Flutter/ephemeral
+  mobile_scanner:
+    :path: Flutter/ephemeral/.symlinks/plugins/mobile_scanner/darwin
+  network_info_plus:
+    :path: Flutter/ephemeral/.symlinks/plugins/network_info_plus/macos
+  print_bluetooth_thermal:
+    :path: Flutter/ephemeral/.symlinks/plugins/print_bluetooth_thermal/macos
+  sqflite_darwin:
+    :path: Flutter/ephemeral/.symlinks/plugins/sqflite_darwin/darwin
+
+SPEC CHECKSUMS:
+  device_info_plus: b0fafc687fb901e2af612763340f1b0d4352f8e5
+  flutter_blue_plus_darwin: 20a08bfeaa0f7804d524858d3d8744bcc1b6dbc3
+  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  mobile_scanner: 9157936403f5a0644ca3779a38ff8404c5434a93
+  network_info_plus: e4d4efcc88f6cabc6e19147ffc223c371d191ab6
+  print_bluetooth_thermal: 6b565def1b74eb2ce4359c594e579eb3ab303cb1
+  sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
+
+PODFILE CHECKSUM: 54d867c82ac51cbd61b565781b9fada492027009
+
+COCOAPODS: 1.16.2
