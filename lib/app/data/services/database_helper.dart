@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 12, // bumped to 12 for payments table columns
+      version: 13, // bumped to 13 for customers table
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -174,6 +174,19 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE payments ADD COLUMN bank_ledger_id INTEGER');
         await db.execute('ALTER TABLE payments ADD COLUMN discount_amount REAL');
       } catch (e) {}
+    }
+    if (oldVersion < 13) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS customers (
+          cust_id INTEGER PRIMARY KEY,
+          ledger_id INTEGER,
+          name TEXT,
+          mobile TEXT,
+          vat_no TEXT,
+          address TEXT,
+          email TEXT
+        )
+      ''');
     }
   }
 
@@ -400,6 +413,18 @@ class DatabaseHelper {
         updated_at TEXT
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE customers (
+        cust_id INTEGER PRIMARY KEY,
+        ledger_id INTEGER,
+        name TEXT,
+        mobile TEXT,
+        vat_no TEXT,
+        address TEXT,
+        email TEXT
+      )
+    ''');
   }
 
   // --- App Settings ---
@@ -436,6 +461,36 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getLedgers(String type) async {
     final db = await instance.database;
     return await db.query('ledgers', where: 'type = ?', whereArgs: [type]);
+  }
+
+  // --- Customers ---
+  Future<void> insertCustomers(List<Map<String, dynamic>> customers) async {
+    final db = await instance.database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (var customer in customers) {
+        batch.insert('customers', {
+          'cust_id': _toInt(customer['cust_id']),
+          'ledger_id': _toInt(customer['ledger_id']),
+          'name': customer['name'],
+          'mobile': customer['mobile'],
+          'vat_no': customer['vat_no'],
+          'address': customer['cust_home_addr'] ?? customer['dflt_delvry_addr'],
+          'email': customer['email'],
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getCustomers() async {
+    final db = await instance.database;
+    return await db.query('customers', orderBy: 'name ASC');
+  }
+
+  Future<List<Map<String, dynamic>>> searchCustomers(String query) async {
+    final db = await instance.database;
+    return await db.query('customers', where: 'name LIKE ? OR mobile LIKE ?', whereArgs: ['%$query%', '%$query%'], orderBy: 'name ASC');
   }
 
   // --- Payments ---
@@ -1068,6 +1123,7 @@ class DatabaseHelper {
       await txn.delete('units');
       await txn.delete('stock_unit_rates');
       await txn.delete('ledgers');
+      await txn.delete('customers');
     });
   }
 }

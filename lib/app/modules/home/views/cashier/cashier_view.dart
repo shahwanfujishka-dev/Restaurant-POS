@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
@@ -42,6 +43,7 @@ class CashierView extends GetView<CashierController> {
                 physics: const BouncingScrollPhysics(),
                 child: Column(
                   children: [
+                    _customerSection(colors),
                     _cashSection(colors),
                     _splitSection(colors),
                     const SizedBox(height: 100),
@@ -181,22 +183,26 @@ class CashierView extends GetView<CashierController> {
               }),
 
               // ── Summary Rows ──
-              _summaryRow("Subtotal", controller.subtotal.toStringAsFixed(2), colors),
-              SizedBox(height: 8.h),
-              _summaryRow("Tax", controller.tax.toStringAsFixed(2), colors),
-              SizedBox(height: 8.h),
-              _minimalDiscountInput(colors),
-              SizedBox(height: 8.h),
-              _minimalRoundOffInput(colors),
-              Padding(
-                padding: EdgeInsets.symmetric(vertical: 12.h),
-                child: Divider(height: 1, color: colors.border),
-              ),
-              Obx(() => _summaryRow(
-                "Grand Total",
-                controller.totalToPay.toStringAsFixed(2),
-                colors,
-                isTotal: true,
+              Obx(() => Column(
+                children: [
+                  _summaryRow("Subtotal", controller.subtotal.toStringAsFixed(2), colors),
+                  SizedBox(height: 8.h),
+                  _summaryRow("Tax", controller.tax.toStringAsFixed(2), colors),
+                  SizedBox(height: 8.h),
+                  _minimalDiscountInput(colors),
+                  SizedBox(height: 8.h),
+                  _minimalRoundOffInput(colors),
+                  Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12.h),
+                    child: Divider(height: 1, color: colors.border),
+                  ),
+                  _summaryRow(
+                    "Grand Total",
+                    controller.totalToPay.toStringAsFixed(2),
+                    colors,
+                    isTotal: true,
+                  ),
+                ],
               )),
             ],
           ),
@@ -281,11 +287,243 @@ class CashierView extends GetView<CashierController> {
   }
 
   // ─────────────────────────────────────────────
-  //  SUMMARY WIDGETS
+  //  CUSTOMER SECTION
   // ─────────────────────────────────────────────
 
-  Widget _summaryRow(String label, String value, dynamic colors,
-      {bool isTotal = false}) {
+  Widget _customerSection(dynamic colors) {
+    return Obx(() {
+      if (controller.paymentMethod.value != 'Credit') return const SizedBox.shrink();
+
+      return Container(
+        margin: EdgeInsets.only(bottom: 20.h),
+        decoration: BoxDecoration(
+          color: colors.card,
+          borderRadius: BorderRadius.circular(12.r),
+          border: Border.all(color: colors.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            // Header with toggle
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+              color: AppTheme.primaryGreen,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    "CUSTOMER",
+                    style: AppTypography.cardTitle.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Obx(() => CupertinoSwitch(
+                    value: controller.isCustomerSelectEnabled.value,
+                    onChanged: (val) => controller.isCustomerSelectEnabled.value = val,
+                    activeColor: Colors.white.withOpacity(0.3),
+                    trackColor: Colors.black26,
+                  )),
+                ],
+              ),
+            ),
+
+            Padding(
+              padding: EdgeInsets.all(16.w),
+              child: Column(
+                children: [
+                  Obx(() {
+                    if (controller.isCustomerSelectEnabled.value) {
+                      return _buildCustomerSelector(colors);
+                    } else {
+                      return _buildReadOnlyTextField(
+                        "Customer Name",
+                        controller.customerNameController,
+                        colors,
+                      );
+                    }
+                  }),
+                  SizedBox(height: 12.h),
+                  _buildCustomerInput(
+                    "Mobile",
+                    controller.customerMobileController,
+                    colors,
+                    keyboardType: TextInputType.phone,
+                  ),
+                  SizedBox(height: 12.h),
+                  _buildCustomerInput(
+                    "VAT",
+                    controller.customerVatController,
+                    colors,
+                  ),
+                  SizedBox(height: 12.h),
+                  _buildCustomerInput(
+                    "Address",
+                    controller.customerAddressController,
+                    colors,
+                    maxLines: 2,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  Widget _buildCustomerSelector(dynamic colors) {
+    return GestureDetector(
+      onTap: () => _showCustomerSearch(colors),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 12.h),
+        decoration: BoxDecoration(
+          color: colors.bg,
+          borderRadius: BorderRadius.circular(8.r),
+          border: Border.all(color: colors.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Obx(() => Text(
+                controller.selectedCustomer.value?['name'] ?? "Select Customer",
+                style: AppTypography.cardSubtitle.copyWith(
+                  color: controller.selectedCustomer.value != null ? colors.text : colors.subtext,
+                  fontWeight: FontWeight.w500,
+                ),
+           )),
+            ),
+            Icon(Icons.arrow_drop_down, color: colors.subtext),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCustomerSearch(dynamic colors) {
+    final searchController = TextEditingController();
+    final filteredCustomers = <Map<String, dynamic>>[].obs;
+    filteredCustomers.assignAll(controller.customers);
+
+    Get.bottomSheet(
+      Container(
+        height: Get.height * 0.7,
+        decoration: BoxDecoration(
+          color: colors.bg,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20.r)),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: EdgeInsets.all(16.w),
+              child: TextField(
+                controller: searchController,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: "Search customer by name or mobile...",
+                  prefixIcon: const Icon(Icons.search),
+                  filled: true,
+                  fillColor: colors.card,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12.r)),
+                ),
+                onChanged: (val) {
+                  if (val.isEmpty) {
+                    filteredCustomers.assignAll(controller.customers);
+                  } else {
+                    filteredCustomers.assignAll(
+                      controller.customers.where((c) =>
+                        (c['name']?.toString().toLowerCase().contains(val.toLowerCase()) ?? false) ||
+                        (c['mobile']?.toString().contains(val) ?? false)
+                      ).toList(),
+                    );
+                  }
+                },
+              ),
+            ),
+            Expanded(
+              child: Obx(() => ListView.separated(
+                itemCount: filteredCustomers.length,
+                separatorBuilder: (_, __) => Divider(height: 1, color: colors.border),
+                itemBuilder: (context, index) {
+                  final customer = filteredCustomers[index];
+                  return ListTile(
+                    title: Text(customer['name'] ?? "", style: AppTypography.cardSubtitle.copyWith(color: colors.text)),
+                    subtitle: Text(customer['mobile'] ?? "No Mobile", style: AppTypography.cardInfo.copyWith(color: colors.subtext)),
+                    onTap: () {
+                      controller.onCustomerSelected(customer);
+                      Get.back();
+                    },
+                  );
+                },
+              )),
+            ),
+          ],
+        ),
+      ),
+      isScrollControlled: true,
+    );
+  }
+
+  Widget _buildCustomerInput(
+      String label,
+      TextEditingController ctrl,
+      dynamic colors, {
+        TextInputType keyboardType = TextInputType.text,
+        int maxLines = 1,
+      }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: AppTypography.cardInfo.copyWith(color: colors.subtext),
+        ),
+        SizedBox(height: 4.h),
+        TextField(
+          controller: ctrl,
+          keyboardType: keyboardType,
+          maxLines: maxLines,
+          style: AppTypography.cardSubtitle.copyWith(color: colors.text),
+          decoration: InputDecoration(
+            contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+            filled: true,
+            fillColor: colors.bg,
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8.r),
+              borderSide: BorderSide(color: colors.border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8.r),
+              borderSide: BorderSide(color: AppTheme.primaryGreen),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReadOnlyTextField(String label, TextEditingController ctrl, dynamic colors) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: AppTypography.cardInfo.copyWith(color: colors.subtext)),
+        SizedBox(height: 4.h),
+        TextField(
+          controller: ctrl,
+          readOnly: true,
+          style: AppTypography.cardSubtitle.copyWith(color: colors.text, fontWeight: FontWeight.bold),
+          decoration: InputDecoration(
+            contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+            filled: true,
+            fillColor: colors.bg.withOpacity(0.5),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.r), borderSide: BorderSide(color: colors.border)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _summaryRow(String label, String value, dynamic colors, {bool isTotal = false}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -400,10 +638,6 @@ class CashierView extends GetView<CashierController> {
       ],
     );
   }
-
-  // ─────────────────────────────────────────────
-  //  DYNAMIC SECTIONS
-  // ─────────────────────────────────────────────
 
   Widget _cashSection(dynamic colors) {
     return Obx(() {

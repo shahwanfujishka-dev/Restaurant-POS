@@ -313,21 +313,29 @@ void _showOrderDetailsDialog(
                   ),
                   Row(
                     children: [
-                      (currentOrder.sales_odr_pos_status == 1 || currentOrder.status.value == OrderStatus.paid)
-                          ? IconButton(
-                              onPressed: () {
-                                final printerController =
-                                    Get.find<PrinterController>();
-                                if (currentOrder.status.value == OrderStatus.paid) {
-                                  printerController.printReceipt(currentOrder, currentOrder.totalAmount, 0);
-                                } else {
-                                  printerController.printKOT(currentOrder);
-                                }
-                              },
-                              icon: const Icon(Icons.print, color: Colors.blue),
-                              tooltip: 'print_order'.tr,
-                            )
-                          : const SizedBox.shrink(),
+                      if (currentOrder.sales_odr_pos_status == 1 || currentOrder.status.value == OrderStatus.paid)
+                        IconButton(
+                          onPressed: () {
+                            final printerController =
+                                Get.find<PrinterController>();
+                            if (currentOrder.status.value == OrderStatus.paid) {
+                              printerController.printReceipt(currentOrder, currentOrder.totalAmount, 0);
+                            } else {
+                              printerController.printKOT(currentOrder);
+                            }
+                          },
+                          icon: const Icon(Icons.print, color: Colors.blue),
+                          tooltip: 'print_kot'.tr,
+                        ),
+                      if (currentOrder.sales_odr_pos_status == 1 && currentOrder.status.value != OrderStatus.paid)
+                        IconButton(
+                          onPressed: () {
+                            final printerController = Get.find<PrinterController>();
+                            printerController.printReceipt(currentOrder, 0, 0, isBill: true);
+                          },
+                          icon: const Icon(Icons.receipt_long, color: Colors.orange),
+                          tooltip: 'Print Bill',
+                        ),
                       if (currentOrder.status.value != OrderStatus.paid)
                       IconButton(
                         onPressed: () {
@@ -1097,6 +1105,16 @@ class _OrderDetailsContent extends StatelessWidget {
                           }
                         },
                         icon: const Icon(Icons.print, color: Colors.blue),
+                        tooltip: 'print_kot'.tr,
+                      ),
+                    if (currentOrder.sales_odr_pos_status == 1 && currentOrder.status.value != OrderStatus.paid)
+                      IconButton(
+                        onPressed: () {
+                          final printerController = Get.find<PrinterController>();
+                          printerController.printReceipt(currentOrder, 0, 0, isBill: true);
+                        },
+                        icon: const Icon(Icons.receipt_long, color: Colors.orange),
+                        tooltip: 'Print Bill',
                       ),
                     if (currentOrder.status.value != OrderStatus.paid &&
                         currentOrder.status.value != OrderStatus.cancelled)

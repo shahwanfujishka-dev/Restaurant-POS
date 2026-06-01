@@ -27,6 +27,7 @@ class MobileCartSummary extends StatelessWidget {
   void _handlePlaceOrUpdateOrder({
     bool isDraft = false,
     int? payType,
+    int? cashLedgerId,
     double? cashAmt,
     double? cardAmt,
     bool isCompliment = false,
@@ -64,6 +65,7 @@ class MobileCartSummary extends StatelessWidget {
           : await controller.placeOrder(
               isDraft: isDraft,
               payType: payType,
+              cashLedgerId: cashLedgerId,
               cashAmt: cashAmt,
               cardAmt: cardAmt,
               isCompliment: isCompliment,

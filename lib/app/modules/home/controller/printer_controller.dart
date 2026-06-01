@@ -247,10 +247,10 @@ class PrinterController extends GetxController {
       int tokenPrinterId,
       PrinterModel printer,
       ) async {
-    
+
     // Check connection first
     bool isConnected = await checkPrinterConnection(printer);
-    
+
     if (!isConnected) {
       showSafeSnackbar(
         "Connection Warning",
@@ -489,8 +489,8 @@ class PrinterController extends GetxController {
   }
 
   // --- RECEIPT PRINTING LOGIC ---
-  Future<void> printReceipt(OrderModel order, double received, double change) async {
-    debugPrint("--- START RECEIPT PRINTING ---");
+  Future<void> printReceipt(OrderModel order, double received, double change, {bool isBill = false}) async {
+    debugPrint("--- START ${isBill ? 'BILL' : 'RECEIPT'} PRINTING ---");
     // For receipts, we usually print to the "Main" or "Cashier" printer.
     // Let's assume the first printer in assignments is the default.
     final assignment = tokenPrinterAssignments.isNotEmpty ? tokenPrinterAssignments.first : null;
@@ -504,26 +504,26 @@ class PrinterController extends GetxController {
 
     final profile = await CapabilityProfile.load();
     if (type == 'wifi') {
-      await _printWifiReceipt(address, order, received, change, profile);
+      await _printWifiReceipt(address, order, received, change, profile, isBill: isBill);
     } else {
       final printerInfo = PrinterModel(name: assignment!.printerName.value, address: address, type: 'bluetooth');
-      await _printBluetoothReceipt(printerInfo, order, received, change, profile);
+      await _printBluetoothReceipt(printerInfo, order, received, change, profile, isBill: isBill);
     }
   }
 
-  Future<void> _printWifiReceipt(String ip, OrderModel order, double received, double change, CapabilityProfile profile) async {
+  Future<void> _printWifiReceipt(String ip, OrderModel order, double received, double change, CapabilityProfile profile, {bool isBill = false}) async {
     try {
       final printer = NetworkPrinter(PaperSize.mm80, profile);
       final res = await printer.connect(ip, port: 9100);
       if (res == PosPrintResult.success) {
-        _generateReceiptTicket(printer, order, received, change);
+        _generateReceiptTicket(printer, order, received, change, isBill: isBill);
         await Future.delayed(const Duration(milliseconds: 500));
         printer.disconnect();
       }
     } catch (e) { debugPrint("WiFi Receipt Error: $e"); }
   }
 
-  Future<void> _printBluetoothReceipt(PrinterModel printer, OrderModel order, double received, double change, CapabilityProfile profile) async {
+  Future<void> _printBluetoothReceipt(PrinterModel printer, OrderModel order, double received, double change, CapabilityProfile profile, {bool isBill = false}) async {
     try {
       bool connected = await PrintBluetoothThermal.connectionStatus;
       if (!connected) {
@@ -535,7 +535,7 @@ class PrinterController extends GetxController {
 
       // Header
       bytes += generator.text("REST POS", styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
-      bytes += generator.text("Final Receipt", styles: const PosStyles(align: PosAlign.center));
+      bytes += generator.text(isBill ? "ORDER BILL" : "Final Receipt", styles: const PosStyles(align: PosAlign.center));
       bytes += generator.text("-" * 48);
 
       bytes += generator.row([
@@ -563,14 +563,17 @@ class PrinterController extends GetxController {
         PosColumn(text: "TOTAL", width: 6, styles: const PosStyles(bold: true)),
         PosColumn(text: order.totalAmount.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
       ]);
-      bytes += generator.row([
-        PosColumn(text: "Received", width: 6),
-        PosColumn(text: received.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
-      ]);
-      bytes += generator.row([
-        PosColumn(text: "Change", width: 6),
-        PosColumn(text: change.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
-      ]);
+
+      if (!isBill) {
+        bytes += generator.row([
+          PosColumn(text: "Received", width: 6),
+          PosColumn(text: received.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
+        ]);
+        bytes += generator.row([
+          PosColumn(text: "Change", width: 6),
+          PosColumn(text: change.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
+        ]);
+      }
 
       bytes += generator.text("-" * 48);
       bytes += generator.text("Thank You!", styles: const PosStyles(align: PosAlign.center));
@@ -581,10 +584,10 @@ class PrinterController extends GetxController {
     } catch (e) { debugPrint("BT Receipt Error: $e"); }
   }
 
-  void _generateReceiptTicket(NetworkPrinter printer, OrderModel order, double received, double change) {
+  void _generateReceiptTicket(NetworkPrinter printer, OrderModel order, double received, double change, {bool isBill = false}) {
     printer.text("REST POS", styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
     printer.hr();
-    printer.text("Invoice: ${order.invNo}", styles: const PosStyles(align: PosAlign.center));
+    printer.text(isBill ? "ORDER BILL" : "Invoice: ${order.invNo}", styles: const PosStyles(align: PosAlign.center));
     printer.text("Table: ${order.tableName} (Seats: ${order.chairNumber})", styles: const PosStyles(align: PosAlign.center));
     printer.hr();
     for (var item in order.items.where((i) => !i.isRemoved)) {
@@ -598,14 +601,18 @@ class PrinterController extends GetxController {
       PosColumn(text: "TOTAL", width: 6, styles: const PosStyles(bold: true)),
       PosColumn(text: order.totalAmount.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
     ]);
-    printer.row([
-      PosColumn(text: "Received", width: 6),
-      PosColumn(text: received.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
-    ]);
-    printer.row([
-      PosColumn(text: "Change", width: 6),
-      PosColumn(text: change.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
-    ]);
+
+    if (!isBill) {
+      printer.row([
+        PosColumn(text: "Received", width: 6),
+        PosColumn(text: received.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+      printer.row([
+        PosColumn(text: "Change", width: 6),
+        PosColumn(text: change.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+    }
+
     printer.hr();
     printer.text("Thank You!", styles: const PosStyles(align: PosAlign.center));
     printer.feed(3);
@@ -971,9 +978,9 @@ class PrinterController extends GetxController {
       if (removedItems.isNotEmpty) {
         debugPrint("🔵 Printing ${removedItems.length} removed items");
         bytes += generator.text('=' * 48, styles: const PosStyles(bold: true));
-        
+
         String sectionTitle = status == "CANCELLED" ? "ORDER CANCELLED" : "QUANTITY DECREASED / REMOVED";
-        
+
         bytes += generator.text(
           sectionTitle,
           styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2),
@@ -1006,9 +1013,9 @@ class PrinterController extends GetxController {
       if (newItems.isNotEmpty) {
         debugPrint("🔵 Printing ${newItems.length} new/updated items");
         bytes += generator.text('=' * 48, styles: const PosStyles(bold: true));
-        
+
         String sectionTitle = status == "Modified" ? "QUANTITY INCREASED / NEW" : "ORDER ITEMS";
-        
+
         bytes += generator.text(
           sectionTitle,
           styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2),

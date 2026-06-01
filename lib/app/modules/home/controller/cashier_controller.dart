@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:restaurant_pos/app/modules/home/controller/printer_controller.dart';
+import 'package:restaurant_pos/helper/snackbar_helper.dart';
 import '../../../data/models/order_model.dart';
 import '../../../data/services/api_services.dart';
 import '../../../data/services/database_helper.dart';
@@ -29,6 +30,18 @@ class CashierController extends GetxController {
     'Credit',
     'Multiple',
   ];
+
+  /// ─────────────────────────────────────────────
+  /// 🔹 Customer Handling
+  /// ─────────────────────────────────────────────
+  final isCustomerSelectEnabled = false.obs;
+  final customers = <Map<String, dynamic>>[].obs;
+  final selectedCustomer = Rxn<Map<String, dynamic>>();
+
+  final TextEditingController customerNameController = TextEditingController(text: "Cash Customer");
+  final TextEditingController customerMobileController = TextEditingController();
+  final TextEditingController customerAddressController = TextEditingController();
+  final TextEditingController customerVatController = TextEditingController();
 
   /// ─────────────────────────────────────────────
   /// 🔹 Accounts Handling
@@ -79,8 +92,16 @@ class CashierController extends GetxController {
   /// ─────────────────────────────────────────────
   final isProcessing = false.obs;
 
-  double get subtotal => order.totalAmount - order.totalTax;
-  double get tax => order.totalTax;
+  /// Helper to calculate the proportion of the total after discount is applied
+  double get discountedRatio {
+    if (order.totalAmount <= 0) return 1.0;
+    return (order.totalAmount - discountAmount.value) / order.totalAmount;
+  }
+
+  /// Subtotal and Tax decrease according to the discounting amount
+  double get subtotal => (order.totalAmount - order.totalTax) * discountedRatio;
+  double get tax => order.totalTax * discountedRatio;
+
   double get totalToPay => (order.totalAmount - discountAmount.value + roundOffAmount.value).clamp(0, double.infinity);
 
   double get changeAmount =>
@@ -109,28 +130,31 @@ class CashierController extends GetxController {
 
     // 2. Fetch fresh lists from API or Local
     fetchAccounts();
+    fetchCustomers();
+
+    // Listen for toggle changes
+    ever(isCustomerSelectEnabled, (bool enabled) {
+      if (!enabled) {
+        onCustomerSelected(null);
+      }
+    });
   }
 
   /// ─────────────────────────────────────────────
-  /// 🔹 Fetch Accounts
+  /// 🔹 Fetch Data
   /// ─────────────────────────────────────────────
   Future<void> fetchAccounts() async {
     try {
       isLoadingAccounts.value = true;
-
-      // Try fetching Cash Accounts from API
       try {
         final cashResponse = await _apiService.post('mobileapp/sales/get_branch_all_cash_account', data: {
           "usr_id": int.tryParse(AppState.userId) ?? 0,
         });
-
         if (cashResponse.statusCode == 200) {
           final List<dynamic> data = cashResponse.data['data'] ?? [];
           final list = data.map((e) => e as Map<String, dynamic>).toList();
           cashAccounts.assignAll(list);
-          // Save to local DB
           await _dbHelper.insertLedgers(list, 'cash');
-
           if (selectedCashLedgerId.value == 0) {
             final defaultLedger = cashResponse.data['defaultLedger'];
             if (defaultLedger != null) {
@@ -141,7 +165,6 @@ class CashierController extends GetxController {
           }
         }
       } catch (e) {
-        log("Error fetching cash accounts from API, loading from local: $e");
         final localCash = await _dbHelper.getLedgers('cash');
         cashAccounts.assignAll(localCash);
         if (selectedCashLedgerId.value == 0 && cashAccounts.isNotEmpty) {
@@ -149,25 +172,20 @@ class CashierController extends GetxController {
         }
       }
 
-      // Try fetching Bank Accounts from API
       try {
         final bankResponse = await _apiService.post('mobileapp/sales/get_branch_bank_account', data: {
           "usr_id": int.tryParse(AppState.userId) ?? 0,
         });
-
         if (bankResponse.statusCode == 200) {
           final List<dynamic> data = bankResponse.data['data'] ?? [];
           final list = data.map((e) => e as Map<String, dynamic>).toList();
           bankAccounts.assignAll(list);
-          // Save to local DB
           await _dbHelper.insertLedgers(list, 'bank');
-
           if (selectedBankLedgerId.value == 0 && bankAccounts.isNotEmpty) {
             selectedBankLedgerId.value = (bankAccounts[0]['ledger_id'] as num).toInt();
           }
         }
       } catch (e) {
-        log("Error fetching bank accounts from API, loading from local: $e");
         final localBank = await _dbHelper.getLedgers('bank');
         bankAccounts.assignAll(localBank);
         if (selectedBankLedgerId.value == 0 && bankAccounts.isNotEmpty) {
@@ -178,6 +196,43 @@ class CashierController extends GetxController {
       log("Critical Error in fetchAccounts: $e");
     } finally {
       isLoadingAccounts.value = false;
+    }
+  }
+
+  Future<void> fetchCustomers() async {
+    try {
+      final localCustomers = await _dbHelper.getCustomers();
+      customers.assignAll(localCustomers);
+
+      final response = await _apiService.post('mobileapp/customer/download', data: {
+        "part_no": 0,
+        "limit": 1000,
+        "sync_time": "",
+      });
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = response.data['data'] ?? [];
+        final list = data.map((e) => e as Map<String, dynamic>).toList();
+        await _dbHelper.insertCustomers(list);
+        customers.assignAll(list);
+      }
+    } catch (e) {
+      log("Error fetching customers: $e");
+    }
+  }
+
+  void onCustomerSelected(Map<String, dynamic>? customer) {
+    selectedCustomer.value = customer;
+    if (customer != null) {
+      customerNameController.text = customer['name'] ?? "";
+      customerMobileController.text = customer['mobile'] ?? "";
+      customerAddressController.text = customer['cust_home_addr'] ?? "";
+      customerVatController.text = customer['vat_no'] ?? "";
+    } else {
+      customerNameController.text = "Cash Customer";
+      customerMobileController.clear();
+      customerAddressController.clear();
+      customerVatController.clear();
     }
   }
 
@@ -193,12 +248,8 @@ class CashierController extends GetxController {
     multiBankAmount.value = double.tryParse(value) ?? 0.0;
   }
 
-  /// ─────────────────────────────────────────────
-  /// 🔹 Payment Method Change
-  /// ─────────────────────────────────────────────
   void setPaymentMethod(String method) {
     paymentMethod.value = method;
-
     if (method == 'Cash') {
       amountController.text = totalToPay.toStringAsFixed(2);
       receivedAmount.value = totalToPay;
@@ -225,33 +276,40 @@ class CashierController extends GetxController {
   }
 
   void updateDiscountAmount(String value) {
-    discountAmount.value = double.tryParse(value) ?? 0.0;
+    double val = double.tryParse(value) ?? 0.0;
 
-    // Recalculate received amount if in Cash mode
+    // Validation: Discount cannot exceed total amount
+    if (val > order.totalAmount) {
+      discountAmount.value = 0.0;
+      discountController.text = "0.00";
+      showSafeSnackbar(
+        "Invalid Discount",
+        "Discount amount cannot be greater than the total amount of ${order.totalAmount.toStringAsFixed(2)}",
+        // backgroundColor: Colors.red,
+        // colorText: Colors.white,
+        // snackPosition: SnackPosition.BOTTOM,
+      );
+    } else {
+      discountAmount.value = val;
+    }
+
     if (paymentMethod.value == 'Cash') {
       amountController.text = totalToPay.toStringAsFixed(2);
       receivedAmount.value = totalToPay;
+    } else if (paymentMethod.value == 'Card' || paymentMethod.value == 'Bank') {
+      bankAmountController.text = totalToPay.toStringAsFixed(2);
+      bankReceivedAmount.value = totalToPay;
     }
-
-    // Recalculate split amounts if Split is active
-    if (isSplit.value) {
-      _generateSplitAmounts(splitCount.value);
-    }
+    if (isSplit.value) _generateSplitAmounts(splitCount.value);
   }
 
   void updateRoundOffAmount(String value) {
     roundOffAmount.value = double.tryParse(value) ?? 0.0;
-
-    // Recalculate received amount if in Cash mode
     if (paymentMethod.value == 'Cash') {
       amountController.text = totalToPay.toStringAsFixed(2);
       receivedAmount.value = totalToPay;
     }
-
-    // Recalculate split amounts if Split is active
-    if (isSplit.value) {
-      _generateSplitAmounts(splitCount.value);
-    }
+    if (isSplit.value) _generateSplitAmounts(splitCount.value);
   }
 
   void updateSplitCount(String value) {
@@ -264,9 +322,7 @@ class CashierController extends GetxController {
     final total = totalToPay;
     double perPerson = total / count;
     splitAmounts.value = List.generate(count, (index) {
-      if (index == count - 1) {
-        return total - (perPerson * (count - 1));
-      }
+      if (index == count - 1) return total - (perPerson * (count - 1));
       return perPerson;
     });
   }
@@ -277,65 +333,44 @@ class CashierController extends GetxController {
 
   Future<void> settleOrder({bool isComp = false}) async {
     if (!isComp && paymentMethod.value == 'Cash' && receivedAmount.value < totalToPay) {
-      Get.snackbar("Invalid Amount", "Received amount is less than total.",
-          backgroundColor: Colors.red, colorText: Colors.white);
+      showSafeSnackbar("Invalid Amount", "Received amount is less than total.",
+          // backgroundColor: Colors.red, colorText: Colors.white
+      );
       return;
     }
 
     try {
       isProcessing.value = true;
-
-      // ── Resolve pay type id ──────────────────────────────────
       final Map<String, int> payTypeMap = {
-        'Cash': 2,
-        'Card': 5,
-        'Bank': 3,
-        'Credit': 1,
-        'Multiple': 4,
+        'Cash': 2, 'Card': 5, 'Bank': 3, 'Credit': 1, 'Multiple': 4,
       };
-
       final int payType = isComp ? 2 : (payTypeMap[paymentMethod.value] ?? 0);
 
-      // ── Resolve cash / card amounts ──────────────────────────
       double? cashAmt;
       double? cardAmt;
-
       if (isComp) {
-        cashAmt = 0;
-        cardAmt = 0;
+        cashAmt = 0; cardAmt = 0;
       } else if (paymentMethod.value == 'Cash') {
         cashAmt = totalToPay;
-      } else if (paymentMethod.value == 'Card') {
-        cardAmt = totalToPay;
-      } else if (paymentMethod.value == 'Bank') {
+      } else if (paymentMethod.value == 'Card' || paymentMethod.value == 'Bank') {
         cardAmt = totalToPay;
       } else if (paymentMethod.value == 'Multiple') {
         cashAmt = multiCashAmount.value;
         cardAmt = multiBankAmount.value;
       }
 
-      // ── Resolve ledger IDs ───────────────────────────────────
       int? cashLedgerId;
       int? bankLedgerId;
-
       if (isComp || paymentMethod.value == 'Cash' || paymentMethod.value == 'Multiple') {
-        cashLedgerId = selectedCashLedgerId.value != 0
-            ? selectedCashLedgerId.value
-            : (int.tryParse(AppState.cashLedgerId) ?? 0);
+        cashLedgerId = selectedCashLedgerId.value != 0 ? selectedCashLedgerId.value : (int.tryParse(AppState.cashLedgerId) ?? 0);
         if (cashLedgerId == 0) cashLedgerId = null;
       }
-
-      if (paymentMethod.value == 'Card' ||
-          paymentMethod.value == 'Bank' ||
-          paymentMethod.value == 'Multiple') {
-        bankLedgerId = selectedBankLedgerId.value != 0
-            ? selectedBankLedgerId.value
-            : (int.tryParse(AppState.bankLedgerId) ?? 0);
+      if (paymentMethod.value == 'Card' || paymentMethod.value == 'Bank' || paymentMethod.value == 'Multiple') {
+        bankLedgerId = selectedBankLedgerId.value != 0 ? selectedBankLedgerId.value : (int.tryParse(AppState.bankLedgerId) ?? 0);
         if (bankLedgerId == 0) bankLedgerId = null;
       }
 
       final cartController = Get.find<CartController>();
-
       final result = cartController.isEditing
           ? await cartController.updateOrder(
         isDraft: false,
@@ -347,6 +382,13 @@ class CashierController extends GetxController {
         isCompliment: isComp,
         discountAmount: discountAmount.value,
         roundOffAmount: roundOffAmount.value,
+        customerData: isCustomerSelectEnabled.value   // ← replaces customerId
+            ? selectedCustomer.value
+            : null,
+        customerName: customerNameController.text,
+        customerMobile: customerMobileController.text,
+        customerAddress: customerAddressController.text,
+        customerVat: customerVatController.text,
       )
           : await cartController.placeOrder(
         isDraft: false,
@@ -358,42 +400,66 @@ class CashierController extends GetxController {
         isCompliment: isComp,
         discountAmount: discountAmount.value,
         roundOffAmount: roundOffAmount.value,
+        customerData: isCustomerSelectEnabled.value   // ← replaces customerId
+            ? selectedCustomer.value
+            : null,
+        customerName: customerNameController.text,
+        customerMobile: customerMobileController.text,
+        customerAddress: customerAddressController.text,
+        customerVat: customerVatController.text,
       );
 
       if (result != null && result['no_change'] != true) {
         final bool isOffline = result['offline'] == true;
-
-        // This is the real ID from the server
-        final String? serverId = result['id']?.toString() ??
-            result['preview']?['sales_odr_id']?.toString();
 
         if (isOffline) {
           await _savePaymentLocally(isComp: isComp);
           return;
         }
 
-        // ✅ FIX DUPLICATE: Delete the local draft now that it's successfully on the server
-        // Use the local ID (order.id) to delete the record from SQLite
+        // ✅ Correct path matching actual response shape
+        final messageMap = result['message'] is Map ? result['message'] as Map : null;
+        final preview = messageMap?['preview'] is Map ? messageMap!['preview'] as Map : null;
+
+        final String? serverId =
+            preview?['sq_id']?.toString() ??
+                preview?['sales_odr_id']?.toString() ??
+                result['id']?.toString();
+
+        // ✅ The new local uuid injected by placeOrder
+        final String? newLocalUuid = result['_local_uuid']?.toString();
+
+        // ✅ Delete original pending order
         await _dbHelper.deleteOrder(order.id);
 
-        // Update the status using the NEW server ID to ensure it shows as PAID
-        if (serverId != null) {
+        // ✅ Delete the new local paid record placeOrder created
+        if (newLocalUuid != null && newLocalUuid.isNotEmpty) {
+          await _dbHelper.deleteOrder(newLocalUuid);
+        }
+
+        // ✅ Mark server record as paid
+        if (serverId != null && serverId.isNotEmpty) {
           await _dbHelper.updateOrderStatusByServerId(serverId, 'paid', isSynced: 1);
         }
 
-        // ✅ PRINT FIRST: Capture the data before clearing state
         _printReceipt();
-
-        // ✅ THEN CLEAR: stopEditing resets the cart/order
         cartController.stopEditing();
-
         Get.find<OrdersController>().fetchOrders();
         Get.back();
-        Get.snackbar("Success", isComp ? "Order complimented successfully." : "Order settled successfully.",
-            backgroundColor: Colors.green, colorText: Colors.white);
+        showSafeSnackbar(
+          "Success",
+          isComp ? "Order complimented successfully." : "Order settled successfully.",
+          // backgroundColor: Colors.green,
+          // colorText: Colors.white,
+        );
+      } else if (result != null && result['no_change'] == true) {
+        showSafeSnackbar("No Changes", "No changes detected in the order.",
+            // backgroundColor: Colors.orange, colorText: Colors.white
+        );
       } else {
-        Get.snackbar("Error", "Failed to process order.",
-            backgroundColor: Colors.red, colorText: Colors.white);
+        showSafeSnackbar("Error", "Failed to process order.",
+            // backgroundColor: Colors.red, colorText: Colors.white
+        );
       }
     } catch (e) {
       log("Settle Error: $e");
@@ -407,7 +473,6 @@ class CashierController extends GetxController {
     try {
       int cashId = selectedCashLedgerId.value != 0 ? selectedCashLedgerId.value : (int.tryParse(AppState.cashLedgerId) ?? 0);
       int bankId = selectedBankLedgerId.value != 0 ? selectedBankLedgerId.value : (int.tryParse(AppState.bankLedgerId) ?? 0);
-
       await _dbHelper.insertPayment({
         "order_uuid": order.id,
         "amount": isComp ? 0 : totalToPay,
@@ -418,40 +483,20 @@ class CashierController extends GetxController {
         "bank_ledger_id": bankId,
         "discount_amount": isComp ? order.totalAmount : discountAmount.value,
       });
-
-      final String status = 'paid';
-      await _dbHelper.updateOrderStatusByServerId(order.id, status, isSynced: 0);
-
-      // ✅ PRINT FIRST
+      await _dbHelper.updateOrderStatusByServerId(order.id, 'paid', isSynced: 0);
       _printReceipt();
-
-      final cartController = Get.find<CartController>();
-      cartController.stopEditing();
-
+      Get.find<CartController>().stopEditing();
       Get.find<OrdersController>().fetchOrders();
       Get.back();
-      Get.snackbar("Offline", "Payment saved locally. It will sync automatically.", backgroundColor: Colors.orange, colorText: Colors.white);
-    } catch (e) {
-      log("Local Settle Error: $e");
-    }
+      showSafeSnackbar("Offline", "Payment saved locally. It will sync automatically.",
+          // backgroundColor: Colors.orange, colorText: Colors.white
+      );
+    } catch (e) { log("Local Settle Error: $e"); }
   }
 
   void _printReceipt() {
     try {
-      // Find the PrinterController
-      final printerController = Get.find<PrinterController>();
-
-      // ✅ UNCOMMENTED: Calling the actual print function
-      printerController.printReceipt(
-          order,
-          receivedAmount.value,
-          changeAmount
-      );
-
-      log("Receipt command sent to printer controller.");
-    } catch (e) {
-      log("Receipt Print Error: $e");
-    }
+      Get.find<PrinterController>().printReceipt(order, receivedAmount.value, changeAmount);
+    } catch (e) { log("Receipt Print Error: $e"); }
   }
-
 }

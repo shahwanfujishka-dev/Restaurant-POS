@@ -443,28 +443,30 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         // ✅ Log the raw response so you can always debug key paths
         log("SyncService: RAW response → $data");
 
-        if (data is Map && data['message'] is Map) {
-          final msg = data['message'] as Map;
-          if (msg['status'] == 0) {
-            log("SyncService: ❌ Server rejected $uuid: ${msg['msg']}");
-            return;
+          if (data is Map && data['message'] is Map) {
+            final msg = data['message'] as Map;
+            if (msg['status'] == 0) {
+              log("SyncService: ❌ Server rejected $uuid: ${msg['msg']}");
+              return;
+            }
           }
-        }
 
         if (data is Map) {
-          // ✅ Server wraps everything under data['message']['preview']
+          // Server might wrap preview under 'message' (Map) or at top level
           final message = data['message'];
-          final preview = message is Map ? message['preview'] : null;
+          final preview = (message is Map ? message['preview'] : null) ?? data['preview'];
 
           final String serverId =
               preview?['sq_id']?.toString() ??
                   preview?['sales_odr_id']?.toString() ??
-                  data['id']?.toString() ?? '';
+                  data['id']?.toString() ??
+                  data['sales_odr_id']?.toString() ?? '';
 
           final String? invNo =
               preview?['sq_inv_no']?.toString() ??
                   preview?['sales_odr_inv_no']?.toString() ??
-                  data['inv_no']?.toString();
+                  data['inv_no']?.toString() ??
+                  data['sales_odr_inv_no']?.toString();
 
           if (serverId.isNotEmpty && serverId != '0') {
             await _dbHelper.updateOrderStatusByUuid(

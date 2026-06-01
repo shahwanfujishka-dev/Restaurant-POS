@@ -768,7 +768,6 @@ final bool isDeleted = (si['is_deleted'] ?? 0) == 1;
           ));
         }
 
-        // Update in both lists if found
         var activeIndex = orders.indexWhere((o) => o.invNo == order.invNo);
         if (activeIndex != -1) {
           orders[activeIndex] = OrderModel(

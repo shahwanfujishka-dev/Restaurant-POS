@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:developer';
-import 'dart:math' as math; // Fixed conflict with log()
+import 'dart:math' as math;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -10,7 +10,7 @@ import '../../../data/models/order_model.dart';
 import '../../../data/models/order_type.dart';
 import '../../../data/services/api_services.dart';
 import '../../../data/services/database_helper.dart';
-import '../../../data/services/sync_service.dart'; // Import SyncService
+import '../../../data/services/sync_service.dart';
 import '../../../data/utils/AppState.dart';
 import 'package:get_storage/get_storage.dart';
 
@@ -23,12 +23,12 @@ class CartItem {
   final int? subId;
   final int? addonprntId;
   final int? addonuntId;
-  final int? originalUnitId; // Store original unit ID from order
-  final double? originalBaseQty; // Store original unit's base_qty
+  final int? originalUnitId;
+  final double? originalBaseQty;
   final FoodItemModel product;
   ProductUnit unit;
   List<AddonModel> selectedAddons;
-  List<AddonModel>? originalAddons; // Track original addons from order
+  List<AddonModel>? originalAddons;
   final RxInt quantity;
   final int initialQty;
   final RxDouble priceAtAdd = 0.0.obs;
@@ -59,15 +59,11 @@ class CartItem {
     return ea?.price ?? addon.price;
   }
 
-  /// Returns the real freeQty per parent unit.
-  /// Cloned selectedAddon may have freeQty=0 if it was lost during cloning.
   int _resolvedFreeQty(AddonModel addon) {
     final ea = unit.existAddOns.firstWhereOrNull((e) => e.prdId == addon.prdId);
     return ea?.freeQty ?? addon.freeQty;
   }
 
-  /// Chargeable qty = total qty − (freeQty × parentQty), clamped to 0.
-  /// Uses catalog values from existAddOns so the UI matches the API payload.
   int _chargeableQty(AddonModel addon) {
     final int freeThreshold = _resolvedFreeQty(addon) * quantity.value;
     return (addon.quantity.value - freeThreshold).clamp(0, 99999);
@@ -79,7 +75,6 @@ class CartItem {
   });
 
   double get unitPrice => priceAtAdd.value;
-
   double get subtotal => (unitPrice * quantity.value) + totalAddonsPrice;
 
   double get unitPriceWithTax =>
@@ -644,6 +639,12 @@ class CartController extends GetxController {
     bool isCompliment = false,
     double discountAmount = 0,
     double roundOffAmount = 0,
+    int? customerId,
+    Map<String, dynamic>? customerData,
+    String? customerName,
+    String? customerMobile,
+    String? customerAddress,
+    String? customerVat,
   }) async {
     try {
       // ✅ VALIDATION: Table selection required for Dine In
@@ -876,22 +877,22 @@ class CartController extends GetxController {
 
       final body = {
         "usr_id": int.tryParse(AppState.userId) ?? 0,
-        "cust_type": "1",
-        "cust_id": null,
-        "cust_name": "Cash Customer",
+        "cust_type": customerData != null ? "0" : "1",
+        "cust_id": customerData,
+        "cust_name": customerData?['name'] ?? customerName ?? "Cash Customer",
         "saleqt_date": dateStr,
         "sale_items": saleItems,
         "sq_total": finalTotal,
         "advance_amount": 0,
         "sale_pay_type": payType ?? 0,
         "balance_amount": 0,
-        "sale_acc_ledger_id": cashLedgerId ?? 0,
+        // "sale_acc_ledger_id": cashLedgerId ?? 0,
         "sq_tax": totalTax,
         "inv_type": 2,
         "pos_odr_type": AppState.orderType.id,
-        "address": null,
-        "phone_no": null,
-        "vat_no": null,
+        "address": customerAddress,
+        "phone_no": customerMobile,
+        "vat_no": customerVat,
         "no_seats": selectedChairCount.value,
         "sale_agent": GetStorage().read('ledger_id'),
         "is_pos": true,
@@ -910,6 +911,8 @@ class CartController extends GetxController {
         "res_status": isDraft ? 0 : (isCompliment || (payType != null && payType != 0)) ? 3 : 1,
         "sq_inv_no": isEditing ? int.tryParse(editingOrderId.value) ?? 0 : 0,
         "sq_disc": finalDiscount,
+        "sale_acc_ledger_id": bankLedgerId ,
+          // ?? cashLedgerId ?? 0,
         "sale_acc_ledger_id_bank": bankLedgerId,
         "sale_acc_ledger_id_cash": cashLedgerId,
         "card_amnt": (payType == 3 || payType == 5) ? (cardAmt ?? finalTotal) : cardAmt,
@@ -930,14 +933,14 @@ class CartController extends GetxController {
           "uuid": orderUuid,
           "order_type_id": AppState.orderType.id,
           "table_id": int.tryParse(selectedTableId.value),
-          "customer_name": "Cash Customer",
+          "customer_name": customerData?['name'] ?? customerName ?? "Cash Customer",
           "total_amount": totalWithTax,
           "total_tax": totalTax,
           "status": isDraft ? 'draft' : 'pending',
           "is_synced": 0,
           "payload": jsonEncode(body),
           "created_at": now.toIso8601String(),
-          "inv_no": null, // explicitly null; filled after server sync
+          "inv_no": null,
         }, localItems);
         debugPrint("✅ Order saved locally: $orderUuid");
       } catch (dbError) {
@@ -965,6 +968,7 @@ class CartController extends GetxController {
             if (message is Map && message['status'] == 0) {
               if (Get.isDialogOpen == true) Get.back();
               Future.delayed(const Duration(milliseconds: 100), () {
+                print(message['msg']);
                 showSafeSnackbar(
                   "Error",
                   message['msg'] ?? "Seat not available",
@@ -976,10 +980,18 @@ class CartController extends GetxController {
           final prettyResponse = const JsonEncoder.withIndent('  ').convert(data);
           log("✅ SUCCESS RESPONSE (placeOrder):\n$prettyResponse");
 
+// Replace the existing serverId/invNo extraction:
+          final messageMap = data['message'] is Map ? data['message'] as Map : null;
+          final preview = messageMap?['preview'] is Map ? messageMap!['preview'] as Map : null;
+
           final String serverId =
-              data['id']?.toString() ??
-                  data['preview']?['sales_odr_id']?.toString() ?? "";
-          final String? invNo = data['preview']?['sales_odr_inv_no']?.toString();
+              preview?['sq_id']?.toString() ??
+                  preview?['sales_odr_id']?.toString() ??
+                  data['id']?.toString() ?? "";
+
+          final String? invNo =
+              preview?['sq_inv_no']?.toString() ??
+                  preview?['sales_odr_inv_no']?.toString();
           final String finalStatus = isDraft ? 'draft' : ((isCompliment || (payType != null && payType != 0)) ? 'paid' : 'pending');
 
           await _dbHelper.updateOrderStatusByUuid(
@@ -989,7 +1001,9 @@ class CartController extends GetxController {
             serverId: serverId,
             invNo: invNo, // Now captures real Invoice Number
           );
-
+          if (data is Map) {
+            (data as Map)['_local_uuid'] = orderUuid;
+          }
           _clearDashboardSearch();
           return data;
         }
@@ -1036,6 +1050,11 @@ class CartController extends GetxController {
     bool isCompliment = false,
     double discountAmount = 0,
     double roundOffAmount = 0,
+    Map<String, dynamic>? customerData,
+    String? customerName,
+    String? customerMobile,
+    String? customerAddress,
+    String? customerVat,
   }) async {
     try {
       // ✅ VALIDATION: Table selection required for Dine In
@@ -1723,22 +1742,21 @@ class CartController extends GetxController {
 
       final body = {
         "usr_id": int.tryParse(AppState.userId) ?? 0,
-        "cust_type": "1",
-        "cust_id": null,
-        "cust_name": "Cash Customer",
+        "cust_type": customerData != null ? "0" : "1",
+        "cust_id": customerData,   // ← pass full object
+        "cust_name": customerData?['name'] ?? customerName ?? "Cash Customer",
         "saleqt_date": dateStr,
         "sale_items": saleItems,
         "sq_total": finalTotal,
         "advance_amount": 0,
         "sale_pay_type": payType ?? 2,
         "balance_amount": 0,
-        "sale_acc_ledger_id": cashLedgerId ?? 0,
         "sq_tax": totalTax,
         "inv_type": 2,
         "pos_odr_type": AppState.orderType.id,
-        "address": "",
-        "phone_no": "",
-        "vat_no": "",
+        "address": customerAddress,
+        "phone_no": customerMobile,
+        "vat_no": customerVat,
         "no_seats": selectedChairCount.value,
         "sale_agent": GetStorage().read('ledger_id'),
         "is_pos": true,
@@ -1760,6 +1778,7 @@ class CartController extends GetxController {
         "res_status": isDraft ? 0 : (isCompliment || (payType != null && payType != 0)) ? 3 : 1,
         "sq_inv_no": int.tryParse(editingInvNo.value) ?? 0,
         "sq_disc": finalDiscount,
+        "sale_acc_ledger_id": bankLedgerId ?? cashLedgerId ?? 0,
         "sale_acc_ledger_id_bank": bankLedgerId,
         "sale_acc_ledger_id_cash": cashLedgerId,
         "card_amnt": (payType == 3 || payType == 5) ? (cardAmt ?? finalTotal) : cardAmt,
@@ -1825,6 +1844,7 @@ class CartController extends GetxController {
           if (data is Map && data['message'] != null) {
             final message = data['message'];
             if (message is Map && message['status'] == 0) {
+              print(message['msg']);
               showSafeSnackbar("Error", message['msg'] ?? "Update failed");
               return null;
             }
