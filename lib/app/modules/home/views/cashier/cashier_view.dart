@@ -1,7 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get.dart';
+import 'package:get/get.dart' hide ScreenType;
+import 'package:restaurant_pos/app/modules/home/views/cashier/widgets/cashier_widgets.dart';
+import 'package:restaurant_pos/helper/screen_type.dart';
 
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/app_typography.dart';
@@ -19,39 +21,55 @@ class CashierView extends GetView<CashierController> {
       appBar: AppBar(
         title: Text(
           "Settlement #${controller.order.invNo}",
-          style: AppTypography.appBarTitle.copyWith(color: colors.text, fontWeight: FontWeight.bold),
+          style: AppTypography.appBarTitle.copyWith(
+            color: colors.text,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         centerTitle: true,
         backgroundColor: colors.card,
         elevation: 0.5,
-        iconTheme: IconThemeData(color: colors.text, size: AppTypography.sizeText),
+        iconTheme: IconThemeData(
+          color: colors.text,
+          size: AppTypography.sizeText,
+        ),
       ),
-      body: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
-        child: Column(
-          children: [
-            /// ───────── HEADER (Payment Methods | Account Dropdowns + Summary) ─────────
-            _minimalHeader(colors),
+      body: SingleChildScrollView(
+        controller: controller.scrollController,
+        physics: const BouncingScrollPhysics(),
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
+          child: Column(
+            children: [
+              _minimalHeader(colors),
+              SizedBox(height: 10.h),
 
-            const SizedBox(height: 16),
-            Divider(height: 1, color: colors.border.withOpacity(0.5)),
-            const SizedBox(height: 16),
-
-            /// ───────── DYNAMIC INPUTS ─────────
-            Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Column(
-                  children: [
-                    _customerSection(colors),
-                    _cashSection(colors),
-                    _splitSection(colors),
-                    const SizedBox(height: 100),
-                  ],
-                ),
+              ScreenType.isMobile()?
+              /// Customer Section
+              CashierWidgets.customerSection(
+                controller.paymentMethod,
+                controller.isCustomerSelectEnabled,
+                controller.selectedCustomer,
+                controller.customerNameController,
+                controller.customerMobileController,
+                controller.customerAddressController,
+                controller.customerVatController,
+                controller.customers,
+                controller.onCustomerSelected,
+                colors,
+              ):SizedBox.shrink(),
+              const SizedBox(height: 10),
+              Divider(height: 1, color: colors.border.withOpacity(0.5)),
+              const SizedBox(height: 16),
+              Column(
+                children: [
+                  _cashSection(colors),
+                  _splitSection(colors),
+                  const SizedBox(height: 100),
+                ],
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
       floatingActionButton: _actionButtons(context),
@@ -78,10 +96,19 @@ class CashierView extends GetView<CashierController> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ...controller.paymentMethods
-                  .map((method) => _paymentMethodItem(method, colors))
-                  .toList(),
-              _splitToggle(colors),
+              ...controller.paymentMethods.map((method) =>
+                  CashierWidgets.paymentMethodItem(
+                    method,
+                    controller.paymentMethod,
+                    colors,
+                        () => controller.setPaymentMethod(method),
+                  ),
+              ),
+              CashierWidgets.splitToggle(
+                controller.isSplit,
+                colors,
+                    () => controller.toggleSplit(!controller.isSplit.value),
+              ),
             ],
           ),
         ),
@@ -94,7 +121,6 @@ class CashierView extends GetView<CashierController> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Account Dropdowns + Payment Fields (reactive) ──
               Obx(() {
                 final method = controller.paymentMethod.value;
                 final showCash = method == 'Cash' || method == 'Multiple';
@@ -104,10 +130,9 @@ class CashierView extends GetView<CashierController> {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Account Dropdowns
                     if (showDropdowns) ...[
                       if (showCash)
-                        _buildMinimalDropdown(
+                        CashierWidgets.minimalDropdown(
                           "Cash Account",
                           controller.cashAccounts,
                           controller.selectedCashLedgerId.value,
@@ -116,7 +141,7 @@ class CashierView extends GetView<CashierController> {
                         ),
                       if (showCash && showBank) SizedBox(height: 8.h),
                       if (showBank)
-                        _buildMinimalDropdown(
+                        CashierWidgets.minimalDropdown(
                           method == 'Multiple' ? "Bank Account" : "Select $method Account",
                           controller.bankAccounts,
                           controller.selectedBankLedgerId.value,
@@ -126,21 +151,8 @@ class CashierView extends GetView<CashierController> {
                       SizedBox(height: 10.h),
                     ],
 
-                    // ── Payment Fields directly below dropdowns ──
-                    if (method == 'Cash') ...[
-                      _inlineAmountField(
-                        "Cash Received",
-                        controller.amountController,
-                        controller.updateReceivedAmount,
-                        colors,
-                        highlightColor: AppTheme.primaryGreen,
-                        readOnly: true,
-                      ),
-                      SizedBox(height: 10.h),
-                    ],
-
                     if (method == 'Card' || method == 'Bank') ...[
-                      _inlineAmountField(
+                      CashierWidgets.inlineAmountField(
                         "$method Amount",
                         controller.bankAmountController,
                         controller.updateBankReceivedAmount,
@@ -152,7 +164,7 @@ class CashierView extends GetView<CashierController> {
                     ],
 
                     if (method == 'Multiple') ...[
-                      _inlineAmountField(
+                      CashierWidgets.inlineAmountField(
                         "Cash Amount",
                         controller.multiCashController,
                         controller.updateMultiCashAmount,
@@ -161,7 +173,7 @@ class CashierView extends GetView<CashierController> {
                         readOnly: false,
                       ),
                       SizedBox(height: 8.h),
-                      _inlineAmountField(
+                      CashierWidgets.inlineAmountField(
                         "Bank Amount",
                         controller.multiBankController,
                         controller.updateMultiBankAmount,
@@ -170,11 +182,15 @@ class CashierView extends GetView<CashierController> {
                         readOnly: false,
                       ),
                       SizedBox(height: 8.h),
-                      _multiTotalRow(colors),
+                      CashierWidgets.multiTotalRow(
+                        controller.multiCashAmount,
+                        controller.multiBankAmount,
+                        controller.totalToPay,
+                        colors,
+                      ),
                       SizedBox(height: 10.h),
                     ],
 
-                    // ── Divider before summary ──
                     if (showDropdowns || method != 'Credit')
                       Divider(height: 1, color: colors.border.withOpacity(0.5)),
                     SizedBox(height: 10.h),
@@ -182,21 +198,39 @@ class CashierView extends GetView<CashierController> {
                 );
               }),
 
-              // ── Summary Rows ──
+              /// Summary Rows
               Obx(() => Column(
                 children: [
-                  _summaryRow("Subtotal", controller.subtotal.toStringAsFixed(2), colors),
+                  CashierWidgets.summaryRow(
+                    "Subtotal",
+                    controller.subtotal.toStringAsFixed(2),
+                    colors,
+                  ),
                   SizedBox(height: 8.h),
-                  _summaryRow("Tax", controller.tax.toStringAsFixed(2), colors),
+                  CashierWidgets.summaryRow(
+                    "Tax",
+                    controller.tax.toStringAsFixed(2),
+                    colors,
+                  ),
                   SizedBox(height: 8.h),
-                  _minimalDiscountInput(colors),
+                  CashierWidgets.minimalDiscountInput(
+                    controller.discountController,
+                    controller.updateDiscountAmount,
+                    colors,
+                  ),
                   SizedBox(height: 8.h),
-                  _minimalRoundOffInput(colors),
+                  CashierWidgets.minimalRoundOffInput(
+                    controller.roundOffController,
+                    controller.updateRoundOffAmount,
+                    controller.incrementRoundOff,
+                    controller.decrementRoundOff,
+                    colors,
+                  ),
                   Padding(
                     padding: EdgeInsets.symmetric(vertical: 12.h),
                     child: Divider(height: 1, color: colors.border),
                   ),
-                  _summaryRow(
+                  CashierWidgets.summaryRow(
                     "Grand Total",
                     controller.totalToPay.toStringAsFixed(2),
                     colors,
@@ -204,440 +238,31 @@ class CashierView extends GetView<CashierController> {
                   ),
                 ],
               )),
+              !ScreenType.isMobile()?
+              CashierWidgets.customerSection(
+                controller.paymentMethod,
+                controller.isCustomerSelectEnabled,
+                controller.selectedCustomer,
+                controller.customerNameController,
+                controller.customerMobileController,
+                controller.customerAddressController,
+                controller.customerVatController,
+                controller.customers,
+                controller.onCustomerSelected,
+                colors,
+              )
+                  :SizedBox.shrink(),
             ],
           ),
         ),
+
       ],
     );
   }
 
   // ─────────────────────────────────────────────
-  //  PAYMENT METHOD ITEMS
+  //  CASH SECTION
   // ─────────────────────────────────────────────
-
-  Widget _paymentMethodItem(String method, dynamic colors) {
-    return Obx(() {
-      final isSelected = controller.paymentMethod.value == method;
-      return GestureDetector(
-        onTap: () => controller.setPaymentMethod(method),
-        child: Container(
-          width: double.infinity,
-          margin: EdgeInsets.only(bottom: 6.h),
-          padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? AppTheme.primaryGreen.withOpacity(0.1)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(6.r),
-            border: Border.all(
-              color: isSelected ? AppTheme.primaryGreen : colors.border,
-              width: 1,
-            ),
-          ),
-          child: Text(
-            method,
-            style: AppTypography.cardSubtitle.copyWith(
-              color: isSelected ? AppTheme.primaryGreen : colors.text,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-            ),
-          ),
-        ),
-      );
-    });
-  }
-
-  Widget _splitToggle(dynamic colors) {
-    return Obx(() => GestureDetector(
-      onTap: () => controller.toggleSplit(!controller.isSplit.value),
-      child: Container(
-        width: double.infinity,
-        margin: EdgeInsets.only(top: 8.h),
-        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
-        decoration: BoxDecoration(
-          color: controller.isSplit.value
-              ? Colors.orange.withOpacity(0.1)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(6.r),
-          border: Border.all(
-            color: controller.isSplit.value ? Colors.orange : colors.border,
-            width: 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.call_split,
-              size: 16.sp,
-              color: controller.isSplit.value ? Colors.orange : colors.text,
-            ),
-            SizedBox(width: 8.w),
-            Text(
-              "Split Amount",
-              style: AppTypography.cardSubtitle.copyWith(
-                color: controller.isSplit.value ? Colors.orange : colors.text,
-                fontWeight: controller.isSplit.value
-                    ? FontWeight.bold
-                    : FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ));
-  }
-
-  // ─────────────────────────────────────────────
-  //  CUSTOMER SECTION
-  // ─────────────────────────────────────────────
-
-  Widget _customerSection(dynamic colors) {
-    return Obx(() {
-      if (controller.paymentMethod.value != 'Credit') return const SizedBox.shrink();
-
-      return Container(
-        margin: EdgeInsets.only(bottom: 20.h),
-        decoration: BoxDecoration(
-          color: colors.card,
-          borderRadius: BorderRadius.circular(12.r),
-          border: Border.all(color: colors.border),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          children: [
-            // Header with toggle
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
-              color: AppTheme.primaryGreen,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    "CUSTOMER",
-                    style: AppTypography.cardTitle.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Obx(() => CupertinoSwitch(
-                    value: controller.isCustomerSelectEnabled.value,
-                    onChanged: (val) => controller.isCustomerSelectEnabled.value = val,
-                    activeColor: Colors.white.withOpacity(0.3),
-                    trackColor: Colors.black26,
-                  )),
-                ],
-              ),
-            ),
-
-            Padding(
-              padding: EdgeInsets.all(16.w),
-              child: Column(
-                children: [
-                  Obx(() {
-                    if (controller.isCustomerSelectEnabled.value) {
-                      return _buildCustomerSelector(colors);
-                    } else {
-                      return _buildReadOnlyTextField(
-                        "Customer Name",
-                        controller.customerNameController,
-                        colors,
-                      );
-                    }
-                  }),
-                  SizedBox(height: 12.h),
-                  _buildCustomerInput(
-                    "Mobile",
-                    controller.customerMobileController,
-                    colors,
-                    keyboardType: TextInputType.phone,
-                  ),
-                  SizedBox(height: 12.h),
-                  _buildCustomerInput(
-                    "VAT",
-                    controller.customerVatController,
-                    colors,
-                  ),
-                  SizedBox(height: 12.h),
-                  _buildCustomerInput(
-                    "Address",
-                    controller.customerAddressController,
-                    colors,
-                    maxLines: 2,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    });
-  }
-
-  Widget _buildCustomerSelector(dynamic colors) {
-    return GestureDetector(
-      onTap: () => _showCustomerSearch(colors),
-      child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 12.h),
-        decoration: BoxDecoration(
-          color: colors.bg,
-          borderRadius: BorderRadius.circular(8.r),
-          border: Border.all(color: colors.border),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Obx(() => Text(
-                controller.selectedCustomer.value?['name'] ?? "Select Customer",
-                style: AppTypography.cardSubtitle.copyWith(
-                  color: controller.selectedCustomer.value != null ? colors.text : colors.subtext,
-                  fontWeight: FontWeight.w500,
-                ),
-           )),
-            ),
-            Icon(Icons.arrow_drop_down, color: colors.subtext),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showCustomerSearch(dynamic colors) {
-    final searchController = TextEditingController();
-    final filteredCustomers = <Map<String, dynamic>>[].obs;
-    filteredCustomers.assignAll(controller.customers);
-
-    Get.bottomSheet(
-      Container(
-        height: Get.height * 0.7,
-        decoration: BoxDecoration(
-          color: colors.bg,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20.r)),
-        ),
-        child: Column(
-          children: [
-            Padding(
-              padding: EdgeInsets.all(16.w),
-              child: TextField(
-                controller: searchController,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: "Search customer by name or mobile...",
-                  prefixIcon: const Icon(Icons.search),
-                  filled: true,
-                  fillColor: colors.card,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12.r)),
-                ),
-                onChanged: (val) {
-                  if (val.isEmpty) {
-                    filteredCustomers.assignAll(controller.customers);
-                  } else {
-                    filteredCustomers.assignAll(
-                      controller.customers.where((c) =>
-                        (c['name']?.toString().toLowerCase().contains(val.toLowerCase()) ?? false) ||
-                        (c['mobile']?.toString().contains(val) ?? false)
-                      ).toList(),
-                    );
-                  }
-                },
-              ),
-            ),
-            Expanded(
-              child: Obx(() => ListView.separated(
-                itemCount: filteredCustomers.length,
-                separatorBuilder: (_, __) => Divider(height: 1, color: colors.border),
-                itemBuilder: (context, index) {
-                  final customer = filteredCustomers[index];
-                  return ListTile(
-                    title: Text(customer['name'] ?? "", style: AppTypography.cardSubtitle.copyWith(color: colors.text)),
-                    subtitle: Text(customer['mobile'] ?? "No Mobile", style: AppTypography.cardInfo.copyWith(color: colors.subtext)),
-                    onTap: () {
-                      controller.onCustomerSelected(customer);
-                      Get.back();
-                    },
-                  );
-                },
-              )),
-            ),
-          ],
-        ),
-      ),
-      isScrollControlled: true,
-    );
-  }
-
-  Widget _buildCustomerInput(
-      String label,
-      TextEditingController ctrl,
-      dynamic colors, {
-        TextInputType keyboardType = TextInputType.text,
-        int maxLines = 1,
-      }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: AppTypography.cardInfo.copyWith(color: colors.subtext),
-        ),
-        SizedBox(height: 4.h),
-        TextField(
-          controller: ctrl,
-          keyboardType: keyboardType,
-          maxLines: maxLines,
-          style: AppTypography.cardSubtitle.copyWith(color: colors.text),
-          decoration: InputDecoration(
-            contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-            filled: true,
-            fillColor: colors.bg,
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8.r),
-              borderSide: BorderSide(color: colors.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8.r),
-              borderSide: BorderSide(color: AppTheme.primaryGreen),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildReadOnlyTextField(String label, TextEditingController ctrl, dynamic colors) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: AppTypography.cardInfo.copyWith(color: colors.subtext)),
-        SizedBox(height: 4.h),
-        TextField(
-          controller: ctrl,
-          readOnly: true,
-          style: AppTypography.cardSubtitle.copyWith(color: colors.text, fontWeight: FontWeight.bold),
-          decoration: InputDecoration(
-            contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-            filled: true,
-            fillColor: colors.bg.withOpacity(0.5),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.r), borderSide: BorderSide(color: colors.border)),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _summaryRow(String label, String value, dynamic colors, {bool isTotal = false}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: isTotal
-              ? AppTypography.cardTitle.copyWith(color: colors.text)
-              : AppTypography.cardSubtitle.copyWith(color: colors.subtext),
-        ),
-        Text(
-          value,
-          style: isTotal
-              ? AppTypography.headline2.copyWith(
-            color: AppTheme.primaryGreen,
-            fontSize: AppTypography.sizeText,
-          )
-              : AppTypography.cardSubtitle.copyWith(
-            color: colors.text,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _minimalDiscountInput(dynamic colors) {
-    return Row(
-      children: [
-        Text(
-          "Discount",
-          style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
-        ),
-        SizedBox(width: 8.w),
-        Expanded(
-          child: SizedBox(
-            height: 32.h,
-            child: TextField(
-              controller: controller.discountController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              onChanged: controller.updateDiscountAmount,
-              textAlign: TextAlign.right,
-              style: AppTypography.cardSubtitle.copyWith(
-                color: colors.text,
-                fontWeight: FontWeight.bold,
-              ),
-              decoration: InputDecoration(
-                hintText: "0.00",
-                contentPadding: EdgeInsets.symmetric(horizontal: 8.w),
-                filled: true,
-                fillColor: colors.bg,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6.r),
-                  borderSide: BorderSide(color: colors.border),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6.r),
-                  borderSide: BorderSide(color: colors.border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6.r),
-                  borderSide: BorderSide(color: AppTheme.primaryGreen),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _minimalRoundOffInput(dynamic colors) {
-    return Row(
-      children: [
-        Text(
-          "Round Off",
-          style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
-        ),
-        SizedBox(width: 8.w),
-        Expanded(
-          child: SizedBox(
-            height: 32.h,
-            child: TextField(
-              controller: controller.roundOffController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-              onChanged: controller.updateRoundOffAmount,
-              textAlign: TextAlign.right,
-              style: AppTypography.cardSubtitle.copyWith(
-                color: colors.text,
-                fontWeight: FontWeight.bold,
-              ),
-              decoration: InputDecoration(
-                hintText: "0.00",
-                contentPadding: EdgeInsets.symmetric(horizontal: 8.w),
-                filled: true,
-                fillColor: colors.bg,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6.r),
-                  borderSide: BorderSide(color: colors.border),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6.r),
-                  borderSide: BorderSide(color: colors.border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6.r),
-                  borderSide: BorderSide(color: AppTheme.primaryGreen),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _cashSection(dynamic colors) {
     return Obx(() {
@@ -647,45 +272,22 @@ class CashierView extends GetView<CashierController> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _inputFieldRow(
+          CashierWidgets.inputFieldRow(
             "Cash Received",
             controller.amountController,
             controller.updateReceivedAmount,
             colors,
-          ),
-          SizedBox(height: 12.h),
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-            decoration: BoxDecoration(
-              color: Colors.orange.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8.r),
-              border: Border.all(color: Colors.orange.withOpacity(0.3)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  "Change",
-                  style: AppTypography.cardSubtitle.copyWith(
-                    color: Colors.orange.shade900,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Obx(() => Text(
-                  controller.changeAmount.toStringAsFixed(2),
-                  style: AppTypography.cardTitle.copyWith(
-                    color: Colors.orange.shade900,
-                    fontSize: AppTypography.sizeText,
-                  ),
-                )),
-              ],
-            ),
+            readOnly: true,
           ),
           SizedBox(height: 16.h),
         ],
       );
     });
   }
+
+  // ─────────────────────────────────────────────
+  //  SPLIT SECTION
+  // ─────────────────────────────────────────────
 
   Widget _splitSection(dynamic colors) {
     return Obx(() {
@@ -694,41 +296,36 @@ class CashierView extends GetView<CashierController> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _inputFieldRow(
+          CashierWidgets.inputFieldRow(
             "Split Count",
             controller.splitCountController,
             controller.updateSplitCount,
             colors,
             isNumber: true,
           ),
-          SizedBox(height: 12.h),
-          ...controller.splitAmounts.asMap().entries.map((entry) {
-            return Container(
-              margin: EdgeInsets.only(bottom: 8.h),
-              padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-              decoration: BoxDecoration(
-                color: colors.card,
-                borderRadius: BorderRadius.circular(8.r),
-                border: Border.all(color: colors.border.withOpacity(0.5)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    "Person ${entry.key + 1}",
-                    style: AppTypography.cardSubtitle.copyWith(color: colors.text),
-                  ),
-                  Text(
-                    entry.value.toStringAsFixed(2),
-                    style: AppTypography.cardTitle.copyWith(
-                      color: AppTheme.primaryGreen,
-                      fontSize: AppTypography.sizeText,
-                    ),
-                  ),
-                ],
-              ),
+          SizedBox(height: 16.h),
+          Text(
+            "Individual Amounts",
+            style: AppTypography.cardSubtitle.copyWith(
+              color: colors.subtext,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          SizedBox(height: 8.h),
+          ...controller.splitControllers.asMap().entries.map((entry) {
+            return CashierWidgets.splitAmountEditRow(
+              entry.key,
+              entry.value,
+              (val) => controller.updateSplitAmount(entry.key, val),
+              colors,
             );
           }),
+          SizedBox(height: 12.h),
+          CashierWidgets.splitSummaryRow(
+            controller.currentSplitTotal,
+            controller.splitDifference,
+            colors,
+          ),
         ],
       );
     });
@@ -758,7 +355,10 @@ class CashierView extends GetView<CashierController> {
                 icon: const Icon(Icons.card_giftcard),
                 label: Text(
                   "COMPLIMENT",
-                  style: AppTypography.button.copyWith(fontWeight: FontWeight.w900, fontSize: AppTypography.sizeCategory),
+                  style: AppTypography.button.copyWith(
+                    fontWeight: FontWeight.w900,
+                    fontSize: AppTypography.sizeCategory,
+                  ),
                 ),
               ),
             ),
@@ -796,239 +396,5 @@ class CashierView extends GetView<CashierController> {
         ],
       ),
     ));
-  }
-
-  // ─────────────────────────────────────────────
-  //  HELPERS
-  // ─────────────────────────────────────────────
-
-  Widget _inputFieldRow(
-      String label,
-      TextEditingController ctrl,
-      Function(String) onChg,
-      dynamic colors, {
-        bool isNumber = false,
-      }) {
-    return Row(
-      children: [
-        Expanded(
-          flex: 4,
-          child: Text(
-            label,
-            style: AppTypography.cardSubtitle.copyWith(
-              color: colors.text,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        Expanded(
-          flex: 6,
-          child: SizedBox(
-            height: 40.h,
-            child: TextField(
-              controller: ctrl,
-              keyboardType: TextInputType.numberWithOptions(decimal: !isNumber),
-              onChanged: onChg,
-              textAlign: TextAlign.right,
-              style: AppTypography.cardTitle.copyWith(color: colors.text),
-              decoration: InputDecoration(
-                contentPadding: EdgeInsets.symmetric(horizontal: 12.w),
-                filled: true,
-                fillColor: colors.card,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8.r),
-                  borderSide: BorderSide(color: colors.border),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8.r),
-                  borderSide: BorderSide(color: colors.border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8.r),
-                  borderSide: BorderSide(color: AppTheme.primaryGreen),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMinimalDropdown(
-      String label,
-      List<Map<String, dynamic>> items,
-      int selected,
-      ValueChanged<int?> onChg,
-      dynamic colors,
-      ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: AppTypography.cardSubtitle.copyWith(
-            color: colors.subtext,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        SizedBox(height: 6.h),
-        Container(
-          height: 44.h,
-          padding: EdgeInsets.symmetric(horizontal: 12.w),
-          decoration: BoxDecoration(
-            color: colors.card,
-            borderRadius: BorderRadius.circular(8.r),
-            border: Border.all(color: colors.border),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<int>(
-              isExpanded: true,
-              value: items.any((e) => (e['ledger_id'] as num).toInt() == selected)
-                  ? selected
-                  : null,
-              dropdownColor: colors.card,
-              icon: Icon(
-                Icons.expand_more,
-                size: AppTypography.sizeText,
-                color: colors.subtext,
-              ),
-              items: items
-                  .map((acc) => DropdownMenuItem<int>(
-                value: (acc['ledger_id'] as num).toInt(),
-                child: Text(
-                  acc['ledger_name'] ?? "",
-                  style: AppTypography.cardSubtitle.copyWith(
-                    color: colors.text,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ))
-                  .toList(),
-              onChanged: onChg,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Compact inline amount field used inside the header
-  Widget _inlineAmountField(
-      String label,
-      TextEditingController ctrl,
-      Function(String) onChg,
-      dynamic colors, {
-        required Color highlightColor,
-        required bool readOnly,
-      }) {
-    return Row(
-      children: [
-        Expanded(
-          flex: 4,
-          child: Text(
-            label,
-            style: AppTypography.cardSubtitle.copyWith(
-              color: readOnly ? colors.subtext : colors.text,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        Expanded(
-          flex: 6,
-          child: SizedBox(
-            height: 34.h,
-            child: TextField(
-              controller: ctrl,
-              readOnly: readOnly,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              onChanged: readOnly ? null : onChg,
-              textAlign: TextAlign.right,
-              style: AppTypography.cardSubtitle.copyWith(
-                color: readOnly ? colors.subtext : highlightColor,
-                fontWeight: FontWeight.bold,
-              ),
-              decoration: InputDecoration(
-                hintText: "0.00",
-                contentPadding: EdgeInsets.symmetric(horizontal: 8.w),
-                filled: true,
-                fillColor: readOnly
-                    ? colors.card
-                    : highlightColor.withOpacity(0.06),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6.r),
-                  borderSide: BorderSide(
-                    color: readOnly
-                        ? colors.border
-                        : highlightColor.withOpacity(0.4),
-                  ),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6.r),
-                  borderSide: BorderSide(
-                    color: readOnly
-                        ? colors.border
-                        : highlightColor.withOpacity(0.4),
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6.r),
-                  borderSide: BorderSide(
-                    color: readOnly ? colors.border : highlightColor,
-                    width: readOnly ? 1 : 1.5,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Running total summary row for Multiple mode
-  Widget _multiTotalRow(dynamic colors) {
-    return Obx(() {
-      final entered = controller.multiCashAmount.value + controller.multiBankAmount.value;
-      final total = controller.totalToPay;
-      final remaining = total - entered;
-      final isValid = remaining <= 0;
-
-      return Container(
-        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
-        decoration: BoxDecoration(
-          color: isValid
-              ? AppTheme.primaryGreen.withOpacity(0.08)
-              : Colors.orange.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(6.r),
-          border: Border.all(
-            color: isValid
-                ? AppTheme.primaryGreen.withOpacity(0.4)
-                : Colors.orange.withOpacity(0.4),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              isValid ? "Change" : "Remaining",
-              style: AppTypography.cardSubtitle.copyWith(
-                color: isValid ? AppTheme.primaryGreen : Colors.orange.shade800,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Text(
-              isValid
-                  ? (entered - total).toStringAsFixed(2)
-                  : remaining.toStringAsFixed(2),
-              style: AppTypography.cardSubtitle.copyWith(
-                color: isValid ? AppTheme.primaryGreen : Colors.orange.shade800,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      );
-    });
   }
 }

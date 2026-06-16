@@ -16,8 +16,7 @@ class _QrScannerViewState extends State<QrScannerView>
 
   late AnimationController _controller;
   late Animation<double> _animation;
-
-  bool isScanned = false; // جلوگیری multiple scans
+  bool isScanned = false;
 
   @override
   void initState() {
@@ -27,7 +26,6 @@ class _QrScannerViewState extends State<QrScannerView>
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
-
     _animation = Tween<double>(begin: 0, end: 240).animate(_controller);
   }
 
@@ -38,11 +36,10 @@ class _QrScannerViewState extends State<QrScannerView>
   }
 
   void _handleScan(String rawValue) {
-    if (isScanned) return; // prevent duplicate scans
+    if (isScanned) return;
 
     try {
       String decodedString = rawValue;
-
       if (!rawValue.trim().startsWith('{')) {
         try {
           final decodedBytes = base64Decode(rawValue);
@@ -51,16 +48,13 @@ class _QrScannerViewState extends State<QrScannerView>
       }
 
       final parsed = jsonDecode(decodedString);
-
       if (parsed['branch_id'] != null &&
           parsed['company_code'] != null &&
           parsed['servel_url'] != null) {
-
         isScanned = true;
-
         debugPrint("✅ Valid QR");
+        debugPrint("✅ $parsed['branch_id']");
         debugPrint("✅ $rawValue");
-
         Get.back(result: parsed);
       }
     } catch (e) {
@@ -81,8 +75,6 @@ class _QrScannerViewState extends State<QrScannerView>
       ),
       body: Stack(
         children: [
-
-          /// Camera
           MobileScanner(
             fit: BoxFit.cover,
             onDetect: (capture) {
@@ -94,21 +86,15 @@ class _QrScannerViewState extends State<QrScannerView>
               }
             },
           ),
-
-          /// Dark overlay
-          /// Cut-out overlay (only outside is dim)
           Positioned.fill(
             child: Builder(
               builder: (context) {
                 final size = MediaQuery.of(context).size;
-
                 const scanSize = 260.0;
                 final topHeight = (size.height - scanSize) / 2.39;
                 final sideWidth = (size.width - scanSize) / 2;
-
                 return Stack(
                   children: [
-                    /// Top
                     Positioned(
                       top: 0,
                       left: 0,
@@ -116,8 +102,6 @@ class _QrScannerViewState extends State<QrScannerView>
                       height: topHeight,
                       child: Container(color: Colors.black.withOpacity(0.6)),
                     ),
-
-                    /// Bottom
                     Positioned(
                       bottom: 0,
                       left: 0,
@@ -125,8 +109,6 @@ class _QrScannerViewState extends State<QrScannerView>
                       height: topHeight,
                       child: Container(color: Colors.black.withOpacity(0.6)),
                     ),
-
-                    /// Left
                     Positioned(
                       top: topHeight,
                       left: 0,
@@ -134,8 +116,6 @@ class _QrScannerViewState extends State<QrScannerView>
                       height: scanSize,
                       child: Container(color: Colors.black.withOpacity(0.6)),
                     ),
-
-                    /// Right
                     Positioned(
                       top: topHeight,
                       right: 0,
@@ -148,24 +128,18 @@ class _QrScannerViewState extends State<QrScannerView>
               },
             ),
           ),
-
-          /// Scanner Box
           Center(
             child: SizedBox(
               width: 260,
               height: 260,
               child: Stack(
                 children: [
-
-                  /// Border
                   Container(
                     decoration: BoxDecoration(
                       border: Border.all(color: Colors.green, width: 3),
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-
-                  /// Animated Scan Line
                   AnimatedBuilder(
                     animation: _animation,
                     builder: (context, child) {
@@ -184,8 +158,6 @@ class _QrScannerViewState extends State<QrScannerView>
               ),
             ),
           ),
-
-          /// Instruction
           Positioned(
             bottom: 80,
             left: 0,

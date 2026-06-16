@@ -466,6 +466,7 @@ class CartController extends GetxController {
     );
   }
 
+
   // Helper method to compare addons
   bool _areAddonsEqual(List<AddonModel> addons1, List<AddonModel> addons2) {
     if (addons1.length != addons2.length) return false;
@@ -640,11 +641,16 @@ class CartController extends GetxController {
     double discountAmount = 0,
     double roundOffAmount = 0,
     int? customerId,
+    bool? registerCustEnabled = false,
     Map<String, dynamic>? customerData,
     String? customerName,
     String? customerMobile,
     String? customerAddress,
     String? customerVat,
+    bool isSplit = false,
+    bool isBill = false,
+    int? splitCount,
+    List<double> splitAmounts = const [],
   }) async {
     try {
       // ✅ VALIDATION: Table selection required for Dine In
@@ -652,7 +658,6 @@ class CartController extends GetxController {
         showSafeSnackbar("Error", "Please select a table and chair first.");
         return null;
       }
-
       final now = DateTime.now();
       final dateStr = DateFormat('yyyy-MM-dd').format(now);
       final syncTime = "${DateFormat('yyMMddHHmmssSSS').format(now)}000";
@@ -883,6 +888,7 @@ class CartController extends GetxController {
         "saleqt_date": dateStr,
         "sale_items": saleItems,
         "sq_total": finalTotal,
+        "sales_cust_type" : (registerCustEnabled == true) ? 1 : 0,
         "advance_amount": 0,
         "sale_pay_type": payType ?? 0,
         "balance_amount": 0,
@@ -908,10 +914,10 @@ class CartController extends GetxController {
           "rt_status": 1,
           "prcgrp_id": selectedPriceGroupId.value,
         },
-        "res_status": isDraft ? 0 : (isCompliment || (payType != null && payType != 0)) ? 3 : 1,
+        "res_status": isDraft ? 0 : isBill ? 2 : (isCompliment || (payType != null && payType != 0)) ? 3 : 1,
         "sq_inv_no": isEditing ? int.tryParse(editingOrderId.value) ?? 0 : 0,
         "sq_disc": finalDiscount,
-        "sale_acc_ledger_id": bankLedgerId ,
+        "sale_acc_ledger_id": bankLedgerId??cashLedgerId ,
           // ?? cashLedgerId ?? 0,
         "sale_acc_ledger_id_bank": bankLedgerId,
         "sale_acc_ledger_id_cash": cashLedgerId,
@@ -922,9 +928,11 @@ class CartController extends GetxController {
         "sales_is_rest_pos": 1,
         "is_compliment": isCompliment ? 1 : 0,
         "is_pos_edit": isEditing,
-        "is_split": false,
-        "split_amnt": [],
-        "split_count": null,
+        "is_split": isSplit,
+        "split_amnt": isSplit
+            ? splitAmounts.map((amount) => {"amount": amount}).toList()
+            : [],
+        "split_count": isSplit ? splitCount : null,
         "server_sync_time": syncTime,
       };
       // --- SAVE TO LOCAL DB FIRST ---
@@ -1013,7 +1021,7 @@ class CartController extends GetxController {
         // Ensure the local record has the correct status
         await _dbHelper.updateOrderStatusByUuid(
           orderUuid,
-          isDraft ? 'draft' : 'pending',
+          isDraft ? 'draft' : (isCompliment ? 'paid' : 'pending'),
           isSynced: 0,
         );
 
@@ -1025,6 +1033,10 @@ class CartController extends GetxController {
           saleItems: saleItems,
           isDraft: isDraft,
           now: now,
+          isCompliment: isCompliment,
+          isSplit: isSplit,
+          splitCount: splitCount,
+          splitAmounts: splitAmounts,
         );
         _clearDashboardSearch();
         return syntheticResponse;
@@ -1054,7 +1066,12 @@ class CartController extends GetxController {
     String? customerName,
     String? customerMobile,
     String? customerAddress,
+    bool? registerCustEnabled = false,
     String? customerVat,
+    bool isSplit = false,
+    int? splitCount,
+    bool isBill = false,
+    List<double> splitAmounts = const [],
   }) async {
     try {
       // ✅ VALIDATION: Table selection required for Dine In
@@ -1742,8 +1759,9 @@ class CartController extends GetxController {
 
       final body = {
         "usr_id": int.tryParse(AppState.userId) ?? 0,
+        "sales_cust_type" : (registerCustEnabled == true) ? 1 :0,
         "cust_type": customerData != null ? "0" : "1",
-        "cust_id": customerData,   // ← pass full object
+        // "cust_id": customerData?['id'],
         "cust_name": customerData?['name'] ?? customerName ?? "Cash Customer",
         "saleqt_date": dateStr,
         "sale_items": saleItems,
@@ -1775,7 +1793,7 @@ class CartController extends GetxController {
               : [],
           "prcgrp_id": selectedPriceGroupId.value,
         },
-        "res_status": isDraft ? 0 : (isCompliment || (payType != null && payType != 0)) ? 3 : 1,
+        "res_status": isDraft ? 0 : isBill ? 2 : (isCompliment || (payType != null && payType != 0)) ? 3 : 1,
         "sq_inv_no": int.tryParse(editingInvNo.value) ?? 0,
         "sq_disc": finalDiscount,
         "sale_acc_ledger_id": bankLedgerId ?? cashLedgerId ?? 0,
@@ -1788,9 +1806,11 @@ class CartController extends GetxController {
         "sales_is_rest_pos": 1,
         "is_compliment": isCompliment ? 1 : 0,
         "is_pos_edit": true,
-        "is_split": false,
-        "split_amnt": [],
-        "split_count": null,
+        "is_split": isSplit,
+        "split_amnt": isSplit
+            ? splitAmounts.map((amount) => {"amount": amount}).toList()
+            : [],
+        "split_count": isSplit ? splitCount : null,
         "server_sync_time": syncTime,
       };
 
@@ -1822,7 +1842,6 @@ class CartController extends GetxController {
         log("❌ Local DB Update Error: $dbError");
       }
 
-      // --- TRY API CALL ---
       try {
         final response = await _apiService.post(
           "mobileapp/pos/update_sales_order",
@@ -1881,6 +1900,10 @@ class CartController extends GetxController {
           totalTax: totalTax,
           isDraft: isDraft,
           now: now,
+          isSplit: isSplit,
+          splitCount: splitCount,
+          splitAmounts: splitAmounts,
+          isCompliment: isCompliment,
         );
         return syntheticResponse;
       }
@@ -1919,9 +1942,6 @@ class CartController extends GetxController {
     }
   }
 
-  /// Constructs a synthetic server response for offline orders.
-  /// Shape matches the real add_sales_order response so all consumers
-  /// (parseOrderResponse, KOT printer, OrdersController) work identically.
   Map<String, dynamic> _buildOfflineResponse({
     required String orderUuid,
     required Map<String, dynamic> body,
@@ -1930,6 +1950,11 @@ class CartController extends GetxController {
     required List<Map<String, dynamic>> saleItems,
     required bool isDraft,
     required DateTime now,
+    bool isSplit = false,
+    int? splitCount,
+    List<double> splitAmounts = const [],
+    bool isCompliment = false,   // ✅ ADD
+    bool isBill = false,
   }) {
     final dateStr = DateFormat('yyyy-MM-dd').format(now);
     final timeStr = DateFormat('HH:mm:ss').format(now);
@@ -1962,6 +1987,9 @@ class CartController extends GetxController {
         "unit_display": item["salesub_unit_display"],
         "unit_base_qty": item["base_qty"],
         "cat_token_printer": _getTokenPrinterForItem(item),
+        "is_split": isSplit,
+        "split_count": splitCount,
+        "split_amnt": splitAmounts,
       });
     }
 
@@ -1972,14 +2000,15 @@ class CartController extends GetxController {
       "message": "Sales Order Added successfully (offline)",
       "id": null,
       "offline": true, // flag so callers can show "pending sync" if needed
+      "is_compliment": isCompliment ? 1 : 0,
       "preview": {
         "sales_odr_id": null, // filled after SyncService pushes it
         "sales_odr_inv_no": null,
         "sales_odr_date": dateStr,
         "sales_odr_time": timeStr,
-        "sales_odr_total": totalWithTax,
+        "sales_odr_total": isCompliment ? 0 : totalWithTax,
         "sales_odr_tax": totalTax,
-        "sales_odr_pos_status": isDraft ? 0 : 1,
+        "sales_odr_pos_status": isDraft ? 0 : isBill ? 2 : (isCompliment ? 3 : 1),
         "sales_odr_table_id": resTable["rt_id"],
         "sales_odr_table_name": body["table_name"],
         "sales_odr_no_seats": body["no_seats"],
@@ -1998,6 +2027,11 @@ class CartController extends GetxController {
     required double totalTax,
     required bool isDraft,
     required DateTime now,
+    bool isCompliment = false,
+    bool isSplit = false,
+    bool isBill = false,
+    int? splitCount,
+    List<double> splitAmounts = const [],
   }) {
     final dateStr = DateFormat('yyyy-MM-dd').format(now);
     final timeStr = DateFormat('HH:mm:ss').format(now);
@@ -2093,6 +2127,7 @@ class CartController extends GetxController {
     return {
       "status": 200,
       "offline": true,
+      "is_compliment": isCompliment ? 1 : 0,
       "message": {"status": 1, "msg": "Update saved locally (Offline)"},
       "id": realServerId,
       "preview": {
@@ -2102,22 +2137,22 @@ class CartController extends GetxController {
         "sales_odr_time": timeStr,
         "sales_odr_total": totalWithTax,
         "sales_odr_tax": totalTax,
-        "sales_odr_pos_status": isDraft ? 0 : 1,
+        "sales_odr_pos_status": isDraft ? 0 : isBill ? 2 : (isCompliment ? 3 : 1),
         "sales_odr_table_id": resTable["rt_id"],
         "sales_odr_table_name": body["table_name"],
         "sales_odr_no_seats": body["no_seats"],
         "sales_odr_order_type": AppState.orderType.id,
         "sales_order_sub": orderSub,
+        "is_split": isSplit,
+        "split_count": splitCount,
+        "split_amnt": splitAmounts,
       },
     };
   }
 
-  /// Look up the token_printer_id for a sale item from the cart.
   int? _getTokenPrinterForItem(Map<String, dynamic> item) {
     final prdId = item["salesub_prd_id"]?.toString();
     if (prdId == null) return null;
-
-    // Find the item in the current cart to get its tokenPrinterId
     final cartItem = cartItems.firstWhereOrNull(
       (c) => c.product.id == prdId && !c.isDeleted.value,
     );

@@ -11,6 +11,7 @@ import '../../../data/services/api_services.dart';
 import '../../../data/services/database_helper.dart';
 import '../../../data/utils/AppState.dart';
 import '../../../routes/app_pages.dart';
+import '../../cart/controller/cart_controller.dart';
 
 class SyncController extends GetxController {
   final ApiService _apiService = Get.find<ApiService>();
@@ -28,7 +29,75 @@ class SyncController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    _clearCartState();
     startSync();
+  }
+
+  void _clearCartState() {
+    try {
+      if (Get.isRegistered<CartController>()) {
+        final cart = Get.find<CartController>();
+        cart.stopEditing();
+        log("SyncController: Cart and table selection cleared for Master Sync.");
+      }
+    } catch (e) {
+      log("SyncController: Error clearing cart state: $e");
+    }
+  }
+
+  Future<void> _fetchAddonsPaginated(int userId) async {
+    const int pageLimit = 1000;
+    int partNo = 0;
+    bool isFirstPage = true;
+    int totalFetched = 0;
+
+    log("SyncController: Starting paginated addon fetch (limit: $pageLimit)...");
+
+    while (true) {
+      statusMessage.value = "Fetching addon data (page ${partNo + 1})...";
+      log("SyncController: Fetching addons page — part_no: $partNo");
+
+      final response = await _apiService.post(
+        "mobileapp/product_unit/get_prd_unit_and_addon",
+        data: {
+          "usr_id": userId,
+          "part_no": partNo,
+          "limit": pageLimit,
+          "sync_time": "",
+        },
+      );
+
+      if (response.statusCode != 200) {
+        log("SyncController: Addon page part_no=$partNo returned ${response.statusCode}, stopping.");
+        break;
+      }
+
+      final List<dynamic> pageData = response.data['data'] ?? [];
+
+      if (pageData.isEmpty) {
+        log("SyncController: Addon page part_no=$partNo returned empty, stopping.");
+        break;
+      }
+
+      if (isFirstPage) {
+        await _dbHelper.clearBulkProductUnits();
+        isFirstPage = false;
+      }
+
+      await _dbHelper.insertBulkProductUnits(pageData);
+      totalFetched += pageData.length;
+      log("SyncController: Fetched ${pageData.length} addon records (part_no=$partNo), total so far: $totalFetched");
+      progress.value = (0.90 + (totalFetched / (totalFetched + pageLimit)) * 0.09)
+          .clamp(0.90, 0.99);
+      if (pageData.length < pageLimit) {
+        log("SyncController: Last addon page reached (${pageData.length} < $pageLimit). Done.");
+        break;
+      }
+
+      partNo++;
+    }
+
+    log("SyncController: Addon fetch complete — $totalFetched total records.");
   }
 
   Future<void> startSync() async {
@@ -42,15 +111,6 @@ class SyncController extends GetxController {
       final int userId = int.tryParse(AppState.userId) ?? 0;
 
       // 1. Start slow background calls
-      log("SyncController: Initiating background fetch for units, addons and rates...");
-      
-      final addonFuture = _apiService.post("mobileapp/product_unit/get_prd_unit_and_addon", data: {
-        "usr_id": userId,
-        "part_no": 0,
-        "limit": 20000,
-        "sync_time": "",
-      });
-
       final unitsFuture = _apiService.post("mobileapp/unit/download", data: {
         "part_no": 0,
         "limit": "",
@@ -87,10 +147,14 @@ class SyncController extends GetxController {
         _apiService.post('mobileapp/sales/get_branch_bank_account', data: {
           "usr_id": userId,
         }),
-        // Fetch Today's Sold Orders during Sync
         _apiService.post("mobileapp/pos/get_sold_pos_order_list", data: {
           "usr_id": userId,
           "date": DateFormat('yyyy-MM-dd').format(DateTime.now()),
+        }),
+        _apiService.post('mobileapp/customer/download', data: {
+          "part_no": 0,
+          "limit": 1000,
+          "sync_time": "",
         }),
       ]);
 
@@ -104,6 +168,14 @@ class SyncController extends GetxController {
       final cashAccResponse   = apiResults[4];
       final bankAccResponse   = apiResults[5];
       final soldOrdersResponse = apiResults[6];
+      final customerResponse = apiResults[7];
+
+      // Save Customers
+      if (customerResponse.statusCode == 200) {
+        final List<dynamic> customerData = customerResponse.data['data'] ?? [];
+        await _dbHelper.insertCustomers(customerData.cast<Map<String, dynamic>>());
+        log("SyncController: Cached ${customerData.length} customers.");
+      }
 
       // Save Sold Orders and their details
       if (soldOrdersResponse.statusCode == 200) {
@@ -111,7 +183,6 @@ class SyncController extends GetxController {
         await _dbHelper.cacheSoldOrders(soldData);
         log("SyncController: Cached ${soldData.length} sold orders summary. Fetching details...");
         
-        // Background fetch details for sold orders to ensure offline availability
         for (var order in soldData) {
            _fetchAndCacheSoldOrderDetails(order['sales_odr_inv_no']);
         }
@@ -129,12 +200,10 @@ class SyncController extends GetxController {
       if (cashAccResponse.statusCode == 200) {
         final List<dynamic> data = cashAccResponse.data['data'] ?? [];
         await _dbHelper.insertLedgers(data.cast<Map<String, dynamic>>(), 'cash');
-        log("SyncController: Cached ${data.length} cash accounts.");
       }
       if (bankAccResponse.statusCode == 200) {
         final List<dynamic> data = bankAccResponse.data['data'] ?? [];
         await _dbHelper.insertLedgers(data.cast<Map<String, dynamic>>(), 'bank');
-        log("SyncController: Cached ${data.length} bank accounts.");
       }
 
       // Process Categories
@@ -190,13 +259,11 @@ class SyncController extends GetxController {
 
       // Process Units
       try {
-        log("SyncController: Waiting for units response...");
         final unitsResponse = await unitsFuture;
         if (unitsResponse.statusCode == 200) {
           final List<dynamic> unitsData = unitsResponse.data['data'] ?? [];
           if (unitsData.isNotEmpty) {
             await _dbHelper.insertUnits(unitsData);
-            log("SyncController: Successfully cached ${unitsData.length} units.");
           }
         }
       } catch (e) {
@@ -207,40 +274,28 @@ class SyncController extends GetxController {
       totalCount.value = priceGroupIds.length * (1 + posCategories.length + favorites.length);
       syncedCount.value = 0;
 
-      // 3. Sync Products
+      // Sync Products
       await _syncProductsParallel(posCategories, priceGroupIds, favorites);
 
       // Process Stock Unit Rates
       try {
-        log("SyncController: Waiting for stock rates response...");
         final stockRatesResponse = await stockRatesFuture;
         if (stockRatesResponse.statusCode == 200) {
           final List<dynamic> ratesData = stockRatesResponse.data['data'] ?? [];
           if (ratesData.isNotEmpty) {
             await _dbHelper.clearStockUnitRates();
             await _dbHelper.insertStockUnitRates(ratesData);
-            log("SyncController: Successfully cached ${ratesData.length} stock unit rates.");
           }
         }
       } catch (e) {
         log("SyncController: Error fetching stock rates: $e");
       }
 
-      // 4. Finally, wait for the slow Addon API if it's not done yet
       statusMessage.value = "Finalizing addon data...";
       progress.value = 0.90;
-      
+
       try {
-        log("SyncController: Waiting for addon response...");
-        final bulkUnitsResponse = await addonFuture;
-        if (bulkUnitsResponse.statusCode == 200) {
-          final List<dynamic> bulkData = bulkUnitsResponse.data['data'] ?? [];
-          if (bulkData.isNotEmpty) {
-            await _dbHelper.clearBulkProductUnits();
-            await _dbHelper.insertBulkProductUnits(bulkData);
-            log("SyncController: Successfully cached ${bulkData.length} bulk records.");
-          }
-        }
+        await _fetchAddonsPaginated(userId);
       } catch (e) {
         log("SyncController: Error fetching background addons: $e");
       }
@@ -288,7 +343,6 @@ class SyncController extends GetxController {
               invNo: invNo.toString(),
               serverId: serverId,
             );
-            log("SyncController: Cached details (get_sold_pos_data) for order #$invNo");
           }
         }
       }
@@ -318,11 +372,11 @@ class SyncController extends GetxController {
       ) async {
     statusMessage.value = "Syncing products (PG $pgId)...";
 
-    // 1. Global items
+    // Global items
     await _fetchAndInsertProducts(pgId: pgId);
     _updateProgress();
 
-    // 2. Category-specific items
+    // Category-specific items
     final catChunks = _chunked(posCategories, 5);
     for (var chunk in catChunks) {
       await Future.wait(chunk.map((cat) async {
@@ -334,7 +388,7 @@ class SyncController extends GetxController {
       }));
     }
 
-    // 3. Favorite-specific items
+    // Favorite-specific items
     for (var fav in favorites) {
       final dynamic fId = fav['id'] ?? fav['fav_id'] ?? fav['favp_id'];
       final int favId = fId is int ? fId : int.tryParse(fId.toString()) ?? 0;

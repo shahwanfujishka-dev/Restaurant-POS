@@ -85,9 +85,8 @@ class MyApp extends StatelessWidget {
       minTextAdapt: true,
       splitScreenMode: true,
       builder: (context, child) {
-        // Obx rebuilds GetMaterialApp when isDark changes
         return Obx(() => GetMaterialApp(
-          title: 'Fujishka TablePro',
+          title: 'Restaurant POS',
           debugShowCheckedModeBanner: false,
           initialRoute: initialRoute,
           getPages: AppPages.routes,

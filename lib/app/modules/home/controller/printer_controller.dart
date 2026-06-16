@@ -8,7 +8,6 @@ import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_navigation/src/extension_navigation.dart';
 import 'package:get/get_navigation/src/root/parse_route.dart';
-import 'package:get/get_navigation/src/snackbar/snackbar.dart';
 import 'package:get/get_rx/src/rx_types/rx_types.dart';
 import 'package:get/get_state_manager/src/simple/get_controllers.dart';
 import 'package:intl/intl.dart';
@@ -17,6 +16,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:restaurant_pos/helper/snackbar_helper.dart';
 import '../../../data/models/order_model.dart';
+import '../../../data/models/order_type.dart';
 import '../../../data/services/database_helper.dart';
 import '../views/dashoard/models/dashboard_models.dart';
 import 'dashboard_controller.dart';
@@ -24,8 +24,8 @@ import 'dashboard_controller.dart';
 class PrinterModel {
   String name;
   final String address;
-  final String type; // bluetooth or wifi
-  final dynamic device; // Original device object
+  final String type;
+  final dynamic device;
   final bool isLikelyPrinter;
 
 
@@ -76,15 +76,10 @@ class PrinterController extends GetxController {
   var selectedBluetoothPrinter = Rxn<PrinterModel>();
   var selectedWifiPrinter = Rxn<PrinterModel>();
   var isCheckingConnection = false.obs;
-
-  // Permission state
   var isBluetoothPermissionGranted = true.obs;
-
   var tokenPrinterAssignments = <TokenPrinterAssignment>[].obs;
-
   final NetworkInfo _networkInfo = NetworkInfo();
   StreamSubscription? _scanSubscription;
-
   List<PrinterModel> get filteredBluetoothDevices {
     if (!showOnlyPrinters.value) return bluetoothPrinters;
     return bluetoothPrinters.where((d) => d.isLikelyPrinter).toList();
@@ -96,8 +91,6 @@ class PrinterController extends GetxController {
     _initWifi();
     _loadSavedMappings();
     _listenToBleScan();
-
-    // Initial scan with permission check
     checkPermissions().then((granted) {
       if (granted) {
         scanBluetoothPrinters();
@@ -201,8 +194,6 @@ class PrinterController extends GetxController {
 
     if (Get.isRegistered<DashboardController>()) {
       final dashboardController = Get.find<DashboardController>();
-
-      // ✅ Corrected: Fetch ALL categories in the background specifically for mapping
       await dashboardController.fetchAllCategoriesForPrinters();
 
       final legacyMappings = await DatabaseHelper.instance
@@ -354,7 +345,6 @@ class PrinterController extends GetxController {
 
       bluetoothPrinters.clear();
 
-      // 1. Get Paired Devices (Classic Bluetooth)
       final List<BluetoothInfo> pairedDevices =
       await PrintBluetoothThermal.pairedBluetooths;
       for (var d in pairedDevices) {
@@ -368,7 +358,6 @@ class PrinterController extends GetxController {
         );
       }
 
-      // 2. Start Live BLE Scan
       await FlutterBluePlus.startScan(
         timeout: const Duration(seconds: 5),
         androidUsesFineLocation: true,
@@ -415,10 +404,7 @@ class PrinterController extends GetxController {
       }
 
       final String subnet = ip.substring(0, ip.lastIndexOf('.'));
-      // Added more common printer ports (9100=RAW, 515=LPD, 631=IPP, 80=Web, 8008/8009=Epson ePOS)
       final List<int> printerPorts = [9100, 515, 631, 80, 8008, 8009];
-
-      // Scanning the full subnet in batches
       const int batchSize = 15;
       for (int i = 1; i < 255; i += batchSize) {
         List<Future> batch = [];
@@ -445,7 +431,6 @@ class PrinterController extends GetxController {
       List<PrinterModel> foundPrinters,
       ) async {
     try {
-      // Slightly longer timeout for better reliability across different router types
       final socket = await Socket.connect(
         ip,
         port,
@@ -488,11 +473,11 @@ class PrinterController extends GetxController {
     scanningWifi.value = false;
   }
 
-  // --- RECEIPT PRINTING LOGIC ---
-  Future<void> printReceipt(OrderModel order, double received, double change, {bool isBill = false}) async {
+  Future<void> printReceipt(OrderModel order, double received, double change, {bool isBill = false, String? customerName, String? paymentMethod, double? discount, double? roundOff}) async {
     debugPrint("--- START ${isBill ? 'BILL' : 'RECEIPT'} PRINTING ---");
-    // For receipts, we usually print to the "Main" or "Cashier" printer.
-    // Let's assume the first printer in assignments is the default.
+    final String finalCustomerName = customerName ?? order.customerName ?? order.tableName;
+    final double finalDiscount = discount ?? order.discount;
+    final double finalRoundOff = roundOff ?? order.roundOff;
     final assignment = tokenPrinterAssignments.isNotEmpty ? tokenPrinterAssignments.first : null;
     final address = assignment?.printerAddress.value ?? "";
     final type = assignment?.printerType.value ?? "bluetooth";
@@ -504,26 +489,336 @@ class PrinterController extends GetxController {
 
     final profile = await CapabilityProfile.load();
     if (type == 'wifi') {
-      await _printWifiReceipt(address, order, received, change, profile, isBill: isBill);
+      await _printWifiReceipt(address, order, received, change, profile, isBill: isBill, customerName: finalCustomerName, paymentMethod: paymentMethod, discount: finalDiscount, roundOff: finalRoundOff);
     } else {
       final printerInfo = PrinterModel(name: assignment!.printerName.value, address: address, type: 'bluetooth');
-      await _printBluetoothReceipt(printerInfo, order, received, change, profile, isBill: isBill);
+      await _printBluetoothReceipt(printerInfo, order, received, change, profile, isBill: isBill, customerName: finalCustomerName, paymentMethod: paymentMethod, discount: finalDiscount, roundOff: finalRoundOff);
     }
   }
 
-  Future<void> _printWifiReceipt(String ip, OrderModel order, double received, double change, CapabilityProfile profile, {bool isBill = false}) async {
+  Future<void> printSplitReceipts(
+      OrderModel order,
+      List<Map<String, dynamic>> splits,
+      int totalSplits, {
+        String? customerName,
+        String? paymentMethod,
+      }) async {
+    debugPrint("--- START SPLIT RECEIPT PRINTING ($totalSplits splits) ---");
+
+    final assignment = tokenPrinterAssignments.isNotEmpty
+        ? tokenPrinterAssignments.first
+        : null;
+    final address = assignment?.printerAddress.value ?? "";
+    final type = assignment?.printerType.value ?? "bluetooth";
+
+    if (address.isEmpty) {
+      debugPrint("No printer assigned for split receipts.");
+      return;
+    }
+
+    final profile = await CapabilityProfile.load();
+
+    for (var split in splits) {
+      final int splitNo = split['ps_split_no'] as int;
+      final double splitAmount = (split['ps_split_amnt'] as num).toDouble();
+      final String splitLabel = "$splitNo/$totalSplits";
+
+      debugPrint("🖨️ Printing split $splitLabel - Amount: $splitAmount");
+
+      if (type == 'wifi') {
+        await _printWifiSplitReceipt(
+          address,
+          order,
+          split,
+          splitLabel,
+          splitAmount,
+          profile,
+          customerName: customerName,
+          paymentMethod: paymentMethod,
+        );
+      } else {
+        final printerInfo = PrinterModel(
+          name: assignment!.printerName.value,
+          address: address,
+          type: 'bluetooth',
+        );
+        await _printBluetoothSplitReceipt(
+          printerInfo,
+          order,
+          split,
+          splitLabel,
+          splitAmount,
+          profile,
+          customerName: customerName,
+          paymentMethod: paymentMethod,
+        );
+      }
+
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
+  Future<void> _printWifiSplitReceipt(
+      String ip,
+      OrderModel order,
+      Map<String, dynamic> split,
+      String splitLabel,
+      double splitAmount,
+      CapabilityProfile profile, {
+        String? customerName,
+        String? paymentMethod,
+      }) async {
     try {
       final printer = NetworkPrinter(PaperSize.mm80, profile);
       final res = await printer.connect(ip, port: 9100);
       if (res == PosPrintResult.success) {
-        _generateReceiptTicket(printer, order, received, change, isBill: isBill);
+        _generateSplitReceiptTicket(printer, order, split, splitLabel, splitAmount, customerName: customerName, paymentMethod: paymentMethod);
+        await Future.delayed(const Duration(milliseconds: 500));
+        printer.disconnect();
+      }
+    } catch (e) {
+      debugPrint("WiFi Split Receipt Error: $e");
+    }
+  }
+
+  Future<void> _printBluetoothSplitReceipt(
+      PrinterModel printer,
+      OrderModel order,
+      Map<String, dynamic> split,
+      String splitLabel,
+      double splitAmount,
+      CapabilityProfile profile, {
+        String? customerName,
+        String? paymentMethod,
+      }) async {
+    try {
+      bool connected = await PrintBluetoothThermal.connectionStatus;
+      if (!connected) {
+        await PrintBluetoothThermal.connect(macPrinterAddress: printer.address);
+      }
+
+      final generator = Generator(PaperSize.mm80, profile);
+      List<int> bytes = [];
+      bytes += generator.setGlobalFont(PosFontType.fontA);
+      bytes += generator.text(
+        "REST POS",
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
+          height: PosTextSize.size2,
+        ),
+      );
+      bytes += generator.text(
+        "SPLIT BILL",
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+      bytes += generator.text(
+        "Bill $splitLabel",
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
+          height: PosTextSize.size2,
+          width: PosTextSize.size2,
+        ),
+      );
+      bytes += generator.text('-' * 48);
+
+      bytes += generator.row([
+        PosColumn(text: "Customer:", width: 5),
+        PosColumn(text: customerName ?? order.customerName ?? "Cash Customer", width: 7, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+      bytes += generator.row([
+        PosColumn(text: "Order No:", width: 6),
+        PosColumn(
+          text: order.invNo,
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+      bytes += generator.row([
+        PosColumn(text: "Order type:", width: 5),
+        PosColumn(text: OrderType.values.firstWhere((e) => e.id == order.sales_odr_order_type, orElse: () => OrderType.dineIn).displayName, width: 7, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+      if (paymentMethod?.toLowerCase() != 'compliment') {
+        bytes += generator.row([
+          PosColumn(text: "Pay type:", width: 5),
+          PosColumn(text: paymentMethod ?? "Cash", width: 7, styles: const PosStyles(align: PosAlign.right)),
+        ]);
+      }
+
+      if (order.sales_odr_order_type == OrderType.dineIn.id) {
+        bytes += generator.row([
+          PosColumn(text: "Table:", width: 6),
+          PosColumn(
+            text: order.tableName,
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
+      bytes += generator.row([
+        PosColumn(text: "Date:", width: 5),
+        PosColumn(text: DateFormat('dd/MM/yyyy').format(order.createdAt), width: 7, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+      bytes += generator.row([
+        PosColumn(text: "Time:", width: 5),
+        PosColumn(text: DateFormat('HH:mm:ss').format(order.createdAt), width: 7, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+      bytes += generator.text('-' * 48);
+
+      for (var item in order.items.where((i) => !i.isRemoved)) {
+        bytes += generator.row([
+          PosColumn(text: "${item.quantity}x ${item.product.name}", width: 9),
+          PosColumn(
+            text: (item.priceAtOrder * item.quantity).toStringAsFixed(2),
+            width: 3,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
+
+      bytes += generator.text('-' * 48);
+      bytes += generator.text(
+        "SPLIT AMOUNT",
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
+        ),
+      );
+      bytes += generator.row([
+        PosColumn(
+          text: "Bill $splitLabel",
+          width: 6,
+          styles: const PosStyles(bold: true),
+        ),
+        PosColumn(
+          text: splitAmount.toStringAsFixed(2),
+          width: 6,
+          styles: const PosStyles(
+            align: PosAlign.right,
+            bold: true,
+            height: PosTextSize.size2,
+          ),
+        ),
+      ]);
+
+      bytes += generator.text('-' * 48);
+
+      bytes += generator.text(
+        "Thank You!",
+        styles: const PosStyles(align: PosAlign.center),
+      );
+      bytes += generator.feed(2);
+      bytes += generator.cut();
+
+      await PrintBluetoothThermal.writeBytes(bytes);
+      debugPrint("✅ Split receipt $splitLabel printed successfully");
+    } catch (e) {
+      debugPrint("BT Split Receipt Error: $e");
+    }
+  }
+
+  void _generateSplitReceiptTicket(
+      NetworkPrinter printer,
+      OrderModel order,
+      Map<String, dynamic> split,
+      String splitLabel,
+      double splitAmount, {
+        String? customerName,
+        String? paymentMethod,
+      }) {
+    printer.text(
+      "REST POS",
+      styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2),
+    );
+    printer.text(
+      "SPLIT BILL",
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
+    printer.text(
+      "Bill $splitLabel",
+      styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2),
+    );
+    printer.hr();
+
+    printer.row([
+      PosColumn(text: "Customer:", width: 5),
+      PosColumn(text: customerName ?? order.customerName ?? "Cash Customer", width: 7, styles: const PosStyles(align: PosAlign.right)),
+    ]);
+
+    printer.row([
+      PosColumn(text: "Order No:", width: 6),
+      PosColumn(text: order.invNo, width: 6, styles: const PosStyles(align: PosAlign.right)),
+    ]);
+
+    printer.row([
+      PosColumn(text: "Order type:", width: 5),
+      PosColumn(text: OrderType.values.firstWhere((e) => e.id == order.sales_odr_order_type, orElse: () => OrderType.dineIn).displayName, width: 7, styles: const PosStyles(align: PosAlign.right)),
+    ]);
+
+    if (paymentMethod?.toLowerCase() != 'compliment') {
+      printer.row([
+        PosColumn(text: "Pay type:", width: 5),
+        PosColumn(text: paymentMethod ?? "Cash", width: 7, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+    }
+
+    if (order.sales_odr_order_type == OrderType.dineIn.id) {
+      printer.row([
+        PosColumn(text: "Table:", width: 6),
+        PosColumn(text: "${order.tableName} (${order.chairNumber} Seats)", width: 6, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+    }
+    printer.row([
+      PosColumn(text: "Date:", width: 5),
+      PosColumn(text: DateFormat('dd/MM/yyyy').format(order.createdAt), width: 7, styles: const PosStyles(align: PosAlign.right)),
+    ]);
+    printer.row([
+      PosColumn(text: "Time:", width: 5),
+      PosColumn(text: DateFormat('HH:mm:ss').format(order.createdAt), width: 7, styles: const PosStyles(align: PosAlign.right)),
+    ]);
+    printer.hr();
+
+    for (var item in order.items.where((i) => !i.isRemoved)) {
+      printer.row([
+        PosColumn(text: "${item.quantity}x ${item.product.name}", width: 9),
+        PosColumn(
+          text: (item.priceAtOrder * item.quantity).toStringAsFixed(2),
+          width: 3,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
+
+    printer.hr();
+    printer.text("SPLIT AMOUNT", styles: const PosStyles(align: PosAlign.center, bold: true));
+    printer.row([
+      PosColumn(text: "Bill $splitLabel", width: 6, styles: const PosStyles(bold: true)),
+      PosColumn(
+        text: splitAmount.toStringAsFixed(2),
+        width: 6,
+        styles: const PosStyles(align: PosAlign.right, bold: true),
+      ),
+    ]);
+    printer.hr();
+    printer.text("Thank You!", styles: const PosStyles(align: PosAlign.center));
+    printer.feed(3);
+    printer.cut();
+  }
+
+  Future<void> _printWifiReceipt(String ip, OrderModel order, double received, double change, CapabilityProfile profile, {bool isBill = false, String? customerName, String? paymentMethod, double discount = 0, double roundOff = 0}) async {
+    try {
+      final printer = NetworkPrinter(PaperSize.mm80, profile);
+      final res = await printer.connect(ip, port: 9100);
+      if (res == PosPrintResult.success) {
+        _generateReceiptTicket(printer, order, received, change, isBill: isBill, customerName: customerName, paymentMethod: paymentMethod, discount: discount, roundOff: roundOff);
         await Future.delayed(const Duration(milliseconds: 500));
         printer.disconnect();
       }
     } catch (e) { debugPrint("WiFi Receipt Error: $e"); }
   }
 
-  Future<void> _printBluetoothReceipt(PrinterModel printer, OrderModel order, double received, double change, CapabilityProfile profile, {bool isBill = false}) async {
+  Future<void> _printBluetoothReceipt(PrinterModel printer, OrderModel order, double received, double change, CapabilityProfile profile, {bool isBill = false, String? customerName, String? paymentMethod, double discount = 0, double roundOff = 0}) async {
     try {
       bool connected = await PrintBluetoothThermal.connectionStatus;
       if (!connected) {
@@ -538,68 +833,293 @@ class PrinterController extends GetxController {
       bytes += generator.text(isBill ? "ORDER BILL" : "Final Receipt", styles: const PosStyles(align: PosAlign.center));
       bytes += generator.text("-" * 48);
 
+      // Detailed Info
       bytes += generator.row([
-        PosColumn(text: "Order: ${order.invNo}", width: 6),
-        PosColumn(text: DateFormat('dd/MM/yy HH:mm').format(order.createdAt), width: 6, styles: const PosStyles(align: PosAlign.right)),
+        PosColumn(text: "Customer:", width: 5),
+        PosColumn(text: customerName ?? order.customerName ?? "Cash Customer", width: 7, styles: const PosStyles(align: PosAlign.right)),
       ]);
-
-      // ✅ Added Table and Chair count for Bluetooth Receipt
-      bytes += generator.text(
-        "Table: ${order.tableName}",
-        styles: const PosStyles(align: PosAlign.center),
-      );
+      bytes += generator.row([
+        PosColumn(text: "Inv No:", width: 5),
+        PosColumn(text: order.invNo, width: 7, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+      bytes += generator.row([
+        PosColumn(text: "Order type:", width: 5),
+        PosColumn(text: OrderType.values.firstWhere((e) => e.id == order.sales_odr_order_type, orElse: () => OrderType.dineIn).displayName, width: 7, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+      if (!isBill && paymentMethod?.toLowerCase() != 'compliment') {
+        bytes += generator.row([
+          PosColumn(text: "Pay type:", width: 5),
+          PosColumn(text: paymentMethod ?? "Cash", width: 7, styles: const PosStyles(align: PosAlign.right)),
+        ]);
+      }
+      bytes += generator.row([
+        PosColumn(text: "Date:", width: 5),
+        PosColumn(text: DateFormat('dd/MM/yyyy').format(order.createdAt), width: 7, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+      bytes += generator.row([
+        PosColumn(text: "Time:", width: 5),
+        PosColumn(text: DateFormat('HH:mm:ss').format(order.createdAt), width: 7, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+      if (order.sales_odr_order_type == OrderType.dineIn.id) {
+        bytes += generator.row([
+          PosColumn(text: "Table:", width: 5),
+          PosColumn(text: order.tableName, width: 7, styles: const PosStyles(align: PosAlign.right)),
+        ]);
+      }
 
       bytes += generator.text("-" * 48);
+
+      // Column Titles
+      bytes += generator.row([
+        PosColumn(text: "Qty", width: 1, styles: const PosStyles(bold: true)),
+        PosColumn(text: "Item", width: 4, styles: const PosStyles(bold: true)),
+        PosColumn(text: "Rate", width: 2, styles: const PosStyles(align: PosAlign.right, bold: true)),
+        PosColumn(text: "Vat", width: 2, styles: const PosStyles(align: PosAlign.right, bold: true)),
+        PosColumn(text: "Amount", width: 3, styles: const PosStyles(align: PosAlign.right, bold: true)),
+      ]);
+      bytes += generator.text("-" * 48);
+
+      double calculatedSubTotal = 0;
+      double calculatedTax = 0;
 
       for (var item in order.items.where((i) => !i.isRemoved)) {
+        double price = item.priceAtOrder;
+        double taxPer = item.product.taxPer;
+        double qty = item.quantity.toDouble();
+
+        double vatAmount;
+        double lineTotal;
+        double lineSubTotal;
+
+        if (Get.isRegistered<DashboardController>() && Get.find<DashboardController>().vatType.value == 1) {
+          // Price includes tax (VAT Disabled for offline/special cases as per requirement)
+          lineTotal = price * qty;
+          vatAmount = 0.0;
+          lineSubTotal = lineTotal;
+        } else {
+          // Price excludes tax
+          lineSubTotal = price * qty;
+          vatAmount = (lineSubTotal * taxPer) / 100;
+          lineTotal = lineSubTotal + vatAmount;
+        }
+
+        calculatedSubTotal += lineSubTotal;
+        calculatedTax += vatAmount;
+
         bytes += generator.row([
-          PosColumn(text: "${item.quantity}x ${item.product.name}", width: 9),
-          PosColumn(text: (item.priceAtOrder * item.quantity).toStringAsFixed(2), width: 3, styles: const PosStyles(align: PosAlign.right)),
+          PosColumn(text: item.quantity.toString(), width: 1),
+          PosColumn(text: item.product.name, width: 4),
+          PosColumn(text: price.toStringAsFixed(2), width: 2, styles: const PosStyles(align: PosAlign.right)),
+          PosColumn(text: vatAmount.toStringAsFixed(2), width: 2, styles: const PosStyles(align: PosAlign.right)),
+          PosColumn(text: lineTotal.toStringAsFixed(2), width: 3, styles: const PosStyles(align: PosAlign.right)),
         ]);
+
+        for (var addon in item.selectedAddons) {
+           double addonTotal = addon.price * addon.quantity.value;
+           calculatedSubTotal += addonTotal;
+           bytes += generator.row([
+            PosColumn(text: "", width: 1),
+            PosColumn(text: " + ${addon.name}", width: 4),
+            PosColumn(text: addon.price.toStringAsFixed(2), width: 2, styles: const PosStyles(align: PosAlign.right)),
+            PosColumn(text: "0.00", width: 2, styles: const PosStyles(align: PosAlign.right)),
+            PosColumn(text: addonTotal.toStringAsFixed(2), width: 3, styles: const PosStyles(align: PosAlign.right)),
+          ]);
+        }
       }
+
+      final double finalSubTotal = (order.subTotal > 0) ? order.subTotal : calculatedSubTotal;
+      final double finalVat = (Get.isRegistered<DashboardController>() && Get.find<DashboardController>().vatType.value == 1) ? 0.0 : ((order.totalTax > 0) ? order.totalTax : calculatedTax);
 
       bytes += generator.text("-" * 48);
       bytes += generator.row([
-        PosColumn(text: "TOTAL", width: 6, styles: const PosStyles(bold: true)),
-        PosColumn(text: order.totalAmount.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
+        PosColumn(text: "Sub Total", width: 6),
+        PosColumn(text: finalSubTotal.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
       ]);
-
-      if (!isBill) {
+      bytes += generator.row([
+        PosColumn(text: "VAT", width: 6),
+        PosColumn(text: finalVat.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+      if (discount > 0) {
         bytes += generator.row([
-          PosColumn(text: "Received", width: 6),
-          PosColumn(text: received.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
-        ]);
-        bytes += generator.row([
-          PosColumn(text: "Change", width: 6),
-          PosColumn(text: change.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
+          PosColumn(text: "Discount", width: 6),
+          PosColumn(text: "${discount.toStringAsFixed(2)}", width: 6, styles: const PosStyles(align: PosAlign.right)),
         ]);
       }
 
+      if (roundOff != 0) {
+        bytes += generator.row([
+          PosColumn(text: "Round Off", width: 6),
+          PosColumn(
+            text: roundOff.toStringAsFixed(2),
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
+
+      // Important: If we are re-printing, totalAmount already has discount/roundoff applied in some systems.
+      // But based on the formula provided earlier:
+      double finalTotal = (Get.isRegistered<DashboardController>() && Get.find<DashboardController>().vatType.value == 1) ? finalSubTotal : (order.totalAmount).clamp(0, double.infinity);
+      double netTotal = finalTotal + roundOff - discount;
+      bytes += generator.row([
+        PosColumn(text: "NET TOTAL", width: 6, styles: const PosStyles(bold: true)),
+        PosColumn(text: netTotal.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
+      ]);
+
+      // if (!isBill) {
+      //   bytes += generator.row([
+      //     PosColumn(text: "Received", width: 6),
+      //     PosColumn(text: received.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
+      //   ]);
+      //   bytes += generator.row([
+      //     PosColumn(text: "Change", width: 6),
+      //     PosColumn(text: change.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
+      //   ]);
+      // }
+
       bytes += generator.text("-" * 48);
+
+      if (order.qrLink != null && order.qrLink!.isNotEmpty) {
+        bytes += generator.qrcode(order.qrLink!, size: QRSize.size4);
+      }
+
       bytes += generator.text("Thank You!", styles: const PosStyles(align: PosAlign.center));
-      bytes += generator.feed(2);
+      bytes += generator.feed(1);
       bytes += generator.cut();
 
       await PrintBluetoothThermal.writeBytes(bytes);
     } catch (e) { debugPrint("BT Receipt Error: $e"); }
   }
 
-  void _generateReceiptTicket(NetworkPrinter printer, OrderModel order, double received, double change, {bool isBill = false}) {
+  void _generateReceiptTicket(NetworkPrinter printer, OrderModel order, double received, double change, {bool isBill = false, String? customerName, String? paymentMethod, double discount = 0, double roundOff = 0}) {
     printer.text("REST POS", styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
     printer.hr();
-    printer.text(isBill ? "ORDER BILL" : "Invoice: ${order.invNo}", styles: const PosStyles(align: PosAlign.center));
-    printer.text("Table: ${order.tableName} (Seats: ${order.chairNumber})", styles: const PosStyles(align: PosAlign.center));
-    printer.hr();
-    for (var item in order.items.where((i) => !i.isRemoved)) {
+    
+    // Detailed Info
+    printer.row([
+      PosColumn(text: "Customer:", width: 5),
+      PosColumn(text: customerName ?? order.customerName ?? "Cash Customer", width: 7, styles: const PosStyles(align: PosAlign.right)),
+    ]);
+    printer.row([
+      PosColumn(text: "Inv No:", width: 5),
+      PosColumn(text: order.invNo, width: 7, styles: const PosStyles(align: PosAlign.right)),
+    ]);
+    printer.row([
+      PosColumn(text: "Order type:", width: 5),
+      PosColumn(text: OrderType.values.firstWhere((e) => e.id == order.sales_odr_order_type, orElse: () => OrderType.dineIn).displayName, width: 7, styles: const PosStyles(align: PosAlign.right)),
+    ]);
+    if (!isBill && paymentMethod?.toLowerCase() != 'compliment') {
       printer.row([
-        PosColumn(text: "${item.quantity}x ${item.product.name}", width: 9),
-        PosColumn(text: (item.priceAtOrder * item.quantity).toStringAsFixed(2), width: 3, styles: const PosStyles(align: PosAlign.right)),
+        PosColumn(text: "Pay type:", width: 5),
+        PosColumn(text: paymentMethod ?? "Cash", width: 7, styles: const PosStyles(align: PosAlign.right)),
       ]);
     }
-    printer.hr();
     printer.row([
-      PosColumn(text: "TOTAL", width: 6, styles: const PosStyles(bold: true)),
-      PosColumn(text: order.totalAmount.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
+      PosColumn(text: "Date:", width: 5),
+      PosColumn(text: DateFormat('dd/MM/yyyy').format(order.createdAt), width: 7, styles: const PosStyles(align: PosAlign.right)),
+    ]);
+    printer.row([
+      PosColumn(text: "Time:", width: 5),
+      PosColumn(text: DateFormat('HH:mm:ss').format(order.createdAt), width: 7, styles: const PosStyles(align: PosAlign.right)),
+    ]);
+    if (order.sales_odr_order_type == OrderType.dineIn.id) {
+      printer.row([
+        PosColumn(text: "Table:", width: 5),
+        PosColumn(text: order.tableName, width: 7, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+    }
+
+    printer.hr();
+    
+    // Column Titles
+    printer.row([
+      PosColumn(text: "Qty", width: 1, styles: const PosStyles(bold: true)),
+      PosColumn(text: "Item", width: 4, styles: const PosStyles(bold: true)),
+      PosColumn(text: "Rate", width: 2, styles: const PosStyles(align: PosAlign.right, bold: true)),
+      PosColumn(text: "Vat", width: 2, styles: const PosStyles(align: PosAlign.right, bold: true)),
+      PosColumn(text: "Amount", width: 3, styles: const PosStyles(align: PosAlign.right, bold: true)),
+    ]);
+    printer.hr();
+
+    double calculatedSubTotal = 0;
+    double calculatedTax = 0;
+
+    for (var item in order.items.where((i) => !i.isRemoved)) {
+        double price = item.priceAtOrder;
+        double taxPer = item.product.taxPer;
+        double qty = item.quantity.toDouble();
+
+        double vatAmount;
+        double lineTotal;
+        double lineSubTotal;
+
+        if (Get.isRegistered<DashboardController>() && Get.find<DashboardController>().vatType.value == 1) {
+          // VAT Disabled
+          lineTotal = price * qty;
+          vatAmount = 0.0;
+          lineSubTotal = lineTotal;
+        } else {
+          lineSubTotal = price * qty;
+          vatAmount = (lineSubTotal * taxPer) / 100;
+          lineTotal = lineSubTotal + vatAmount;
+        }
+
+        calculatedSubTotal += lineSubTotal;
+        calculatedTax += vatAmount;
+
+      printer.row([
+        PosColumn(text: item.quantity.toString(), width: 1),
+        PosColumn(text: item.product.name, width: 4),
+        PosColumn(text: price.toStringAsFixed(2), width: 2, styles: const PosStyles(align: PosAlign.right)),
+        PosColumn(text: vatAmount.toStringAsFixed(2), width: 2, styles: const PosStyles(align: PosAlign.right)),
+        PosColumn(text: lineTotal.toStringAsFixed(2), width: 3, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+
+      for (var addon in item.selectedAddons) {
+        double addonTotal = addon.price * addon.quantity.value;
+        calculatedSubTotal += addonTotal;
+        printer.row([
+          PosColumn(text: "", width: 1),
+          PosColumn(text: " + ${addon.name}", width: 4),
+          PosColumn(text: addon.price.toStringAsFixed(2), width: 2, styles: const PosStyles(align: PosAlign.right)),
+          PosColumn(text: "0.00", width: 2, styles: const PosStyles(align: PosAlign.right)),
+          PosColumn(text: addonTotal.toStringAsFixed(2), width: 3, styles: const PosStyles(align: PosAlign.right)),
+        ]);
+      }
+    }
+
+    final double finalSubTotal = (order.subTotal > 0) ? order.subTotal : calculatedSubTotal;
+    final double finalVat = (Get.isRegistered<DashboardController>() && Get.find<DashboardController>().vatType.value == 1) ? 0.0 : ((order.totalTax > 0) ? order.totalTax : calculatedTax);
+
+    printer.hr();
+
+    printer.row([
+      PosColumn(text: "Sub Total", width: 6),
+      PosColumn(text: finalSubTotal.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
+    ]);
+    printer.row([
+      PosColumn(text: "VAT", width: 6),
+      PosColumn(text: finalVat.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
+    ]);
+
+    if (discount > 0) {
+      printer.row([
+        PosColumn(text: "Discount", width: 6),
+        PosColumn(text: "-${discount.toStringAsFixed(2)}", width: 6, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+    }
+
+    if (roundOff != 0) {
+      printer.row([
+        PosColumn(text: "Round Off", width: 6),
+        PosColumn(text: roundOff.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+    }
+
+    double finalTotal = (Get.isRegistered<DashboardController>() && Get.find<DashboardController>().vatType.value == 1) ? finalSubTotal : (order.totalAmount).clamp(0, double.infinity);
+    double netTotal = (finalTotal + roundOff - discount).clamp(0, double.infinity);    printer.row([
+      PosColumn(text: "NET TOTAL", width: 6, styles: const PosStyles(bold: true)),
+      PosColumn(text: netTotal.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
     ]);
 
     if (!isBill) {
@@ -614,12 +1134,17 @@ class PrinterController extends GetxController {
     }
 
     printer.hr();
+
+    // ✅ ADDED QR CODE PRINTING
+    if (order.qrLink != null && order.qrLink!.isNotEmpty) {
+      printer.qrcode(order.qrLink!);
+    }
+
     printer.text("Thank You!", styles: const PosStyles(align: PosAlign.center));
     printer.feed(3);
     printer.cut();
   }
 
-  // --- KOT PRINTING LOGIC ---
   Future<void> printKOT(OrderModel order, {List<OrderItem>? oldItems}) async {
     debugPrint("--- START KOT PRINTING ---");
 
@@ -955,7 +1480,7 @@ class PrinterController extends GetxController {
         ),
       );
       bytes += generator.text(
-        "SIMPLIFIED TAX INVOICE",
+        "KITCHEN ORDER",
         styles: const PosStyles(align: PosAlign.center, bold: true),
       );
       bytes += generator.text('-' * 48);
@@ -965,14 +1490,26 @@ class PrinterController extends GetxController {
         PosColumn(text: "Order No:", width: 6),
         PosColumn(text: order.invNo, width: 6, styles: const PosStyles(align: PosAlign.right)),
       ]);
+      
       bytes += generator.row([
-        PosColumn(text: "Table:", width: 6),
+        PosColumn(text: "Order type:", width: 6),
         PosColumn(
-          text: "${order.tableName} (${order.chairNumber} Seats)",
+          text: OrderType.values.firstWhere((e) => e.id == order.sales_odr_order_type, orElse: () => OrderType.dineIn).displayName,
           width: 6,
           styles: const PosStyles(align: PosAlign.right),
         ),
       ]);
+
+      if (order.sales_odr_order_type == OrderType.dineIn.id) {
+        bytes += generator.row([
+          PosColumn(text: "Table:", width: 6),
+          PosColumn(
+            text: "${order.tableName} (${order.chairNumber} Seats)",
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
 
       // ─── CANCELLED / REMOVED SECTION ───
       if (removedItems.isNotEmpty) {
@@ -1071,7 +1608,10 @@ class PrinterController extends GetxController {
     buffer.writeln("Status       : $status");
 
     buffer.writeln("Token No     : ${order.invNo}");
-    buffer.writeln("Table        : ${order.tableName} (${order.chairNumber} Seats)");
+    buffer.writeln("Order Type   : ${OrderType.values.firstWhere((e) => e.id == order.sales_odr_order_type, orElse: () => OrderType.dineIn).displayName}");
+    if (order.sales_odr_order_type == OrderType.dineIn.id) {
+      buffer.writeln("Table        : ${order.tableName} (${order.chairNumber} Seats)");
+    }
     buffer.writeln("Date         : ${DateFormat('dd/MM/yyyy HH:mm:ss').format(order.createdAt)}");
 
     buffer.writeln("------------------------------------------");
@@ -1102,7 +1642,7 @@ class PrinterController extends GetxController {
 
     printer.text("Token No : ${order.invNo}",
         styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
-    printer.text("SIMPLIFIED TAX INVOICE",
+    printer.text("KITCHEN ORDER",
         styles: const PosStyles(align: PosAlign.center, bold: true));
     printer.hr();
 
@@ -1124,13 +1664,24 @@ class PrinterController extends GetxController {
     ]);
 
     printer.row([
-      PosColumn(text: "Table:", width: 6),
+      PosColumn(text: "Order type:", width: 6),
       PosColumn(
-        text: "${order.tableName} (${order.chairNumber} Seats)",
+        text: OrderType.values.firstWhere((e) => e.id == order.sales_odr_order_type, orElse: () => OrderType.dineIn).displayName,
         width: 6,
         styles: const PosStyles(align: PosAlign.right),
       ),
     ]);
+
+    if (order.sales_odr_order_type == OrderType.dineIn.id) {
+      printer.row([
+        PosColumn(text: "Table:", width: 6),
+        PosColumn(
+          text: "${order.tableName} (${order.chairNumber} Seats)",
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
 
     printer.row([
       PosColumn(text: "Date:", width: 6),

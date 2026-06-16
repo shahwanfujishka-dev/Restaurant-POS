@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get_utils/src/extensions/internacionalization.dart';
@@ -18,7 +19,14 @@ class PosSidebar extends StatelessWidget {
     this.showTables = true,
   });
 
-  static const double _itemHeight = 90;
+  static double get _itemHeight {
+    final isDesktop =
+        !kIsWeb &&
+            (defaultTargetPlatform == TargetPlatform.macOS ||
+                defaultTargetPlatform == TargetPlatform.windows);
+
+    return isDesktop ? 120 : 90;
+  }
 
   int _getDisplayIndex() {
     if (showTables || selectedIndex == 0) return selectedIndex;
@@ -72,11 +80,15 @@ class PosSidebar extends StatelessWidget {
           Column(
             children: [
               _navItem(context, Icons.dashboard, "dashboard".tr, 0),
+              // SizedBox(height: 10.h,),
               if (showTables) _navItem(context, Icons.table_restaurant, "tables".tr, 1),
+              // SizedBox(height: 10.h,),
               _navItem(context, Icons.receipt, "orders".tr, 2),
+              // SizedBox(height: 10.h,),
               _navItem(context, Icons.print, "printers".tr, 3),
+              // SizedBox(height: 10.h,),
               _navItem(context, Icons.settings_outlined, "settings".tr, 4),
-              // const Spacer(),
+              const Spacer(),
               Padding(
                 padding: EdgeInsets.only(bottom: 10.h),
                 child: _actionItem(context, Icons.logout, "logout".tr, onLogout, color: Colors.red),

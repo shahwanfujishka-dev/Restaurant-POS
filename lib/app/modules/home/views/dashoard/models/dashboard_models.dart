@@ -24,7 +24,7 @@ class CategoryModel {
       id: (json['cat_id'] ?? '').toString(),
       cat_pos: (json['cat_pos'] ?? '').toString(),
       name: json['cat_name']?.toString() ?? '',
-      tokenPrinterId: (json['cat_token_printer'] as num? ?? 0).toInt(),
+      tokenPrinterId: parseInt(json['cat_token_printer']),
     );
   }
 }
@@ -45,18 +45,12 @@ class FavoriteModel {
   });
 
   factory FavoriteModel.fromJson(Map<String, dynamic> json) {
-    final dynamic idValue = json['fav_id'] ?? json['favp_id'] ?? json['id'] ?? 0;
-    final dynamic nameValue = json['fav_name'] ?? json['favp_name'] ?? json['name'] ?? '';
-    final dynamic imgValue = json['fav_img_url'] ?? json['favp_img_url'] ?? json['image'];
-
     return FavoriteModel(
-      id: idValue is num ? idValue.toInt() : int.tryParse(idValue.toString()) ?? 0,
-      name: nameValue.toString(),
+      id: parseInt(json['fav_id'] ?? json['favp_id'] ?? json['id']),
+      name: (json['fav_name'] ?? json['favp_name'] ?? json['name'] ?? '').toString(),
       description: (json['favp_description'] ?? json['description'])?.toString(),
-      image: imgValue?.toString(),
-      branchId: (json['branch_id'] ?? 0) is num 
-          ? (json['branch_id'] ?? 0).toInt() 
-          : int.tryParse((json['branch_id'] ?? 0).toString()) ?? 0,
+      image: (json['fav_img_url'] ?? json['favp_img_url'] ?? json['image'])?.toString(),
+      branchId: parseInt(json['branch_id']),
     );
   }
 }
@@ -97,21 +91,29 @@ class FoodItemModel {
       id: (json['prd_id'] ?? json['id'] ?? '').toString(),
       name: json['prd_name']?.toString() ?? json['name']?.toString() ?? 'Unknown Item',
       categoryId: (json['prd_cat_id'] ?? json['category_id'] ?? '').toString(),
-      price: (json['sale_rate'] as num? ?? json['price'] as num? ?? 0.0).toDouble(),
-      prd_tax: (json['prd_tax'] as num? ?? 0.0).toDouble(),
+      price: parseDouble(json['sale_rate'] ?? json['price'], defaultValue: 0.0),
+      prd_tax: parseDouble(json['prd_tax'], defaultValue: 0.0),
       image: imgUrl,
       unitDisplay: json['unit_display']?.toString() ?? '',
-      taxCatId: (json['prd_tax_cat_id'] as num? ?? json['tax_cat_id'] as num? ?? 0).toInt(),
-      taxPer: (json['tax_per'] as num? ?? 0.0).toDouble(),
-      tokenPrinterId: (json['cat_token_printer'] as num?)?.toInt(),
+      taxCatId: parseInt(json['prd_tax_cat_id'] ?? json['tax_cat_id']),
+      taxPer: parseDouble(json['tax_per'], defaultValue: 0.0),
+      tokenPrinterId: parseInt(json['cat_token_printer']) == 0 ? null : parseInt(json['cat_token_printer']),
     );
   }
 }
-double parseDouble(dynamic value) {
-  if (value == null) return 1.0;
+
+double parseDouble(dynamic value, {double defaultValue = 1.0}) {
+  if (value == null) return defaultValue;
   if (value is num) return value.toDouble();
-  return double.tryParse(value.toString()) ?? 1.0;
+  return double.tryParse(value.toString()) ?? defaultValue;
 }
+
+int parseInt(dynamic value, {int defaultValue = 0}) {
+  if (value == null) return defaultValue;
+  if (value is num) return value.toInt();
+  return int.tryParse(value.toString()) ?? defaultValue;
+}
+
 class ProductUnit {
   final int unitId;
   final String unitName;
@@ -148,7 +150,6 @@ class ProductUnit {
   }
 
   factory ProductUnit.fromJson(Map<String, dynamic> json) {
-    log("RAW unit_base_qty → ${json['unit_base_qty']}");
     // Extensive fallback for unit name fields commonly used in APIs and Local DB
     String name = (json['unit_name'] ??
                   json['prd_unit_name'] ??
@@ -174,14 +175,14 @@ class ProductUnit {
     }
 
     return ProductUnit(
-      unitId: (json['unit_id'] as num? ?? json['produnit_unit_id'] as num? ?? 0).toInt(),
+      unitId: parseInt(json['unit_id'] ?? json['produnit_unit_id']),
       unitName: name,
       unitDisplay: display,
-      rate: (json['sur_unit_rate'] as num? ??
-            json['sale_rate'] as num? ??
-            json['rate'] as num? ??
-            0.0).toDouble(),
-      unitBaseQty: parseDouble(json['unit_base_qty']),
+      rate: parseDouble(json['sur_unit_rate'] ??
+            json['sale_rate'] ??
+            json['prd_unit_rate'] ??
+            json['rate'], defaultValue: 0.0),
+      unitBaseQty: parseDouble(json['unit_base_qty'], defaultValue: 1.0),
       existAddOns: existAddonsList
           .map((e) => AddonModel.fromJson(e))
           .toList(),
@@ -229,28 +230,28 @@ class AddonModel {
 
   factory AddonModel.fromJson(Map<String, dynamic> json) {
     bool isCommon = json['commonAddon'] == true;
-    int q = (json['prdaddon_qty'] as num? ?? 0).toInt();
+    int q = parseInt(json['prdaddon_qty']);
 
     return AddonModel(
-      id: (json['prdaddon_id'] as num? ?? (json['prd_id'] as num? ?? 0)).toInt(),
-      subId: (json['sales_ord_sub_id'] as num?)?.toInt() == 0
+      id: parseInt(json['prdaddon_id'] ?? json['prd_id']),
+      subId: parseInt(json['sales_ord_sub_id']) == 0
           ? null
-          : (json['sales_ord_sub_id'] as num?)?.toInt(),
-      prdId: (json['prdaddon_prd_id'] as num? ?? (json['prd_id'] as num? ?? 0)).toInt(),
-      prdaddon_flags: (json['prdaddon_flags'] as num? ?? 0).toInt(),
+          : parseInt(json['sales_ord_sub_id']),
+      prdId: parseInt(json['prdaddon_prd_id'] ?? json['prd_id']),
+      prdaddon_flags: parseInt(json['prdaddon_flags']),
       name: (json['prd_name'] ?? json['name'] ?? '').toString(),
-      price: (json['sales_ord_sub_rate'] as num? ??
-          json['bs_srate'] as num? ??
-          (json['sale_rate'] as num? ?? 0.0)).toDouble(),
+      price: parseDouble(json['sales_ord_sub_rate'] ??
+          json['bs_srate'] ??
+          json['sale_rate'], defaultValue: 0.0),
       unitDisplay: (json['unit_display'] ?? json['prd_unit_display'] ?? '').toString(),
-      unitId: (json['unit_id'] as num? ?? 0).toInt(),
-      taxCatId: (json['prd_tax_cat_id'] as num? ?? 0).toInt(),
-      taxPer: (json['tax_per'] as num? ?? 0.0).toDouble(),
-      unitBaseQty: double.tryParse(json['unit_base_qty']?.toString() ?? '') ?? 1.0,
-      isDefault: (json['is_default'] as num? ?? 0).toInt(),
+      unitId: parseInt(json['unit_id']),
+      taxCatId: parseInt(json['prd_tax_cat_id']),
+      taxPer: parseDouble(json['tax_per'], defaultValue: 0.0),
+      unitBaseQty: parseDouble(json['unit_base_qty'], defaultValue: 1.0),
+      isDefault: parseInt(json['is_default']),
       initialQty: isCommon ? 0 : q,
       freeQty: isCommon ? 0 : q,
-      flags: (json['sales_ord_sub_flags'] as num? ?? 0).toInt(), // Capture flags from response
+      flags: parseInt(json['sales_ord_sub_flags']),
     );
   }
 

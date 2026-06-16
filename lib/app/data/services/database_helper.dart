@@ -475,12 +475,42 @@ class DatabaseHelper {
           'name': customer['name'],
           'mobile': customer['mobile'],
           'vat_no': customer['vat_no'],
-          'address': customer['cust_home_addr'] ?? customer['dflt_delvry_addr'],
+          'address': customer['cust_home_addr'] ?? customer['dflt_delvry_addr'] ?? customer['address'],
           'email': customer['email'],
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
       await batch.commit(noResult: true);
     });
+  }
+
+  Future<void> upsertCustomerByMobile(Map<String, dynamic> customer) async {
+    final db = await instance.database;
+    final String mobile = customer['mobile']?.toString() ?? "";
+    if (mobile.isEmpty) return;
+
+    final List<Map<String, dynamic>> existing = await db.query(
+      'customers',
+      where: 'mobile = ?',
+      whereArgs: [mobile],
+      limit: 1,
+    );
+
+    if (existing.isEmpty) {
+      await db.insert('customers', {
+        'name': customer['name'],
+        'mobile': mobile,
+        'address': customer['address'],
+        'vat_no': customer['vat_no'],
+        'ledger_id': customer['ledger_id'] ?? 0,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    } else {
+      await db.update('customers', {
+        'name': customer['name'],
+        'address': customer['address'],
+        'vat_no': customer['vat_no'],
+        'ledger_id': customer['ledger_id'] ?? existing.first['ledger_id'],
+      }, where: 'mobile = ?', whereArgs: [mobile]);
+    }
   }
 
   Future<List<Map<String, dynamic>>> getCustomers() async {
@@ -509,7 +539,6 @@ class DatabaseHelper {
     await db.update('payments', {'is_synced': isSynced}, where: 'id = ?', whereArgs: [id]);
   }
 
-  // --- Orders ---
   Future<void> insertOrder(Map<String, dynamic> order, List<Map<String, dynamic>> items) async {
     final db = await instance.database;
     await db.transaction((txn) async {
@@ -535,7 +564,7 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getOrdersByStatus(List<String> statuses) async {
     final db = await instance.database;
     final String statusPlaceholder = List.filled(statuses.length, '?').join(',');
-    return await db.query('orders', where: "status IN ($statusPlaceholder)", whereArgs: statuses, orderBy: 'created_at DESC');
+    return await db.rawQuery('SELECT * FROM orders WHERE status IN ($statusPlaceholder) ORDER BY created_at DESC', statuses);
   }
 
   Future<List<Map<String, dynamic>>> getOrderItemsByUuid(String uuid) async {
@@ -551,7 +580,7 @@ class DatabaseHelper {
     if (tax != null) values['total_tax'] = tax;
     if (payload != null) values['payload'] = payload;
     if (invNo != null) values['inv_no'] = invNo;
-    
+
     int count = await db.update('orders', values, where: 'server_id = ?', whereArgs: [serverId]);
     if (count == 0) {
       count = await db.update('orders', values, where: 'uuid = ?', whereArgs: [serverId]);
@@ -591,8 +620,8 @@ class DatabaseHelper {
           'order_type_id': (json['sales_odr_order_type'] as num? ?? 0).toInt(),
           'table_id': (json['sales_odr_table_id'] ?? 0).toString(),
           'customer_name': json['sales_odr_table_name']?.toString() ?? json['ledger_name']?.toString() ?? 'N/A',
-          'total_amount': (json['sales_odr_total'] as num? ?? 0.0).toDouble(),
-          'total_tax': (json['sales_odr_tax'] as num? ?? 0.0).toDouble(),
+          'total_amount': _toDouble(json['sales_odr_total'] ?? json['tot_amount'] ?? json['total_amount']),
+          'total_tax': _toDouble(json['sales_odr_tax'] ?? json['tot_tax'] ?? json['total_tax']),
           'status': status,
           'is_synced': 1,
           'created_at': DateTime.tryParse(json['sales_odr_datetime'] ?? '')?.toIso8601String() ?? DateTime.now().toIso8601String(),
@@ -601,14 +630,16 @@ class DatabaseHelper {
     });
   }
 
-  Future<void> updateOrderStatusByUuid(String uuid, String status, {int? isSynced, String? serverId, String? invNo, String? payload}) async {
+  Future<void> updateOrderStatusByUuid(String uuid, String status, {int? isSynced, String? serverId, String? invNo, String? payload, double? total, double? tax}) async {
     final db = await instance.database;
     final Map<String, dynamic> values = {'status': status};
     if (isSynced != null) values['is_synced'] = isSynced;
     if (serverId != null) values['server_id'] = serverId;
     if (invNo != null) values['inv_no'] = invNo;
     if (payload != null) values['payload'] = payload;
-    
+    if (total != null) values['total_amount'] = total;
+    if (tax != null) values['total_tax'] = tax;
+
     int count = await db.update('orders', values, where: 'uuid = ?', whereArgs: [uuid]);
     if (count == 0) {
       count = await db.update('orders', values, where: 'server_id = ?', whereArgs: [uuid]);
@@ -619,7 +650,7 @@ class DatabaseHelper {
     final db = await instance.database;
     await db.transaction((txn) async {
       final String id = (orderValues['server_id'] ?? orderValues['uuid']).toString();
-      
+
       // Try to find existing record to get its real UUID
       final List<Map<String, dynamic>> existing = await txn.query(
         'orders',
@@ -628,7 +659,7 @@ class DatabaseHelper {
         whereArgs: [id, id],
         limit: 1,
       );
-      
+
       String targetUuid;
       if (existing.isNotEmpty) {
         targetUuid = existing.first['uuid'];
@@ -638,7 +669,7 @@ class DatabaseHelper {
         orderValues['uuid'] = targetUuid; // ensure uuid is set
         await txn.insert('orders', orderValues, conflictAlgorithm: ConflictAlgorithm.replace);
       }
-      
+
       // Sync items table
       await txn.delete('order_items', where: 'order_uuid = ?', whereArgs: [targetUuid]);
       for (var item in itemValues) {
@@ -658,13 +689,13 @@ class DatabaseHelper {
         whereArgs: [id, id],
         limit: 1,
       );
-      
+
       if (maps.isNotEmpty) {
         final String uuid = maps.first['uuid'];
         await txn.delete('order_items', where: 'order_uuid = ?', whereArgs: [uuid]);
         await txn.delete('payments', where: 'order_uuid = ?', whereArgs: [uuid]);
       }
-      
+
       await txn.delete('orders', where: 'uuid = ? OR server_id = ?', whereArgs: [id, id]);
     });
   }
@@ -728,13 +759,21 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getProducts({String? categoryId, int priceGroupId = 0}) async {
     final db = await instance.database;
+
+    // Fallback: If product doesn't exist in specific price group, use default group (0)
     String query = '''
       SELECT p.*, c.token_printer_id as cat_token_printer
-      FROM products p
+      FROM (
+        SELECT * FROM products WHERE price_group_id = ?
+        UNION ALL
+        SELECT * FROM products p1 WHERE price_group_id = 0 
+        AND NOT EXISTS (SELECT 1 FROM products p2 WHERE p2.id = p1.id AND p2.price_group_id = ?)
+      ) p
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.price_group_id = ?
+      WHERE 1=1
     ''';
-    List<dynamic> args = [priceGroupId];
+
+    List<dynamic> args = [priceGroupId, priceGroupId];
 
     if (categoryId != null && categoryId.isNotEmpty) {
       query += " AND p.category_id = ?";
@@ -747,13 +786,19 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> searchProducts(String query, {int priceGroupId = 0}) async {
     final db = await instance.database;
+
     return await db.rawQuery('''
       SELECT p.*, c.token_printer_id as cat_token_printer
-      FROM products p
+      FROM (
+        SELECT * FROM products WHERE price_group_id = ?
+        UNION ALL
+        SELECT * FROM products p1 WHERE price_group_id = 0 
+        AND NOT EXISTS (SELECT 1 FROM products p2 WHERE p2.id = p1.id AND p2.price_group_id = ?)
+      ) p
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.price_group_id = ? AND p.name LIKE ?
+      WHERE p.name LIKE ?
       ORDER BY p.sort_order ASC
-    ''', [priceGroupId, '%$query%']);
+    ''', [priceGroupId, priceGroupId, '%$query%']);
   }
 
   Future<void> insertProductUnits(String prdId, int pgId, List<dynamic> units) async {
@@ -766,7 +811,7 @@ class DatabaseHelper {
         'unit_id': _toInt(unit['unit_id']),
         'unit_name': unit['prd_unit_name'],
         'unit_display': unit['unit_display'],
-        'rate': _toDouble(unit['sale_rate']),
+        'rate': _toDouble(unit['sur_unit_rate'] ?? unit['sale_rate'] ?? unit['prd_unit_rate']),
         'unit_base_qty': _toDouble(unit['unit_base_qty'], defaultValue: 1.0),
         'exist_addons': jsonEncode(unit['existAddOn'] ?? []),
       }, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -913,12 +958,18 @@ class DatabaseHelper {
     final db = await instance.database;
     return await db.rawQuery('''
       SELECT p.*, c.token_printer_id as cat_token_printer
-      FROM products p
-      INNER JOIN favorite_products fp ON p.id = fp.product_id AND p.price_group_id = fp.price_group_id
+      FROM (
+        SELECT * FROM products WHERE price_group_id = ?
+        UNION ALL
+        SELECT * FROM products p1 WHERE price_group_id = 0 
+        AND NOT EXISTS (SELECT 1 FROM products p2 WHERE p2.id = p1.id AND p2.price_group_id = ?)
+      ) p
+      INNER JOIN favorite_products fp ON p.id = fp.product_id AND (fp.price_group_id = ? OR fp.price_group_id = 0)
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE fp.favorite_id = ? AND fp.price_group_id = ?
+      WHERE fp.favorite_id = ?
+      GROUP BY p.id
       ORDER BY p.sort_order ASC
-    ''', [favId, pgId]);
+    ''', [pgId, pgId, pgId, favId]);
   }
 
   // --- Units ---
@@ -944,39 +995,82 @@ class DatabaseHelper {
     return null;
   }
 
-  // --- Bulk Product Units ---
   Future<void> insertBulkProductUnits(List<dynamic> rawList) async {
     final db = await instance.database;
-    const chunkSize = 200;
-    for (int i = 0; i < rawList.length; i += chunkSize) {
-      final end = (i + chunkSize < rawList.length) ? i + chunkSize : rawList.length;
-      final chunk = rawList.sublist(i, end);
-      await db.transaction((txn) async {
-        final batch = txn.batch();
-        for (final item in chunk) {
-          String? unitName = item['unit_name']?.toString() ?? item['prd_unit_name']?.toString();
-          String? unitDisplay = item['unit_display']?.toString() ?? item['unit_name']?.toString();
-          batch.insert(
-            'bulk_product_units',
-            {
-              'produnit_id': _toInt(item['produnit_id'] ?? item['id']),
-              'produnit_prod_id': _toInt(item['produnit_prod_id'] ?? item['prd_id']),
-              'produnit_unit_id': _toInt(item['produnit_unit_id'] ?? item['unit_id']),
-              'unit_name': unitName,
-              'unit_display': unitDisplay,
-              'rate': _toDouble(item['sur_unit_rate'] ?? item['sale_rate'] ?? item['prd_unit_rate']),
-              'unit_base_qty': _toDouble(item['unit_base_qty'], defaultValue: 1.0),
-              'produnit_ean_barcode': item['produnit_ean_barcode']?.toString() ?? '',
-              'produnit_flag': _toInt(item['produnit_flag'], defaultValue: 1),
-              'exist_addons': jsonEncode(item['existAddOn'] ?? item['exist_addons'] ?? []),
-              'common_addons': jsonEncode(item['cmmnAddon'] ?? item['common_addons'] ?? []),
-            },
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
-        }
-        await batch.commit(noResult: true);
-      });
+
+    log("DB_HELPER: Received ${rawList.length} records from API.");
+    if (rawList.isNotEmpty) {
+      log("DB_HELPER: FIRST RECORD DATA: ${rawList.first}");
     }
+
+    await db.transaction((txn) async {
+      // 1. Clear inside transaction so UI never sees an empty table
+      await txn.delete('bulk_product_units');
+
+      final batch = txn.batch();
+      int validCount = 0;
+
+      for (final item in rawList) {
+        // 2. RESILIENT ID MAPPING
+        // We check every possible key name used in ERP systems
+        final dynamic rawId = item['produnit_prod_id'] ??
+            item['prd_id'] ??
+            item['product_id'] ??
+            item['prd_unit_prd_id'] ??
+            item['id'];
+
+        final int resolvedProdId = _toInt(rawId);
+
+        if (resolvedProdId == 0) {
+          // If this prints, the API key names changed and we are skipping data
+          log("DB_HELPER: Skipping record - No valid Product ID found in: $item");
+          continue;
+        }
+
+        // 3. RESILIENT FIELD MAPPING
+        String? unitName = item['unit_name']?.toString() ?? item['prd_unit_name']?.toString();
+        String? unitDisplay = item['unit_display']?.toString() ?? item['unit_name']?.toString() ?? item['prd_unit_display']?.toString();
+
+        batch.insert(
+          'bulk_product_units',
+          {
+            'produnit_id': _toInt(item['produnit_id'] ?? item['id'] ?? item['prd_unit_id']),
+            'produnit_prod_id': resolvedProdId,
+            'produnit_unit_id': _toInt(item['produnit_unit_id'] ?? item['unit_id'] ?? item['prd_unit_unit_id']),
+            'unit_name': unitName,
+            'unit_display': unitDisplay,
+            'rate': _toDouble(item['sur_unit_rate'] ?? item['sale_rate'] ?? item['prd_unit_rate'] ?? item['prd_unit_price']),
+            'unit_base_qty': _toDouble(item['unit_base_qty'] ?? item['prd_unit_base_qty'], defaultValue: 1.0),
+            'produnit_ean_barcode': item['produnit_ean_barcode']?.toString() ?? item['prd_unit_barcode']?.toString() ?? '',
+            'produnit_flag': _toInt(item['produnit_flag'] ?? item['prd_unit_flag'], defaultValue: 1),
+            'exist_addons': jsonEncode(item['existAddOn'] ?? item['exist_addons'] ?? []),
+            'common_addons': jsonEncode(item['cmmnAddon'] ?? item['common_addons'] ?? []),
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        validCount++;
+      }
+
+      await batch.commit(noResult: true);
+      log("DB_HELPER: Successfully batched $validCount records.");
+    });
+
+    // 4. FINAL VERIFICATION
+    final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM bulk_product_units'));
+    log("DB_HELPER: DATABASE VERIFIED - Total rows now in table: $count");
+  }
+
+  Future<void> insertBasicProductUnits(List<Map<String, dynamic>> units) async {
+    final db = await instance.database;
+    final batch = db.batch();
+    for (var unit in units) {
+      batch.insert(
+        'product_units',
+        unit,
+        conflictAlgorithm: ConflictAlgorithm.ignore, // don't overwrite richer data
+      );
+    }
+    await batch.commit(noResult: true);
   }
 
   Future<List<Map<String, dynamic>>> getBulkProductUnits(int prodId) async {
@@ -1020,8 +1114,8 @@ class DatabaseHelper {
             'server_id': serverId,
             'inv_no': (order['sales_odr_inv_no'] ?? '').toString(),
             'customer_name': order['ledger_name']?.toString() ?? 'Walk-in Customer',
-            'total_amount': _toDouble(order['sales_odr_total']),
-            'total_tax': _toDouble(order['sales_odr_tax']),
+            'total_amount': _toDouble(order['sales_odr_total'] ?? order['tot_amount'] ?? order['total_amount']),
+            'total_tax': _toDouble(order['sales_odr_tax'] ?? order['tot_tax'] ?? order['total_tax']),
             'status': 'paid',
             'is_synced': 1,
             'created_at': order['sales_odr_datetime'] ?? order['created_at'] ?? DateTime.now().toIso8601String(),
@@ -1083,12 +1177,12 @@ class DatabaseHelper {
       limit: 1,
     );
 
-    // 2. Fallback: Try without price group if not found (grab any available rate for this product and unit)
-    if (maps.isEmpty) {
+    // 2. Fallback: Try with price group 0 if the requested one was non-zero
+    if (maps.isEmpty && priceGroupId != 0) {
       maps = await db.query(
         'stock_unit_rates',
         columns: ['sur_unit_rate', 'sur_unit_rate2'],
-        where: 'sur_prd_id = ? AND sur_unit_id = ?',
+        where: 'sur_prd_id = ? AND sur_unit_id = ? AND price_group_id = 0',
         whereArgs: [prdId, unitId],
         limit: 1,
       );

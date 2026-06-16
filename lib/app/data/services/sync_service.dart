@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_rx/src/rx_types/rx_types.dart';
 import 'package:get/get_state_manager/src/rx_flutter/rx_disposable.dart';
 
+import '../../modules/cart/controller/cart_controller.dart';
 import '../utils/AppState.dart';
 import 'api_services.dart';
 import 'database_helper.dart';
@@ -88,8 +90,85 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _fetchAddonsPaginated(int userId) async {
+    const int pageLimit = 1000;
+    int partNo = 0;
+    bool isFirstPage = true;
+    int totalFetched = 0;
+
+    log("SyncService: Starting paginated addon fetch (limit: $pageLimit)...");
+
+    while (true) {
+      log("SyncService: Fetching addons page — part_no: $partNo");
+
+      final response = await _apiService.post(
+        "mobileapp/product_unit/get_prd_unit_and_addon",
+        data: {
+          "usr_id": userId,
+          "part_no": partNo,
+          "limit": pageLimit,
+          "sync_time": "",
+        },
+        options: Options(
+          sendTimeout: const Duration(minutes: 2),
+          receiveTimeout: const Duration(minutes: 2),
+        ),
+      );
+
+      if (response.statusCode != 200) {
+        log("SyncService: Addon page part_no=$partNo returned ${response.statusCode}, stopping.");
+        break;
+      }
+
+      final List<dynamic> pageData = response.data['data'] ?? [];
+
+      if (pageData.isEmpty) {
+        log("SyncService: Addon page part_no=$partNo returned empty, stopping.");
+        break;
+      }
+
+      // Clear only on the first page so we don't wipe data mid-fetch
+      if (isFirstPage) {
+        await _dbHelper.clearBulkProductUnits();
+        isFirstPage = false;
+      }
+
+      await _dbHelper.insertBulkProductUnits(pageData);
+      totalFetched += pageData.length;
+      log("SyncService: Fetched ${pageData.length} addon records (part_no=$partNo), total so far: $totalFetched");
+
+      // If the server returned fewer records than the page size, we're done
+      if (pageData.length < pageLimit) {
+        log("SyncService: Last addon page reached (${pageData.length} < $pageLimit). Done.");
+        break;
+      }
+
+      partNo++;
+    }
+
+    log("SyncService: Addon fetch complete — $totalFetched total records.");
+  }
+
+  /// Clears the current cart and table selection to ensure new master data 
+  /// doesn't conflict with existing session state.
+  void _clearCartState() {
+    try {
+      if (Get.isRegistered<CartController>()) {
+        final cart = Get.find<CartController>();
+        cart.stopEditing(); // clears editing state + cart + table selection
+        log("SyncService: Cart and table selection cleared for Master Sync.");
+      }
+    } catch (e) {
+      log("SyncService: Error clearing cart state: $e");
+    }
+  }
+
   Future<void> syncMasterData() async {
     if (isMasterSyncing.value) return;
+    
+    // Clear cart and table selection at the start of master sync
+    _clearCartState();
+    
     isMasterSyncing.value = true;
     masterSyncProgress.value = 0.0;
 
@@ -99,12 +178,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
       // 1. Start slow background calls
       log("SyncService: Initiating background fetch for units, addons and rates...");
-      final addonFuture = _apiService.post("mobileapp/product_unit/get_prd_unit_and_addon", data: {
-        "usr_id": userId,
-        "part_no": 0,
-        "limit": 20000,
-        "sync_time": "",
-      });
+
 
       final unitsFuture = _apiService.post("mobileapp/unit/download", data: {
         "part_no": 0,
@@ -264,17 +338,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       masterSyncProgress.value = 0.9;
 
       try {
-        final bulkUnitsResponse = await addonFuture;
-        if (bulkUnitsResponse.statusCode == 200) {
-          final List<dynamic> bulkData = bulkUnitsResponse.data['data'] ?? [];
-          log("SyncService: Processing ${bulkData.length} bulk units/addons...");
-
-          if (bulkData.isNotEmpty) {
-            await _dbHelper.clearBulkProductUnits();
-            await _dbHelper.insertBulkProductUnits(bulkData);
-            log("SyncService: Successfully cached bulk records.");
-          }
-        }
+        await _fetchAddonsPaginated(userId);
       } catch (e) {
         log("SyncService Error fetching addons: $e");
       }
@@ -348,7 +412,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     };
     if (catId != null) requestData["category_id"] = int.tryParse(catId) ?? 0;
     if (favId != null) requestData["fav_id"] = favId;
-
+    log("_fetchAndInsertProducts called: pgId=$pgId catId=$catId favId=$favId");
     try {
       final res = await _apiService.post(
         "mobileapp/pos/get_product_list",
@@ -363,6 +427,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
       final List<Map<String, dynamic>> products = [];
       final List<String> favoriteProductIds = [];
+      final List<Map<String, dynamic>> basicUnits = [];
 
       for (int i = 0; i < rawData.length; i++) {
         final json = rawData[i];
@@ -387,12 +452,30 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           'sort_order':     i,
         });
 
+        final double saleRate = (json['sale_rate'] as num? ?? 0.0).toDouble();
+        final String unitDisplay = (json['unit_display'] ?? '').toString();
+        basicUnits.add({
+          'prd_id':         prdId,
+          'price_group_id': pgId,
+          'unit_id':        0,
+          'unit_name':      unitDisplay.isNotEmpty ? unitDisplay : 'Unit',
+          'unit_display':   unitDisplay.isNotEmpty ? unitDisplay : 'Unit',
+          'rate':           saleRate,
+          'unit_base_qty':  1.0,
+          'exist_addons':   '[]',
+        });
+
         if (favId != null) {
           favoriteProductIds.add(prdId);
         }
       }
 
       await _dbHelper.insertProducts(products);
+
+      if (basicUnits.isNotEmpty) {
+        await _dbHelper.insertBasicProductUnits(basicUnits);
+        log("basicUnits built: ${basicUnits.length} rows for pgId=$pgId");
+      }
 
       if (favId != null && favoriteProductIds.isNotEmpty) {
         await _dbHelper.insertFavoriteProducts(favId, pgId, favoriteProductIds);
@@ -415,6 +498,23 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       final Map<String, dynamic> payload = jsonDecode(payloadStr);
       final bool isEdit = payload['is_pos_edit'] == true;
 
+      final String endpoint = isEdit
+          ? "mobileapp/pos/update_sales_order"
+          : "mobileapp/pos/add_sales_order";
+
+      log("SyncService: Syncing $uuid via $endpoint (isEdit: $isEdit, sq_inv_no: ${payload['sq_inv_no']})");
+
+      // ✅ ADDED DETAILED LOGGING FOR SYNC
+      if (payload['sale_items'] != null) {
+        final List items = payload['sale_items'];
+        log("SyncService: [PAYLOAD CHECK] Order $uuid contains ${items.length} items.");
+        for (int i = 0; i < items.length; i++) {
+          log("  - Item #$i: ${items[i]['prd_name']} | Qty: ${items[i]['salesub_qty']} | Rate: ${items[i]['salesub_rate']}");
+        }
+      } else {
+        log("SyncService: ⚠️ WARNING! No sale_items found in payload for $uuid");
+      }
+
       if (isEdit) {
         final int sqInvNo = (payload['sq_inv_no'] as num? ?? 0).toInt();
         final List processingTable =
@@ -426,13 +526,6 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           return;
         }
       }
-
-      final String endpoint = isEdit
-          ? "mobileapp/pos/update_sales_order"
-          : "mobileapp/pos/add_sales_order";
-
-      log("SyncService: Syncing $uuid via $endpoint "
-          "(isEdit: $isEdit, sq_inv_no: ${payload['sq_inv_no']})");
 
       final response = await _apiService.post(endpoint, data: payload);
 
@@ -488,8 +581,6 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     }
   }
 
-// lib/app/data/services/sync_service.dart
-
   Future<void> _syncPayment(Map<String, dynamic> payment) async {
     final String orderUuid = payment['order_uuid'];
     final int localPaymentId = payment['id'];
@@ -516,21 +607,47 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         'cash': 2, 'card': 5, 'bank': 3, 'credit': 1, 'multiple': 4, 'compliment': 2,
       };
 
+      final bool isCompliment = payment['method'].toString().toLowerCase() == 'compliment';
+
       final body = {
         "usr_id": _payloadUserId(order),
         "sales_odr_id": int.tryParse(serverId),
-        // ✅ use sq_inv_no to match what server returns
         "sales_odr_inv_no": int.tryParse(invNo ?? "0"),
         "sale_pay_type": payTypeMap[payment['method'].toString().toLowerCase()] ?? 2,
-        "amount_paid": payment['amount'],
+        "amount_paid": isCompliment ? 0 : payment['amount'],
         "received_amount": payment['amount'],
         "change_given": 0,
         "settle_date": payment['created_at'].split('T')[0],
         "sale_acc_ledger_id_cash": payment['cash_ledger_id'],
         "sale_acc_ledger_id_bank": payment['bank_ledger_id'],
-        "sq_disc": payment['discount_amount'] ?? 0,
+        "sq_disc": isCompliment ? payment['amount'] : payment['discount_amount'] ?? 0,
+        "is_compliment": isCompliment ? 1 : 0,
       };
 
+      // Ensure sale_items are passed if they exist in the order payload
+      if (order['payload'] != null) {
+        try {
+          final payload = jsonDecode(order['payload']);
+          // Check for 'sale_items' in the payload.
+          // If it's missing or empty, the server might reject the settlement.
+          if (payload['sale_items'] != null && (payload['sale_items'] as List).isNotEmpty) {
+            body['sale_items'] = payload['sale_items'];
+            
+            // ✅ ADDED DETAILED LOGGING FOR SETTLEMENT
+            final List items = payload['sale_items'];
+            log("SyncService: [SETTLEMENT CHECK] Order $serverId contains ${items.length} items.");
+            for (int i = 0; i < items.length; i++) {
+               log("  - Item #$i: ${items[i]['prd_name']} | Qty: ${items[i]['salesub_qty']}");
+            }
+          } else {
+            log("SyncService: ⚠️ sale_items missing or empty in payload for order $orderUuid");
+          }
+        } catch (e) {
+          log("SyncService: Error extracting sale_items for settlement: $e");
+        }
+      }
+      
+      log("SyncService: Sending settlement for order $serverId...");
       final response = await _apiService.post("mobileapp/pos/settle_sales_order", data: body);
 
       if (response.statusCode == 200) {

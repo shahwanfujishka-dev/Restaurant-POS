@@ -18,6 +18,7 @@ class AppState {
   static String get token => _storage.read('branch_token') ?? '';
   static String get companyCode => _storage.read('company_code') ?? '';
   static String get branchToken => _storage.read('mobileapptoken') ?? '';
+  static String get branchName => _storage.read('branch_name') ?? '';
   static String get cmptoken => _storage.read('cmptoken') ?? '';
   static String get username => _storage.read('usr_name') ?? '';
   static String get userId => _storage.read('usr_id')?.toString() ?? '';

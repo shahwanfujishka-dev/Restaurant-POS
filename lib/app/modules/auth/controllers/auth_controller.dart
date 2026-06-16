@@ -39,7 +39,6 @@ class AuthController extends GetxController {
   void _checkSessionExpired() {
     if (storage.read('session_expired_flag') == true) {
       storage.remove('session_expired_flag');
-      // Use a slight delay to ensure the UI is ready to show a snackbar/dialog
       Future.delayed(const Duration(milliseconds: 500), () {
         Get.dialog(
           AlertDialog(
@@ -86,16 +85,29 @@ class AuthController extends GetxController {
   }
 
   Future<void> processQrValue(String rawValue) async {
-    if (rawValue.isEmpty) return;
+    final trimmed = rawValue.trim();
+    if (trimmed.isEmpty) return;
+
+    // Safety check: If it looks like a file path, ignore it
+    if (trimmed.startsWith('/') || trimmed.startsWith('C:\\')) {
+      debugPrint("⚠️ Ignoring suspected file path input: $trimmed");
+      return;
+    }
 
     try {
-      String decodedString = rawValue;
+      String decodedString = trimmed;
 
-      if (!rawValue.trim().startsWith('{')) {
+      if (!trimmed.startsWith('{')) {
         try {
-          final decodedBytes = base64Decode(rawValue);
+          final decodedBytes = base64Decode(trimmed);
           decodedString = utf8.decode(decodedBytes);
-        } catch (_) {}
+        } catch (_) {
+          // If base64 decode fails, we keep decodedString as trimmed and let jsonDecode handle it
+        }
+      }
+
+      if (!decodedString.startsWith('{')) {
+        throw const FormatException("Invalid JSON format");
       }
 
       final parsed = jsonDecode(decodedString);
@@ -107,7 +119,10 @@ class AuthController extends GetxController {
       }
     } catch (e) {
       debugPrint("❌ Manual Entry Error: $e");
-      Get.snackbar("Error", "Invalid configuration code", backgroundColor: Colors.red, colorText: Colors.white);
+      // Only show snackbar if it's not a background/empty trigger
+      if (trimmed.length > 5) {
+        Get.snackbar("Error", "Invalid configuration code", backgroundColor: Colors.red, colorText: Colors.white);
+      }
     }
   }
 
@@ -146,6 +161,14 @@ class AuthController extends GetxController {
           "systemVersion": iosInfo.systemVersion,
         };
         deviceToken = iosInfo.identifierForVendor ?? "ios_device";
+      } else if (Platform.isMacOS) {
+        final MacOsDeviceInfo macInfo = await deviceInfo.macOsInfo;
+        deviceData = {
+          "model": macInfo.model,
+          "computerName": macInfo.computerName,
+          "osRelease": macInfo.osRelease,
+        };
+        deviceToken = macInfo.systemGUID ?? "macos_device";
       }
 
       storage.write('base_url', url);
@@ -208,7 +231,6 @@ class AuthController extends GetxController {
           AppState.updateSession(
             profile: data['profile'] ?? {},
           );
-          // Redirect to Sync screen instead of Home
           Get.offAllNamed('/sync');
         } else {
           Get.snackbar("Error", data['error'] ?? "Login failed", backgroundColor: Colors.red, colorText: Colors.white);
@@ -219,13 +241,5 @@ class AuthController extends GetxController {
     } finally {
       isLoading.value = false;
     }
-  }
-
-  void resetBranchVerification() {
-    storage.remove('base_url');
-    storage.remove('branch_token');
-    storage.remove('company_code');
-    storage.remove('branch_id');
-    isVerified.value = false;
   }
 }

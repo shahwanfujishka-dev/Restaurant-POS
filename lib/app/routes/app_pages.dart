@@ -1,4 +1,5 @@
 import 'package:get/get_navigation/src/routes/get_route.dart';
+import 'package:restaurant_pos/app/modules/home/views/blocked/blocked_screen.dart';
 
 import '../modules/auth/bindings/auth_binding.dart';
 import '../modules/auth/bindings/sync_binding.dart';
@@ -61,6 +62,11 @@ class AppPages {
       name: _Paths.SETTINGS,
       page: () => const SettingsView(),
       binding: SettingsBinding(),
+    ),
+    GetPage(
+      name: _Paths.BLOCKED,
+      page: () => const BlockedView(),
+      // binding: SettingsBinding(),
     ),
   ];
 }

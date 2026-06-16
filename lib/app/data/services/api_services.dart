@@ -75,9 +75,13 @@ class ApiService extends GetxService {
     }
   }
 
-  Future<Response> post(String path, {dynamic data}) async {
+  Future<Response> post(String path, {dynamic data, Options? options}) async {
     try {
-      return await _dio.post(path, data: data);
+      return await _dio.post(
+        path,
+        data: data,
+        options: options, // Ensure this is passed to dio
+      );
     } catch (e) {
       rethrow;
     }

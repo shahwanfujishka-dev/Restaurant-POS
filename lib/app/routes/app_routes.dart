@@ -11,6 +11,7 @@ abstract class Routes {
   static const ORDER_TYPE = _Paths.ORDER_TYPE;
   static const CASHIER = _Paths.CASHIER;
   static const SETTINGS = _Paths.SETTINGS;
+  static const BLOCKED = _Paths.BLOCKED;
 }
 
 abstract class _Paths {
@@ -23,4 +24,5 @@ abstract class _Paths {
   static const ORDER_TYPE = '/order-type';
   static const CASHIER = '/cashier';
   static const SETTINGS = '/settings';
+  static const BLOCKED = '/blocked';
 }

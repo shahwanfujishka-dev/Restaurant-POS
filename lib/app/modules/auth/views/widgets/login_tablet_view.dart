@@ -41,7 +41,7 @@ class LoginTabletView extends GetView<AuthController> {
           ),
           // Login Form
           Expanded(
-            flex: 3,
+            flex: 4,
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 64.w),
               child: SingleChildScrollView(
@@ -79,17 +79,17 @@ class LoginTabletView extends GetView<AuthController> {
                                   ),
                                 ),
                                 if (!controller.isVerified.value) ...[
-                                  SizedBox(width: 16.w),
+                                  SizedBox(width: 5.w),
                                   SizedBox(
-                                    width: 200.w,
+                                    width: 50.w,
                                     child: TextField(
                                       controller: controller.qrCodeController,
-                                      style: TextStyle(color: colors.text, fontSize: 14.sp),
+                                      style: TextStyle(color: colors.text, fontSize: 4.sp),
                                       decoration: InputDecoration(
                                         hintText: 'Or enter code',
                                         hintStyle: TextStyle(color: colors.subtext),
                                         isDense: true,
-                                        contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+                                        contentPadding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 15.h),
                                         border: OutlineInputBorder(
                                           borderRadius: BorderRadius.circular(8.r),
                                         ),

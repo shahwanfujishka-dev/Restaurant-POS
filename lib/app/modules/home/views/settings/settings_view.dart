@@ -105,9 +105,9 @@ class SettingsView extends GetView<SettingsController> {
             style: AppTypography.cardTitle.copyWith(fontWeight: FontWeight.bold, color: colors.text),
           ),
           SizedBox(height: 12.h),
-          _buildInfoTile(context, Icons.info_outline, "Version", "1.0.0"),
+          _buildInfoTile(context, Icons.info_outline, "Version", "1.1.0"),
           // _buildInfoTile(context, Icons.person_outline, "User ID", AppState.userId),
-          _buildInfoTile(context, Icons.business_outlined, "Branch", AppState.username),
+          _buildInfoTile(context, Icons.business_outlined, "Branch", AppState.branchName),
 
           SizedBox(height: 24.h),
           Text(
@@ -141,7 +141,6 @@ class SettingsView extends GetView<SettingsController> {
               ],
             ),
           ),
-
         ],
       ),
     );

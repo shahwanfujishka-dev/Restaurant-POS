@@ -53,19 +53,19 @@ class CartSummary extends StatelessWidget {
 
       final responseData = controller.isEditing
           ? await controller.updateOrder(
-              isDraft: isDraft,
-              payType: payType,
-              cashAmt: cashAmt,
-              cardAmt: cardAmt,
-              isCompliment: isCompliment,
-            )
+        isDraft: isDraft,
+        payType: payType,
+        cashAmt: cashAmt,
+        cardAmt: cardAmt,
+        isCompliment: isCompliment,
+      )
           : await controller.placeOrder(
-              isDraft: isDraft,
-              payType: payType,
-              cashAmt: cashAmt,
-              cardAmt: cardAmt,
-              isCompliment: isCompliment,
-            );
+        isDraft: isDraft,
+        payType: payType,
+        cashAmt: cashAmt,
+        cardAmt: cardAmt,
+        isCompliment: isCompliment,
+      );
 
       if (responseData == null) {
         showSafeSnackbar("Error", "Failed to process order. Please try again.");
@@ -74,27 +74,59 @@ class CartSummary extends StatelessWidget {
 
       debugPrint("Order Success Response: $responseData");
 
+      // ✅ CHECK FOR ERROR STATUS IN RESPONSE
+      bool hasError = false;
+      String errorMessage = "";
+
+      // Check if response contains error status
+      if (responseData is Map) {
+        // Check for message.status == 0 (error)
+        if (responseData['message'] is Map) {
+          final messageMap = responseData['message'] as Map;
+          if (messageMap['status'] == 0) {
+            hasError = true;
+            errorMessage = messageMap['msg'] ?? "Order processing failed";
+          }
+        }
+        // Also check for direct status field
+        else if (responseData['status'] == 0) {
+          hasError = true;
+          errorMessage = responseData['message']?.toString() ?? "Order processing failed";
+        }
+      }
+
+      // If there's an error, show message and stop processing without navigation
+      if (hasError) {
+        showSafeSnackbar("Error", errorMessage);
+        return;
+      }
+
       if (responseData is Map && responseData['no_change'] == true) {
         controller.stopEditing();
         showSafeSnackbar("No Change", "No changes to apply.");
         return;
       }
 
+      // AFTER
       final ordersController = Get.find<OrdersController>();
       final bool wasEditing = controller.isEditing;
       final bool wasDraftVal = controller.wasDraft.value;
       final List<OrderItem> originalItemsCopy = List<OrderItem>.from(controller.originalItems);
 
+// ✅ Capture BEFORE stopEditing/clearTable wipes these values
+      final String snapshotTableName = controller.selectedTableName.value;
+      final int snapshotChairCount = controller.selectedChairCount.value;
+
       if (wasEditing) {
         showSafeSnackbar(
-            isDraft ? "Draft Updated" : "Order Updated",
-            isDraft ? "Draft updated successfully." : "Order updated successfully."
+          isDraft ? "Draft Updated" : "Order Updated",
+          isDraft ? "Draft updated successfully." : "Order updated successfully.",
         );
         controller.stopEditing();
       } else {
         showSafeSnackbar(
-            isDraft ? "Draft Saved" : "order_placed".tr,
-            isDraft ? "Order saved as draft." : "Order successfully created."
+          isDraft ? "Draft Saved" : "order_placed".tr,
+          isDraft ? "Order saved as draft." : "Order successfully created.",
         );
         controller.clearCart();
         controller.clearTable();
@@ -109,10 +141,13 @@ class CartSummary extends StatelessWidget {
         wasDraft: wasDraftVal,
         originalItems: originalItemsCopy,
         ordersController: ordersController,
+        snapshotTableName: snapshotTableName,    // ✅ new
+        snapshotChairCount: snapshotChairCount,  // ✅ new
       );
 
     } catch (e) {
       debugPrint("Order processing error: $e");
+      showSafeSnackbar("Error", "An unexpected error occurred. Please try again.");
     } finally {
       controller.isProcessing.value = false;
     }
@@ -127,7 +162,7 @@ class CartSummary extends StatelessWidget {
     }
 
     final hasValidItems = controller.cartItems.any(
-      (item) => !item.isDeleted.value && item.quantity.value > 0,
+          (item) => !item.isDeleted.value && item.quantity.value > 0,
     );
 
     if (!hasValidItems) {
@@ -189,11 +224,17 @@ class CartSummary extends StatelessWidget {
     required bool wasDraft,
     required List<OrderItem> originalItems,
     required OrdersController ordersController,
+    String snapshotTableName = "",    // ✅ new
+    int snapshotChairCount = 0,       // ✅ new
   }) async {
     if (!isDraft) {
       try {
         final printerController = Get.find<PrinterController>();
-        final OrderModel liveOrder = ordersController.parseOrderResponse(responseData);
+        final OrderModel liveOrder = ordersController.parseOrderResponse(
+          responseData,
+          fallbackTableName: snapshotTableName,    // ✅ new
+          fallbackChairCount: snapshotChairCount,  // ✅ new
+        );
 
         List<OrderItem>? oldItemsForKOT;
         if (wasEditing && !wasDraft) {

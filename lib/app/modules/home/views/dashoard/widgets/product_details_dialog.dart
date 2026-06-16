@@ -78,13 +78,14 @@ class ProductDetailsDialog extends GetView<DashboardController> {
                   final isSelected = controller.selectedUnit.value?.unitId == unit.unitId;
 
                   // Calculate display price based on vatType
+                  // vatType 0 = Exclusive (Price + Tax), vatType 1 = Inclusive (Price)
                   double displayPrice = unit.rate;
-                  if (controller.vatType.value == 1) {
+                  if (controller.vatType.value == 0) {
                     displayPrice = unit.rate + (unit.rate * product.prd_tax / 100);
                   }
 
                   return ChoiceChip(
-                    label: Text(unit.unitName),
+                    label: Text("${unit.unitName} (${displayPrice.toStringAsFixed(2)})"),
                     selected: isSelected,
                     onSelected: (selected) {
                       if (selected) {
@@ -229,15 +230,16 @@ class ProductDetailsDialog extends GetView<DashboardController> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  addon.name,
+                  addon.freeQty > 0 ? "${addon.name} (Free: ${addon.freeQty})" : addon.name,
                   style: AppTypography.cardSubtitle.copyWith(
                     fontWeight: FontWeight.w500,
                     color: colors.text,
                   ),
                 ),
                 Obx(() {
+                  // Display addon price including tax if vatType is Exclusive
                   double displayAddonPrice = addon.price;
-                  if (controller.vatType.value == 1) {
+                  if (controller.vatType.value == 0) {
                     displayAddonPrice = addon.price + (addon.price * addon.taxPer / 100);
                   }
                   return Text(

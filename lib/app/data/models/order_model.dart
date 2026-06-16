@@ -2,7 +2,7 @@ import 'package:get/get_rx/src/rx_types/rx_types.dart';
 
 import '../../modules/home/views/dashoard/models/dashboard_models.dart';
 
-enum OrderStatus { pending, preparing, ready, served, paid, cancelled, draft }
+enum OrderStatus { pending, preparing, ready, served, paid, cancelled, draft, billed }
 
 class OrderItem {
   final int? subId;
@@ -43,32 +43,44 @@ class OrderModel {
   final String invNo;
   final String tableId;
   final String tableName;
+  final String? customerName; // ✅ Added
   final int chairNumber;
   final int sales_odr_pos_status;
   final List<OrderItem> items;
   final Rx<OrderStatus> status;
   final DateTime createdAt;
+  double subTotal; // ✅ Added to store tot_rate
   double totalAmount;
   double totalTax;
+  double discount;
+  double roundOff;
+  int paymentType; // ✅ Added
+  String? qrLink; // ✅ Added for ZATCA QR (Non-final for background updates)
 
   final int? areaId;
   final String? areaName;
   final int? priceGroupId;
-  final int sales_odr_order_type;
-  bool isUnsynced; // ✅ Removed final to allow updating sync status in UI
+  int sales_odr_order_type;
+  bool isUnsynced; 
 
   OrderModel({
     required this.id,
     required this.invNo,
     required this.tableId,
     required this.tableName,
+    this.customerName,
     required this.chairNumber,
     required this.sales_odr_pos_status,
     required this.items,
     required OrderStatus status,
     required this.createdAt,
+    this.subTotal = 0.0, // ✅ Added
     required this.totalAmount,
     required this.totalTax,
+    this.discount = 0.0,
+    this.roundOff = 0.0,
+    this.paymentType = 2, // Default to Cash (2)
+    this.qrLink,
     this.areaId,
     this.areaName,
     this.priceGroupId,
@@ -76,19 +88,24 @@ class OrderModel {
     this.isUnsynced = false,
   }) : status = status.obs;
 
-  // ✅ Add copyWith method
   OrderModel copyWith({
     String? id,
     String? invNo,
     String? tableId,
     String? tableName,
+    String? customerName,
     int? chairNumber,
     int? sales_odr_pos_status,
     List<OrderItem>? items,
     OrderStatus? status,
     DateTime? createdAt,
+    double? subTotal, // ✅ Added
     double? totalAmount,
     double? totalTax,
+    double? discount,
+    double? roundOff,
+    int? paymentType,
+    String? qrLink,
     int? areaId,
     String? areaName,
     int? priceGroupId,
@@ -100,13 +117,19 @@ class OrderModel {
       invNo: invNo ?? this.invNo,
       tableId: tableId ?? this.tableId,
       tableName: tableName ?? this.tableName,
+      customerName: customerName ?? this.customerName,
       chairNumber: chairNumber ?? this.chairNumber,
       sales_odr_pos_status: sales_odr_pos_status ?? this.sales_odr_pos_status,
       items: items ?? this.items,
       status: status ?? this.status.value,
       createdAt: createdAt ?? this.createdAt,
+      subTotal: subTotal ?? this.subTotal, // ✅ Added
       totalAmount: totalAmount ?? this.totalAmount,
       totalTax: totalTax ?? this.totalTax,
+      discount: discount ?? this.discount,
+      roundOff: roundOff ?? this.roundOff,
+      paymentType: paymentType ?? this.paymentType,
+      qrLink: qrLink ?? this.qrLink,
       areaId: areaId ?? this.areaId,
       areaName: areaName ?? this.areaName,
       priceGroupId: priceGroupId ?? this.priceGroupId,
