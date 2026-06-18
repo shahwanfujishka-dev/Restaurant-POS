@@ -26,34 +26,38 @@ void main() async {
   bool sessionExpired = false;
 
   if (AppState.isLoggedIn) {
-    try {
-      final tempDio = Dio(BaseOptions(
-        baseUrl: apiService.baseUrl,
-        connectTimeout: const Duration(seconds: 10),
-      ));
+    // If a previous sync was interrupted, force resync
+    if (AppState.isSyncInProgress) {
+      initialRoute = Routes.SYNC;
+    } else {
+      try {
+        final tempDio = Dio(BaseOptions(
+          baseUrl: apiService.baseUrl,
+          connectTimeout: const Duration(seconds: 10),
+        ));
 
-      final response = await tempDio.post(
-        "mobileapp/user/check_active_app",
-        options: Options(headers: {'mobileapptoken': AppState.token}),
-      );
+        final response = await tempDio.post(
+          "mobileapp/user/check_active_app",
+          options: Options(headers: {'mobileapptoken': AppState.token}),
+        );
 
-      if (response.statusCode == 200 && response.data['status'] == 200) {
-        print(response.data);
-        initialRoute = Routes.ORDER_TYPE;
-      } else {
-        await AppState.clearAllData();
-        sessionExpired = true;
-      }
-    } catch (e) {
-      if (e is DioException &&
-          (e.response?.statusCode == 403 ||
-              e.type == DioExceptionType.badResponse)) {
-        await AppState.clearAllData();
-        sessionExpired = true;
-      } else {
-        // Offline / timeout — allow in with cached data
-        // ✅ Show Order Type selection instead of Home on entry
-        initialRoute = Routes.ORDER_TYPE;
+        if (response.statusCode == 200 && response.data['status'] == 200) {
+          print(response.data);
+          initialRoute = Routes.ORDER_TYPE;
+        } else {
+          await AppState.clearAllData();
+          sessionExpired = true;
+        }
+      } catch (e) {
+        if (e is DioException &&
+            (e.response?.statusCode == 403 ||
+                e.type == DioExceptionType.badResponse)) {
+          await AppState.clearAllData();
+          sessionExpired = true;
+        } else {
+          // Offline / timeout — allow in with cached data
+          initialRoute = Routes.ORDER_TYPE;
+        }
       }
     }
   }

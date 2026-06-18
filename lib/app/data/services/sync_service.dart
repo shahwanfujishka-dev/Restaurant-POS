@@ -58,12 +58,10 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     });
   }
 
-  /// Entry point to trigger a sync of all pending orders and payments
   Future<void> syncPendingOrders() async {
     if (isSyncing.value) return;
 
     try {
-      // 1. Sync Orders first
       final unsyncedOrders = await _dbHelper.getUnsyncedOrders();
       if (unsyncedOrders.isNotEmpty) {
         isSyncing.value = true;
@@ -73,7 +71,6 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         }
       }
 
-      // 2. Sync Payments
       final unsyncedPayments = await _dbHelper.getUnsyncedPayments();
       if (unsyncedPayments.isNotEmpty) {
         isSyncing.value = true;
@@ -89,6 +86,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       isSyncing.value = false;
     }
   }
+
 
   Future<void> _fetchAddonsPaginated(int userId) async {
     const int pageLimit = 1000;
@@ -216,6 +214,9 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         _apiService.post('mobileapp/sales/get_branch_bank_account', data: {
           "usr_id": userId,
         }),
+        _apiService.post('mobileapp/sales/get_all_captains', data: {
+          "usr_id": userId,
+        }),
       ]);
 
       masterSyncProgress.value = 0.1;
@@ -226,6 +227,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       final vatResponse       = apiResults[3];
       final cashAccResponse   = apiResults[4];
       final bankAccResponse   = apiResults[5];
+      final captainsResponse  = apiResults[6];
 
       // Save VAT type
       if (vatResponse.statusCode == 200) {
@@ -245,6 +247,13 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         final List<dynamic> data = bankAccResponse.data['data'] ?? [];
         await _dbHelper.insertLedgers(data.cast<Map<String, dynamic>>(), 'bank');
         log("SyncService: Cached ${data.length} bank accounts.");
+      }
+
+      // Save Captains
+      if (captainsResponse.statusCode == 200) {
+        final List<dynamic> captainsData = captainsResponse.data['data'] ?? [];
+        await _dbHelper.insertCaptains(captainsData.cast<Map<String, dynamic>>());
+        log("SyncService: Cached ${captainsData.length} captains.");
       }
 
       // 3. Process Categories
@@ -344,6 +353,11 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       }
 
       log("SyncService: Master data sync complete.");
+      
+      // Refresh CartController if it's active so it picks up the new captains/ledgers
+      if (Get.isRegistered<CartController>()) {
+        Get.find<CartController>().loadCaptains();
+      }
     } catch (e) {
       log("SyncService Master Sync Error: $e");
       rethrow;
@@ -453,13 +467,13 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         });
 
         final double saleRate = (json['sale_rate'] as num? ?? 0.0).toDouble();
-        final String unitDisplay = (json['unit_display'] ?? '').toString();
+        final String unit_display = (json['unit_display'] ?? '').toString();
         basicUnits.add({
           'prd_id':         prdId,
           'price_group_id': pgId,
           'unit_id':        0,
-          'unit_name':      unitDisplay.isNotEmpty ? unitDisplay : 'Unit',
-          'unit_display':   unitDisplay.isNotEmpty ? unitDisplay : 'Unit',
+          'unit_name':      unit_display.isNotEmpty ? unit_display : 'Unit',
+          'unit_display':   unit_display.isNotEmpty ? unit_display : 'Unit',
           'rate':           saleRate,
           'unit_base_qty':  1.0,
           'exist_addons':   '[]',
@@ -526,7 +540,8 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           return;
         }
       }
-
+      log("SyncService: About to POST ${payload?.length ?? 'null'} items to $endpoint");
+      log("SyncService: Full payload sale_items: ${jsonEncode(payload['sale_items'])}");
       final response = await _apiService.post(endpoint, data: payload);
 
       if (response.statusCode == 200) {
@@ -591,18 +606,43 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           where: 'uuid = ? OR server_id = ?',
           whereArgs: [orderUuid, orderUuid]);
 
-      if (orders.isEmpty) return;
+      if (orders.isEmpty) {
+        log("SyncService: No order found for payment uuid=$orderUuid, marking done.");
+        await _dbHelper.updatePaymentSyncStatus(localPaymentId, 1);
+        return;
+      }
 
       final order = orders.first;
       final String? serverId = order['server_id'];
       final String? invNo = order['inv_no'];
 
-      // Wait for the order itself to sync if it hasn't yet
       if (serverId == null || serverId.isEmpty || serverId.startsWith('ORD-')) {
         log("SyncService: Order $orderUuid not yet synced, skipping payment.");
         return;
       }
 
+      // ✅ KEY FIX: If the order payload already included payment (res_status=3 or
+      // sale_pay_type != 0), _syncOrder already settled it in add_sales_order.
+      // A separate settle call would double-process and corrupt the order.
+      if (order['payload'] != null) {
+        try {
+          final orderPayload = jsonDecode(order['payload'] as String);
+          final int resStatus = (orderPayload['res_status'] as num? ?? 0).toInt();
+          final int payType = (orderPayload['sale_pay_type'] as num? ?? 0).toInt();
+
+          if (resStatus == 3 || payType != 0) {
+            log("SyncService: Skipping separate settlement for $orderUuid — "
+                "already paid via add_sales_order (res_status=$resStatus, payType=$payType).");
+            await _dbHelper.updatePaymentSyncStatus(localPaymentId, 1);
+            return;  // ← This is the key line
+          }
+        } catch (e) {
+          log("SyncService: Could not check payload for $orderUuid: $e");
+        }
+      }
+
+      // Only reach here for orders that were initially placed as drafts/pending
+      // and then paid separately (two-step flow)
       final Map<String, int> payTypeMap = {
         'cash': 2, 'card': 5, 'bank': 3, 'credit': 1, 'multiple': 4, 'compliment': 2,
       };
@@ -624,29 +664,18 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         "is_compliment": isCompliment ? 1 : 0,
       };
 
-      // Ensure sale_items are passed if they exist in the order payload
       if (order['payload'] != null) {
         try {
-          final payload = jsonDecode(order['payload']);
-          // Check for 'sale_items' in the payload.
-          // If it's missing or empty, the server might reject the settlement.
+          final payload = jsonDecode(order['payload'] as String);
           if (payload['sale_items'] != null && (payload['sale_items'] as List).isNotEmpty) {
             body['sale_items'] = payload['sale_items'];
-            
-            // ✅ ADDED DETAILED LOGGING FOR SETTLEMENT
-            final List items = payload['sale_items'];
-            log("SyncService: [SETTLEMENT CHECK] Order $serverId contains ${items.length} items.");
-            for (int i = 0; i < items.length; i++) {
-               log("  - Item #$i: ${items[i]['prd_name']} | Qty: ${items[i]['salesub_qty']}");
-            }
-          } else {
-            log("SyncService: ⚠️ sale_items missing or empty in payload for order $orderUuid");
+            log("SyncService: [SETTLEMENT] Attaching ${(payload['sale_items'] as List).length} items.");
           }
         } catch (e) {
-          log("SyncService: Error extracting sale_items for settlement: $e");
+          log("SyncService: Error extracting sale_items: $e");
         }
       }
-      
+
       log("SyncService: Sending settlement for order $serverId...");
       final response = await _apiService.post("mobileapp/pos/settle_sales_order", data: body);
 
@@ -658,7 +687,6 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       log("SyncService: ❌ Payment sync failed: $e");
     }
   }
-
   int _payloadUserId(Map<String, dynamic> order) {
     try {
       if (order['payload'] != null) {

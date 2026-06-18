@@ -151,35 +151,37 @@ class CartItem {
 class CartController extends GetxController {
   final ApiService _apiService = Get.find<ApiService>();
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
-
   final cartItems = <CartItem>[].obs;
   final originalItems = <OrderItem>[].obs;
-
   final selectedTableId = "".obs;
   final selectedTableName = "".obs;
   final selectedChairCount = 0.obs;
-
   final selectedAreaId = 0.obs;
   final selectedAreaName = "".obs;
   final selectedPriceGroupId = 0.obs;
-
   final editingOrderId = "".obs;
   final editingInvNo = "".obs;
   final wasDraft = false.obs;
-
-  // Track original metadata for change detection
   final originalTableId = "".obs;
   final originalChairCount = 0.obs;
   final originalOrderType = 0.obs;
-
   bool get isEditing => editingOrderId.value.isNotEmpty;
   List<Map<String, dynamic>> originalRawSubItems = [];
   final isProcessing = false.obs;
+  final selectedCaptainId = Rxn<int>();
+  final selectedCaptainName = "".obs;
+  final captainsList = <Map<String, dynamic>>[].obs;
 
   String _generateUuid() {
     final random = math.Random();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     return 'ORD-$timestamp-${random.nextInt(10000)}';
+  }
+
+  @override
+  void onInit() {
+    super.onInit();
+    loadCaptains();
   }
 
   void _clearDashboardSearch() {
@@ -192,6 +194,44 @@ class CartController extends GetxController {
       dashboard.searchController.clear();
       dashboard.fetchProducts();
     }
+  }
+
+
+
+  Future<void> loadCaptains() async {
+    final list = await _dbHelper.getCaptains();
+
+    final storedLedgerId = GetStorage().read('ledger_id');
+    final int? currentCaptainId = int.tryParse(storedLedgerId?.toString() ?? "");
+
+    if (currentCaptainId != null) {
+      final List<Map<String, dynamic>> sortedList = List.from(list);
+      final index = sortedList.indexWhere((c) => c['ledger_id'] == currentCaptainId);
+
+      if (index != -1) {
+        final captain = sortedList.removeAt(index);
+        sortedList.insert(0, captain);
+
+        // Optionally set as selected if nothing is selected yet
+        if (selectedCaptainId.value == null) {
+          setCaption(captain['ledger_id'], captain['ledg_name_only'] ?? captain['ledger_name'] ?? "");
+        }
+      }
+      captainsList.assignAll(sortedList);
+    } else {
+      captainsList.assignAll(list);
+    }
+
+    print("🎯 CAPTAINS LOADED: ${captainsList.length} → $captainsList");
+  }
+  void setCaption(int? ledgerId, String name) {
+    selectedCaptainId.value = ledgerId;
+    selectedCaptainName.value = name;
+  }
+
+  void clearCaptain() {
+    selectedCaptainId.value = null;
+    selectedCaptainName.value = "";
   }
 
   void setTable({
@@ -358,6 +398,7 @@ class CartController extends GetxController {
     originalOrderType.value = 0;
     clearCart();
     clearTable();
+    clearCaptain();
   }
 
   bool get hasSelectedTable => selectedTableId.value.isNotEmpty;
@@ -900,7 +941,7 @@ class CartController extends GetxController {
         "phone_no": customerMobile,
         "vat_no": customerVat,
         "no_seats": selectedChairCount.value,
-        "sale_agent": GetStorage().read('ledger_id'),
+        "sale_agent": selectedCaptainId.value ?? GetStorage().read('ledger_id'),
         "is_pos": true,
         "salesub_gd_id": 0,
         "res_table": {
@@ -1776,7 +1817,7 @@ class CartController extends GetxController {
         "phone_no": customerMobile,
         "vat_no": customerVat,
         "no_seats": selectedChairCount.value,
-        "sale_agent": GetStorage().read('ledger_id'),
+        "sale_agent": selectedCaptainId.value ?? GetStorage().read('ledger_id'),
         "is_pos": true,
         "salesub_gd_id": 0,
         "res_table": {
@@ -2005,6 +2046,7 @@ class CartController extends GetxController {
         "sales_odr_id": null, // filled after SyncService pushes it
         "sales_odr_inv_no": null,
         "sales_odr_date": dateStr,
+        "agent_name": selectedCaptainName.value,
         "sales_odr_time": timeStr,
         "sales_odr_total": isCompliment ? 0 : totalWithTax,
         "sales_odr_tax": totalTax,
@@ -2135,6 +2177,7 @@ class CartController extends GetxController {
         "sales_odr_inv_no": realInvNo ?? editingInvNo.value,
         "sales_odr_date": dateStr,
         "sales_odr_time": timeStr,
+        "agent_name": selectedCaptainName.value,
         "sales_odr_total": totalWithTax,
         "sales_odr_tax": totalTax,
         "sales_odr_pos_status": isDraft ? 0 : isBill ? 2 : (isCompliment ? 3 : 1),

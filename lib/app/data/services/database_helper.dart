@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 13, // bumped to 13 for customers table
+      version: 14, // bumped to 14 for captains table
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -185,6 +185,15 @@ class DatabaseHelper {
           vat_no TEXT,
           address TEXT,
           email TEXT
+        )
+      ''');
+    }
+    if (oldVersion < 14) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS captains (
+          ledger_id INTEGER PRIMARY KEY,
+          ledger_name TEXT,
+          ledg_name_only TEXT
         )
       ''');
     }
@@ -425,6 +434,14 @@ class DatabaseHelper {
         email TEXT
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE captains (
+        ledger_id INTEGER PRIMARY KEY,
+        ledger_name TEXT,
+        ledg_name_only TEXT
+      )
+    ''');
   }
 
   // --- App Settings ---
@@ -461,6 +478,28 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getLedgers(String type) async {
     final db = await instance.database;
     return await db.query('ledgers', where: 'type = ?', whereArgs: [type]);
+  }
+
+  // --- Captains ---
+  Future<void> insertCaptains(List<Map<String, dynamic>> captains) async {
+    final db = await instance.database;
+    await db.transaction((txn) async {
+      await txn.delete('captains');
+      final batch = txn.batch();
+      for (var captain in captains) {
+        batch.insert('captains', {
+          'ledger_id': _toInt(captain['ledger_id']),
+          'ledger_name': captain['ledger_name'],
+          'ledg_name_only': captain['ledg_name_only'],
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getCaptains() async {
+    final db = await instance.database;
+    return await db.query('captains', orderBy: 'ledg_name_only ASC');
   }
 
   // --- Customers ---
@@ -1218,6 +1257,7 @@ class DatabaseHelper {
       await txn.delete('stock_unit_rates');
       await txn.delete('ledgers');
       await txn.delete('customers');
+      await txn.delete('captains');
     });
   }
 }

@@ -184,6 +184,7 @@ class OrdersController extends GetxController {
               customerName: (json['sq_cust_name'] ?? json['customer_name'] ?? json['cust_name'] ?? json['ledger_name'] ?? processingOrder?.customerName)?.toString(),
               chairNumber: (json['sales_odr_no_seats'] as num? ??
                   processingOrder?.chairNumber ?? 0).toInt(),
+              captainName: (json['usr_name'] ?? json['captain_name'] ?? json['ledger_name'])?.toString(),
               sales_odr_pos_status: posStatus,
               items: [],
               status: status,
@@ -430,6 +431,7 @@ class OrdersController extends GetxController {
     double totalAmount = (json['total_amount'] as num? ?? json['tot_amount'] as num? ?? json['sales_odr_total'] as num? ?? 0.0).toDouble();
     double totalTax = (json['total_tax'] as num? ?? json['tot_tax'] as num? ?? json['sales_odr_tax'] as num? ?? 0.0).toDouble();
     String? qrLink;
+    String? captainName;
 
     try {
       final payloadStr = json['payload'] as String?;
@@ -437,7 +439,6 @@ class OrdersController extends GetxController {
         final dynamic decoded = jsonDecode(payloadStr);
         if (decoded is Map<String, dynamic>) {
           final Map<String, dynamic> payload = decoded;
-
           chairNumber = (payload['no_seats'] ?? payload['sales_odr_no_seats'] as num? ?? 0).toInt();
           orderType = (payload['pos_odr_type'] ?? payload['sales_odr_order_type'] as num? ?? orderType).toInt();
           discount = (payload['tot_disc'] ?? payload['discount'] ?? discount).toDouble();
@@ -447,6 +448,7 @@ class OrdersController extends GetxController {
           totalTax = (payload['tot_tax'] ?? payload['sales_odr_tax'] ?? payload['total_tax'] ?? totalTax).toDouble();
           qrLink = (payload['qr_link'] ?? payload['zatca_qr'])?.toString();
           customerName = (payload['sq_cust_name'] ?? payload['customer_name'] ?? payload['cust_name'] ?? payload['ledger_name'])?.toString();
+          captainName = (payload['agent_name'] ?? payload['sale_agent_name'] ?? payload['captain_name'])?.toString();
 
           // Robust name resolution logic
           tableName = _resolveName(payload, orderType, tableName);
@@ -527,10 +529,10 @@ class OrdersController extends GetxController {
             // final bool isDeleted = (si['is_deleted'] ?? 0) == 1;
             // Use DashboardController to determine if VAT is included in price
             double price = baseRate;
-            if (Get.isRegistered<DashboardController>()) {
-              final dashboardController = Get.find<DashboardController>();
-              price = dashboardController.vatType.value == 0 ? baseRate + taxAmt : baseRate;
-            }
+            // if (Get.isRegistered<DashboardController>()) {
+            //   final dashboardController = Get.find<DashboardController>();
+            //   price = dashboardController.vatType.value == 0 ? baseRate + taxAmt : baseRate;
+            // }
 
             final addons = addonItems.where((a) {
               final parentPrdId = (a['addon_parent_prd_id'] ?? a['sales_odr_sub_addon_parent_prd_id'])?.toString();
@@ -633,6 +635,7 @@ class OrdersController extends GetxController {
       totalAmount: totalAmount,
       totalTax: totalTax,
       discount: discount,
+      captainName: captainName,
       roundOff: roundOff,
       isUnsynced: (json['is_synced'] == 0),
       qrLink: qrLink ?? json['qr_link'] ?? json['zatca_qr'],
@@ -925,10 +928,10 @@ class OrdersController extends GetxController {
           final double taxAmt = (productJson['sales_ord_sub_tax'] ?? productJson['sales_ord_sub_tax_rate'] as num? ?? 0.0).toDouble();
 
           double price = baseRate;
-          if (Get.isRegistered<DashboardController>()) {
-            final dashboardController = Get.find<DashboardController>();
-            price = dashboardController.vatType.value == 0 ? baseRate + taxAmt : baseRate;
-          }
+          // if (Get.isRegistered<DashboardController>()) {
+          //   final dashboardController = Get.find<DashboardController>();
+          //   price = dashboardController.vatType.value == 0 ? baseRate + taxAmt : baseRate;
+          // }
 
           final String prdId = (productJson['sales_ord_sub_prod_id'] ?? 0).toInt().toString();
           final int unitId = (productJson['salesub_unit_id'] ?? productJson['sales_ord_sub_unit_id'] as num? ?? 0).toInt();
@@ -1014,6 +1017,8 @@ class OrdersController extends GetxController {
             discount: (preview['tot_disc'] ?? preview['discount'] ?? current.discount).toDouble(),
             roundOff: (preview['sales_odr_roundoff'] ?? current.roundOff).toDouble(),
             sales_odr_order_type: type,
+            captainName: (preview['agent_name'] ?? preview['usr_name'] ??
+                data['agent']?['ledger_name'])?.toString(),
             isUnsynced: false,
             qrLink: (preview['qr_link'] ?? preview['zatca_qr'] ?? data['qr_link'] ?? data['zatca_qr'] ?? current.qrLink).toString(),
           );
@@ -1032,6 +1037,8 @@ class OrdersController extends GetxController {
               sales_odr_pos_status: posStatus,
               items: items,
               status: current.status.value,
+              captainName: (preview['agent_name'] ?? preview['usr_name'] ??
+                  data['agent']?['ledger_name'])?.toString(),
               subTotal: (preview['tot_rate'] as num? ?? preview['sub_total'] as num? ?? preview['tot_subtotal'] as num? ?? preview['sales_odr_subtotal'] as num? ?? current.subTotal).toDouble(),
               totalAmount: authoritativeTotal,
               totalTax: authoritativeTax,
@@ -1238,6 +1245,7 @@ class OrdersController extends GetxController {
       : cartController.selectedTableName.value;
   final String tableName = _resolveName(preview, orderType, cartTableFallback);
   final String? customerName = (preview['sq_cust_name'] ?? preview['customer_name'] ?? preview['cust_name'] ?? preview['ledger_name'])?.toString();
+    final String? captainName = (preview['agent_name'] ?? preview['usr_name'])?.toString(); // ✅ ADD
 
   final int cartChairFallback = fallbackChairCount > 0
       ? fallbackChairCount
@@ -1264,6 +1272,7 @@ class OrdersController extends GetxController {
       discount: (preview['tot_disc'] ?? preview['discount'] ?? 0.0).toDouble(),
       roundOff: (preview['sales_odr_roundoff'] ?? 0.0).toDouble(),
       qrLink: (preview['qr_link'] ?? preview['zatca_qr'] ?? responseJson['qr_link'] ?? responseJson['zatca_qr'])?.toString(),
+      captainName: captainName,  // ✅ ADD
       areaId: (preview['rt_area_id'] as num? ?? cartController.selectedAreaId.value).toInt(),
       areaName: cartController.selectedAreaName.value,
       priceGroupId: (preview['prcgrp_id'] as num? ?? cartController.selectedPriceGroupId.value).toInt(),

@@ -43,6 +43,10 @@ class AppState {
   static bool get isBackgroundSyncEnabled => _storage.read('bg_sync_enabled') ?? true;
   static set isBackgroundSyncEnabled(bool value) => _storage.write('bg_sync_enabled', value);
 
+  // Sync In Progress Flag
+  static bool get isSyncInProgress => _storage.read('is_sync_in_progress') ?? false;
+  static set isSyncInProgress(bool value) => _storage.write('is_sync_in_progress', value);
+
   static void updateSession({
     required dynamic profile,
   }) {

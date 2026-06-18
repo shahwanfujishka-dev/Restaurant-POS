@@ -673,6 +673,19 @@ class CashierController extends GetxController {
         total: finalTotal,
       );
 
+      if (isSplit.value && result != null) {
+        result['message'] = {
+          'pos_split_count': splitCount.value,
+          'pos_split': List.generate(splitAmounts.length, (index) {
+            return {
+              'ps_split_no': index + 1,
+              'ps_split_amnt': splitAmounts[index],
+            };
+          }),
+          'preview': result['preview'],
+        };
+      }
+
       _printReceipt(result: result, isComp: isComp);
 
       cartController.stopEditing();
@@ -699,14 +712,40 @@ class CashierController extends GetxController {
 
   void _printReceipt({Map<String, dynamic>? result, bool isComp = false}) {
     try {
-      final messageMap = result?['message'] is Map ? result!['message'] as Map : null;
+      Map<String, dynamic>? messageMap;
+
+      if (result != null) {
+        if (result['message'] is Map) {
+          messageMap = result['message'];
+        } else if (isSplit.value) {
+          // 🔥 Construct split manually for offline
+          messageMap = {
+            'pos_split_count': splitCount.value,
+            'pos_split': List.generate(splitAmounts.length, (index) {
+              return {
+                'ps_split_no': index + 1,
+                'ps_split_amnt': splitAmounts[index],
+              };
+            }),
+            'preview': result['preview'],
+          };
+        }
+      }
       OrderModel orderToPrint = order;
       if (result != null) {
         try {
-          // ✅ Pass full result — parseOrderResponse handles both online and offline shapes
-          if (result is Map<String, dynamic>) {
-            orderToPrint = Get.find<OrdersController>().parseOrderResponse(result);
+          // ✅ Normalize: hoist preview to top level so parseOrderResponse finds it
+          Map<String, dynamic> normalizedResult = Map<String, dynamic>.from(result);
+
+          if (result['preview'] == null && messageMap?['preview'] is Map) {
+            normalizedResult['preview'] = messageMap!['preview'];
           }
+
+          orderToPrint = Get.find<OrdersController>().parseOrderResponse(
+            normalizedResult,
+            fallbackTableName: order.tableName,
+            fallbackChairCount: order.chairNumber,
+          );
         } catch (e) {
           log("Error parsing final order for print: $e");
         }
@@ -722,8 +761,11 @@ class CashierController extends GetxController {
           splitCountResult,
         );
       } else {
+
         final double printDiscount = isComp
             ? (orderToPrint.totalAmount != 0 ? orderToPrint.totalAmount : order.totalAmount)
+            : (result != null && result['offline'] != true)
+            ? orderToPrint.discount
             : discountAmount.value;
         final double printRoundOff = isComp ? 0 : roundOffAmount.value;
 

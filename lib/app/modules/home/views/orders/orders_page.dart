@@ -306,7 +306,7 @@ void _showOrderDetailsDialog(
         for (var item in currentOrder.items) {
           calculatedSubtotal += item.priceAtOrder * item.quantity;
         }
-        final totAmt = currentOrder.totalAmount;
+        final totAmt = currentOrder.finalTotal;
 
         return Container(
           width: 0.4.sw,
@@ -507,24 +507,24 @@ void _showOrderDetailsDialog(
                   ],
                 ),
               ),
-              SizedBox(height: 16.h),
-              if (currentOrder.status.value != OrderStatus.paid &&
-                  currentOrder.status.value != OrderStatus.cancelled &&
-                  currentOrder.status.value != OrderStatus.draft)
-                ElevatedButton(
-                  onPressed: () {
-                    Get.back();
-                    controller.goToCashier(currentOrder);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: displayColor,
-                    minimumSize: Size(double.infinity, 48.h),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12.r),
-                    ),
-                  ),
-                  child: Text("Settle Order", style: AppTypography.button),
-                ),
+              // SizedBox(height: 16.h),
+              // if (currentOrder.status.value != OrderStatus.paid &&
+              //     currentOrder.status.value != OrderStatus.cancelled &&
+              //     currentOrder.status.value != OrderStatus.draft)
+              //   ElevatedButton(
+              //     onPressed: () {
+              //       Get.back();
+              //       controller.goToCashier(currentOrder);
+              //     },
+              //     style: ElevatedButton.styleFrom(
+              //       backgroundColor: displayColor,
+              //       minimumSize: Size(double.infinity, 48.h),
+              //       shape: RoundedRectangleBorder(
+              //         borderRadius: BorderRadius.circular(12.r),
+              //       ),
+              //     ),
+              //     child: Text("Settle Order", style: AppTypography.button),
+              //   ),
             ],
           ),
         );
@@ -733,7 +733,7 @@ class _MobileOrderCard extends StatelessWidget {
                               ],
                             ),
                             Text(
-                              '${order.totalAmount.toStringAsFixed(2)}',
+                              '${order.finalTotal.toStringAsFixed(2)}',
                               style: AppTypography.cardTitle.copyWith(
                                 color: displayColor,
                                 fontWeight: FontWeight.bold,
@@ -777,7 +777,7 @@ class _OrderTicket extends StatelessWidget {
     final displayColor = (order.status.value == OrderStatus.draft || order.status.value == OrderStatus.billed)
         ? _getStatusColor(order.status.value)
         : _getOrderTypeColor(order.sales_odr_order_type);
-    final totalAmt = order.totalAmount;
+    final totalAmt = order.finalTotal;
     return TweenAnimationBuilder(
       tween: Tween<double>(begin: 0, end: 1),
       duration: Duration(milliseconds: 300 + (index * 100)),
@@ -1111,7 +1111,7 @@ class _OrderDetailsContent extends StatelessWidget {
         for (var item in currentOrder.items) {
           calculatedSubtotal += item.priceAtOrder * item.quantity;
         }
-        final totAmt = currentOrder.totalAmount;
+        final totAmt = currentOrder.finalTotal;
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [

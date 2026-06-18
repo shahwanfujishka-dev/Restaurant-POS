@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:developer';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_navigation/src/extension_navigation.dart';
@@ -42,6 +43,20 @@ class SyncController extends GetxController {
       }
     } catch (e) {
       log("SyncController: Error clearing cart state: $e");
+    }
+  }
+
+  void setOrientation({required bool isMobile}) {
+    if (isMobile) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+    } else {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
     }
   }
 
@@ -103,6 +118,7 @@ class SyncController extends GetxController {
   Future<void> startSync() async {
     try {
       log("SyncController: startSync() triggered.");
+      AppState.isSyncInProgress = true;
       hasError.value = false;
       errorMessage.value = "";
       statusMessage.value = "Fetching data...";
@@ -156,6 +172,9 @@ class SyncController extends GetxController {
           "limit": 1000,
           "sync_time": "",
         }),
+        _apiService.post('mobileapp/sales/get_all_captains', data: {
+          "usr_id": userId,
+        }),
       ]);
 
       progress.value = 0.10;
@@ -169,6 +188,7 @@ class SyncController extends GetxController {
       final bankAccResponse   = apiResults[5];
       final soldOrdersResponse = apiResults[6];
       final customerResponse = apiResults[7];
+      final captainsResponse = apiResults[8];
 
       // Save Customers
       if (customerResponse.statusCode == 200) {
@@ -177,12 +197,19 @@ class SyncController extends GetxController {
         log("SyncController: Cached ${customerData.length} customers.");
       }
 
+      // Save Captains
+      if (captainsResponse.statusCode == 200) {
+        final List<dynamic> captainsData = captainsResponse.data['data'] ?? [];
+        await _dbHelper.insertCaptains(captainsData.cast<Map<String, dynamic>>());
+        log("SyncController: Cached ${captainsData.length} captains.");
+      }
+
       // Save Sold Orders and their details
       if (soldOrdersResponse.statusCode == 200) {
         final List<dynamic> soldData = soldOrdersResponse.data['data'] ?? [];
         await _dbHelper.cacheSoldOrders(soldData);
         log("SyncController: Cached ${soldData.length} sold orders summary. Fetching details...");
-        
+
         for (var order in soldData) {
            _fetchAndCacheSoldOrderDetails(order['sales_odr_inv_no']);
         }
@@ -302,11 +329,13 @@ class SyncController extends GetxController {
 
       progress.value = 1.0;
       statusMessage.value = "Sync complete!";
+      AppState.isSyncInProgress = false;
       await Future.delayed(const Duration(milliseconds: 500));
       Get.offAllNamed(Routes.ORDER_TYPE);
 
     } catch (e) {
       log("Sync Error: $e");
+      AppState.isSyncInProgress = false;
       hasError.value = true;
       errorMessage.value = e.toString();
 

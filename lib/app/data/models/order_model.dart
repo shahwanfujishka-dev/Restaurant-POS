@@ -44,6 +44,7 @@ class OrderModel {
   final String tableId;
   final String tableName;
   final String? customerName; // ✅ Added
+  final String? captainName; // ✅ Added
   final int chairNumber;
   final int sales_odr_pos_status;
   final List<OrderItem> items;
@@ -69,6 +70,7 @@ class OrderModel {
     required this.tableId,
     required this.tableName,
     this.customerName,
+    this.captainName,
     required this.chairNumber,
     required this.sales_odr_pos_status,
     required this.items,
@@ -88,12 +90,18 @@ class OrderModel {
     this.isUnsynced = false,
   }) : status = status.obs;
 
+  /// Returns the final payable amount.
+  /// For offline orders, totalAmount already includes roundOff.
+  /// For online orders, we add roundOff to totalAmount.
+  double get finalTotal => isUnsynced ? totalAmount : (totalAmount + roundOff);
+
   OrderModel copyWith({
     String? id,
     String? invNo,
     String? tableId,
     String? tableName,
     String? customerName,
+    String? captainName,
     int? chairNumber,
     int? sales_odr_pos_status,
     List<OrderItem>? items,
@@ -118,6 +126,7 @@ class OrderModel {
       tableId: tableId ?? this.tableId,
       tableName: tableName ?? this.tableName,
       customerName: customerName ?? this.customerName,
+      captainName: captainName ?? this.captainName,
       chairNumber: chairNumber ?? this.chairNumber,
       sales_odr_pos_status: sales_odr_pos_status ?? this.sales_odr_pos_status,
       items: items ?? this.items,
