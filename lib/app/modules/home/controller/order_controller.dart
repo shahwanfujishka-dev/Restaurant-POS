@@ -1139,7 +1139,7 @@ class OrdersController extends GetxController {
       //         unitDisplay.toLowerCase().contains('box') ||
       //         unitDisplay.toLowerCase().contains('pack');
 
-      if (baseQty > 1.0) {
+      if (!isOffline && baseQty > 1.0) {
         displayQty = (rawQty / baseQty).round();
         if (displayQty < 1 && rawQty > 0) displayQty = 1;
       } else {

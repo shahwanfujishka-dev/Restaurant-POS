@@ -182,12 +182,18 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         "part_no": 0,
         "limit": "",
         "sync_time": "",
+      }).catchError((e) {
+        log("SyncService: Error in mobileapp/unit/download: $e");
+        throw e;
       });
 
       final stockRatesFuture = _apiService.post("mobileapp/stock_unit_rates/download", data: {
         "part_no": 0,
         "limit": "",
         "sync_time": "",
+      }).catchError((e) {
+        log("SyncService: Error in mobileapp/stock_unit_rates/download: $e");
+        throw e;
       });
 
       // 2. Parallelize metadata calls
@@ -196,27 +202,33 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           "part_no": 0,
           "limit": 1000,
           "sync_time": "",
-        }),
+        }).catchError((e) { log("SyncService: Error in mobileapp/category/download: $e"); throw e; }),
+        
         _apiService.post('mobileapp/pos/get_pos_table', data: {
           "usr_id": userId,
-        }),
+        }).catchError((e) { log("SyncService: Error in mobileapp/pos/get_pos_table: $e"); throw e; }),
+        
         _apiService.post("mobileapp/pos/list_favorite", data: {
           "usr_id": userId,
-        }),
+        }).catchError((e) { log("SyncService: Error in mobileapp/pos/list_favorite: $e"); throw e; }),
+        
         _apiService.post("mobileapp/sales_settings/vat_type", data: {
           "part_no": 0,
           "limit": 500,
           "sync_time": "",
-        }),
+        }).catchError((e) { log("SyncService: Error in mobileapp/sales_settings/vat_type: $e"); throw e; }),
+        
         _apiService.post('mobileapp/sales/get_branch_all_cash_account', data: {
           "usr_id": userId,
-        }),
+        }).catchError((e) { log("SyncService: Error in mobileapp/sales/get_branch_all_cash_account: $e"); throw e; }),
+        
         _apiService.post('mobileapp/sales/get_branch_bank_account', data: {
           "usr_id": userId,
-        }),
+        }).catchError((e) { log("SyncService: Error in mobileapp/sales/get_branch_bank_account: $e"); throw e; }),
+        
         _apiService.post('mobileapp/sales/get_all_captains', data: {
           "usr_id": userId,
-        }),
+        }).catchError((e) { log("SyncService: Error in mobileapp/sales/get_all_captains: $e"); throw e; }),
       ]);
 
       masterSyncProgress.value = 0.1;
@@ -319,7 +331,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           }
         }
       } catch (e) {
-        log("SyncService Error fetching units: $e");
+        log("SyncService Error processing units: $e");
       }
 
       final posCategories = categoriesList.where((c) => c['cat_pos'] == "1").toList();
@@ -339,7 +351,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           }
         }
       } catch (e) {
-        log("SyncService Error fetching stock rates: $e");
+        log("SyncService Error processing stock rates: $e");
       }
 
       // 9. Process Addons
@@ -495,7 +507,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         await _dbHelper.insertFavoriteProducts(favId, pgId, favoriteProductIds);
       }
     } catch (e) {
-      log("SyncService: Failed to fetch products: $e");
+      log("SyncService: Failed to fetch products (pgId=$pgId, catId=$catId): $e");
     }
   }
 

@@ -53,25 +53,25 @@ class LoginMobileView extends GetView<AuthController> {
                                     size: 32.sp, color: AppTheme.primaryGreen),
                               ),
                             ),
-                            if (!controller.isVerified.value) ...[
-                              SizedBox(width: 16.w),
-                              Expanded(
-                                child: TextField(
-                                  controller: controller.qrCodeController,
-                                  style: TextStyle(color: colors.text, fontSize: 14.sp),
-                                  decoration: InputDecoration(
-                                    hintText: 'Or enter code',
-                                    hintStyle: TextStyle(color: colors.subtext),
-                                    isDense: true,
-                                    contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(8.r),
-                                    ),
-                                  ),
-                                  onSubmitted: (value) => controller.processQrValue(value),
-                                ),
-                              ),
-                            ],
+                            // if (!controller.isVerified.value) ...[
+                            //   SizedBox(width: 16.w),
+                            //   Expanded(
+                            //     child: TextField(
+                            //       controller: controller.qrCodeController,
+                            //       style: TextStyle(color: colors.text, fontSize: 14.sp),
+                            //       decoration: InputDecoration(
+                            //         hintText: 'Or enter code',
+                            //         hintStyle: TextStyle(color: colors.subtext),
+                            //         isDense: true,
+                            //         contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+                            //         border: OutlineInputBorder(
+                            //           borderRadius: BorderRadius.circular(8.r),
+                            //         ),
+                            //       ),
+                            //       onSubmitted: (value) => controller.processQrValue(value),
+                            //     ),
+                            //   ),
+                            // ],
                           ],
                         ),
 

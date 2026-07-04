@@ -49,18 +49,18 @@ class ApiService extends GetxService {
 
           if (kDebugMode) {
             print('🚀 [API] REQUEST: ${options.method} ${options.baseUrl}${options.path}');
+            if (options.data != null) print('📦 [API] DATA: ${options.data}');
           }
           return handler.next(options);
         },
         onResponse: (response, handler) {
           if (kDebugMode) {
-            print('✅ [API] RESPONSE [${response.statusCode}]');
+            print('✅ [API] RESPONSE [${response.statusCode}] ${response.requestOptions.path}');
           }
           return handler.next(response);
         },
         onError: (DioException e, handler) {
           _logError(e);
-          // Don't show snackbar here automatically, let the UI/Caller decide
           return handler.next(e);
         },
       ),
@@ -80,7 +80,7 @@ class ApiService extends GetxService {
       return await _dio.post(
         path,
         data: data,
-        options: options, // Ensure this is passed to dio
+        options: options,
       );
     } catch (e) {
       rethrow;
@@ -129,8 +129,11 @@ class ApiService extends GetxService {
     }
 
     if (kDebugMode) {
-      print('❌ API ERROR: $errorDescription');
-      print('❌ Full Error: $error');
+      print('❌ [API ERROR] ${error.requestOptions.method} ${error.requestOptions.path}');
+      print('❌ DESCRIPTION: $errorDescription');
+      if (error.response != null) {
+        print('❌ RESPONSE DATA: ${error.response?.data}');
+      }
     }
   }
 }

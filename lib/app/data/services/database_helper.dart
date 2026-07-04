@@ -499,10 +499,9 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getCaptains() async {
     final db = await instance.database;
-    return await db.query('captains', orderBy: 'ledg_name_only ASC');
+    return await db.query('captains', orderBy: 'ledger_id ASC');
   }
 
-  // --- Customers ---
   Future<void> insertCustomers(List<Map<String, dynamic>> customers) async {
     final db = await instance.database;
     await db.transaction((txn) async {

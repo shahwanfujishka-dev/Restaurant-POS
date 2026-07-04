@@ -234,25 +234,85 @@ class AuthController extends GetxController {
     isLoading.value = true;
 
     try {
-      final response = await _apiService.post('mobileapp/user/caption_login', data: {
-        "usr_name": username,
+      final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+      String systemId = "";
+
+      if (Platform.isAndroid) {
+        final AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
+
+        final id = androidInfo.id;
+        final deviceName = "${androidInfo.manufacturer} ${androidInfo.model}";
+
+        systemId = "$id - $deviceName";
+
+      } else if (Platform.isIOS) {
+        final IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
+
+        final id = iosInfo.identifierForVendor ?? "ios_device";
+        final deviceName = iosInfo.utsname.machine; // or use name if available
+
+        systemId = "$id - $deviceName";
+
+      } else if (Platform.isMacOS) {
+        final MacOsDeviceInfo macInfo = await deviceInfo.macOsInfo;
+
+        final id = macInfo.systemGUID ?? "macos_device";
+        final deviceName = macInfo.model;
+
+        systemId = "$id - $deviceName";
+      }
+
+      /// 🔹 Request Body
+      final requestBody = {
+        "company_code": companyCode.value,
+        "usr_email": username,
         "usr_password": password,
-      });
+        "system_id": systemId,
+      };
+
+      debugPrint("📤 LOGIN REQUEST BODY: $requestBody");
+
+      final response = await _apiService.post(
+        'mobileapp/login',
+        data: requestBody,
+      );
+
+      /// 🔹 Response Logs
+      debugPrint("📥 STATUS CODE: ${response.statusCode}");
+      debugPrint("📥 RESPONSE DATA: ${response.data}");
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
 
         if (data['status'] == 200) {
+          debugPrint("✅ LOGIN SUCCESS");
+
           AppState.updateSession(
             profile: data['profile'] ?? {},
           );
+
           Get.offAllNamed('/sync');
         } else {
-          Get.snackbar("Error", data['error'] ?? "Login failed", backgroundColor: Colors.red, colorText: Colors.white);
+          debugPrint("❌ API ERROR: ${data['error']}");
+
+          Get.snackbar(
+            "Error",
+            data['error'] ?? "Login failed",
+            backgroundColor: Colors.red,
+            colorText: Colors.white,
+          );
         }
       }
-    } catch (e) {
-      debugPrint("❌ Login Error: $e");
+    } catch (e, stackTrace) {
+      debugPrint("❌ LOGIN EXCEPTION: $e");
+      debugPrint("📌 STACKTRACE: $stackTrace");
+
+      Get.snackbar(
+        "Error",
+        "Login failed",
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
     } finally {
       isLoading.value = false;
     }

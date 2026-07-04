@@ -196,34 +196,39 @@ class CartController extends GetxController {
     }
   }
 
-
-
   Future<void> loadCaptains() async {
-    final list = await _dbHelper.getCaptains();
+    final list = await _dbHelper.getCaptains(); // already DESC from DB
 
     final storedLedgerId = GetStorage().read('ledger_id');
     final int? currentCaptainId = int.tryParse(storedLedgerId?.toString() ?? "");
 
-    if (currentCaptainId != null) {
-      final List<Map<String, dynamic>> sortedList = List.from(list);
-      final index = sortedList.indexWhere((c) => c['ledger_id'] == currentCaptainId);
+    final List<Map<String, dynamic>> sortedList = List.from(list);
 
+    if (currentCaptainId != null) {
+      final index = sortedList.indexWhere(
+            (c) => c['ledger_id'].toString() == currentCaptainId.toString(),
+      );
       if (index != -1) {
         final captain = sortedList.removeAt(index);
         sortedList.insert(0, captain);
-
-        // Optionally set as selected if nothing is selected yet
-        if (selectedCaptainId.value == null) {
-          setCaption(captain['ledger_id'], captain['ledg_name_only'] ?? captain['ledger_name'] ?? "");
-        }
       }
-      captainsList.assignAll(sortedList);
-    } else {
-      captainsList.assignAll(list);
+    }
+
+    captainsList.assignAll(sortedList);
+
+    if (selectedCaptainId.value == null && sortedList.isNotEmpty) {
+      final first = sortedList.first;
+      setCaption(
+        first['ledger_id'] as int,
+        (first['ledg_name_only'] as String?)?.isNotEmpty == true
+            ? first['ledg_name_only'] as String
+            : first['ledger_name'] as String? ?? '',
+      );
     }
 
     print("🎯 CAPTAINS LOADED: ${captainsList.length} → $captainsList");
   }
+
   void setCaption(int? ledgerId, String name) {
     selectedCaptainId.value = ledgerId;
     selectedCaptainName.value = name;

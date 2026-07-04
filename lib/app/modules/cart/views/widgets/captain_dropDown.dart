@@ -11,12 +11,43 @@ class CaptainDropdown extends StatelessWidget {
   const CaptainDropdown({super.key, required this.controller});
 
   @override
+  @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
 
     return Obx(() {
       final captains = controller.captainsList;
-      if (captains.isEmpty) return const SizedBox.shrink();
+
+      // ✅ Empty state
+      if (captains.isEmpty) {
+        return Container(
+          margin: EdgeInsets.symmetric(horizontal: AppTypography.smallText),
+          padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+          decoration: BoxDecoration(
+            color: colors.card,
+            borderRadius: BorderRadius.circular(12.r),
+            border: Border.all(
+              color: colors.isDark
+                  ? AppTheme.primaryGreen.withOpacity(0.4)
+                  : AppTheme.primaryGreen.withOpacity(0.3),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.person_outline,
+                  color: colors.subtext, size: AppTypography.cardTitle.fontSize),
+              SizedBox(width: 8.w),
+              Text(
+                "Add New Captain",
+                style: AppTypography.cardSubtitle.copyWith(
+                  color: colors.subtext,
+                  fontSize: AppTypography.sizeText,
+                ),
+              ),
+            ],
+          ),
+        );
+      }
 
       return Theme(
         data: Theme.of(context).copyWith(
@@ -52,89 +83,52 @@ class CaptainDropdown extends StatelessWidget {
               SizedBox(width: 8.w),
               Expanded(
                 child: DropdownButtonHideUnderline(
-                  child: DropdownButton<int?>(padding: EdgeInsets.zero,
+                  child: DropdownButton<int?>(
+                    padding: EdgeInsets.zero,
                     value: controller.selectedCaptainId.value,
                     isExpanded: true,
                     dropdownColor: colors.card,
-                    hint: Text(
-                      "Select Captain",
-                      style: AppTypography.cardSubtitle.copyWith(
-                        color: colors.subtext,
-                        fontSize: AppTypography.sizeText,
-                      ),
-                    ),
+                    // ✅ No hint needed — first captain is always pre-selected
                     icon: Icon(
                       Icons.keyboard_arrow_down_rounded,
                       color: AppTheme.primaryGreen,
                       size: AppTypography.sizeText,
                     ),
-                    // ✅ This style sets the SELECTED value text color
                     style: AppTypography.cardSubtitle.copyWith(
                       color: colors.text,
                       fontSize: AppTypography.sizeText,
                     ),
-                    items: [
-                      DropdownMenuItem<int?>(
-                        value: null,
+                    items: captains.map((captain) {
+                      final int id = captain['ledger_id'] as int;
+                      final String name =
+                      (captain['ledg_name_only'] as String?)?.isNotEmpty == true
+                          ? captain['ledg_name_only'] as String
+                          : captain['ledger_name'] as String? ?? '';
+                      return DropdownMenuItem<int?>(
+                        value: id,
                         child: Text(
-                          "No Captain",
+                          name,
+                          overflow: TextOverflow.ellipsis,
                           style: AppTypography.cardSubtitle.copyWith(
-                            color: colors.subtext,
-                            fontSize: AppTypography.sizeText,
+                            color: colors.text,
+                            fontSize: AppTypography.smallText,
                           ),
                         ),
-                      ),
-                      ...captains.map((captain) {
-                        final int id = captain['ledger_id'] as int;
-                        final String name =
-                        (captain['ledg_name_only'] as String?)
-                            ?.isNotEmpty ==
-                            true
-                            ? captain['ledg_name_only'] as String
-                            : captain['ledger_name'] as String? ?? '';
-                        return DropdownMenuItem<int?>(
-                          value: id,
-                          // ✅ Each item must set its own color explicitly —
-                          //    the button-level `style` doesn't reach popup items
-                          child: Text(
-                            name,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.cardSubtitle.copyWith(
-                              color: colors.text,
-                              fontSize:AppTypography.smallText,
-                            ),
-                          ),
-                        );
-                      }),
-                    ],
+                      );
+                    }).toList(),
                     onChanged: (value) {
-                      if (value == null) {
-                        controller.clearCaptain();
-                      } else {
-                        final captain = captains.firstWhere(
-                              (c) => c['ledger_id'] == value,
-                        );
-                        final String name =
-                        (captain['ledg_name_only'] as String?)
-                            ?.isNotEmpty ==
-                            true
-                            ? captain['ledg_name_only'] as String
-                            : captain['ledger_name'] as String? ?? '';
-                        controller.setCaption(value, name);
-                      }
+                      if (value == null) return;
+                      final captain =
+                      captains.firstWhere((c) => c['ledger_id'] == value);
+                      final String name =
+                      (captain['ledg_name_only'] as String?)?.isNotEmpty == true
+                          ? captain['ledg_name_only'] as String
+                          : captain['ledger_name'] as String? ?? '';
+                      controller.setCaption(value, name);
                     },
                   ),
                 ),
               ),
-              if (controller.selectedCaptainId.value != null)
-                GestureDetector(
-                  onTap: controller.clearCaptain,
-                  child: Icon(
-                    Icons.close,
-                    size: AppTypography.sizeText,
-                    color: colors.subtext,
-                  ),
-                ),
             ],
           ),
         ),

@@ -1100,9 +1100,17 @@ class PrinterController extends GetxController {
       for (var item in order.items.where((i) => !i.isRemoved)) {
         // double price = item.product.price;
         double taxPer = item.product.taxPer;
-        double qty = item.quantity.toDouble();
-        double price = item.product.price;
-
+        // double qty = item.quantity.toDouble();
+        double baseqty = item.unit.unitBaseQty.toDouble();
+        double qty;
+        double price;
+        if (order.isUnsynced) {
+          price = item.priceAtOrder.toDouble();
+          qty = item.quantity.toDouble();
+        } else {
+          price = item.product.price * (baseqty > 1.0 ? baseqty : 1.0);
+          qty = item.quantity.toDouble(); // already display qty from parseOrderResponse
+        }
         double vatAmount;
         double lineTotal;
         double lineSubTotal;
@@ -1420,7 +1428,7 @@ class PrinterController extends GetxController {
       double price = item.product.price;
       double taxPer = item.product.taxPer;
       double qty = item.quantity.toDouble();
-
+print("Price: ${item.priceAtOrder}");
       double vatAmount;
       double lineTotal;
       double lineSubTotal;

@@ -47,6 +47,11 @@ class CartSummary extends StatelessWidget {
       );
       return;
     }
+    if (controller.selectedCaptainId.value == null) {
+      showSafeSnackbar("Captain Required", "Please select a captain before placing the order.");
+      return;
+    }
+
 
     try {
       controller.isProcessing.value = true;
