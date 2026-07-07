@@ -676,6 +676,22 @@ class CartController extends GetxController {
       .where((i) => !i.isDeleted.value)
       .fold(0, (sum, item) => sum + item.quantity.value);
 
+// Add as a private method in CartController
+  Future<int> _resolveRealUnitId(String prdId, int currentUnitId) async {
+    if (currentUnitId != 0) return currentUnitId;
+    final int prdIdInt = int.tryParse(prdId) ?? 0;
+    if (prdIdInt == 0) return currentUnitId;
+
+    final rows = await _dbHelper.getBulkProductUnits(prdIdInt);
+    final validRow = rows.firstWhereOrNull(
+          (r) => (r['produnit_unit_id'] as num?)?.toInt() != null && (r['produnit_unit_id'] as num).toInt() != 0,
+    );
+    if (validRow != null) {
+      return (validRow['produnit_unit_id'] as num).toInt();
+    }
+    return currentUnitId; // still 0 — nothing better available locally
+  }
+
   Future<Map<String, dynamic>?> placeOrder({
     bool isDraft = false,
     int? payType,
@@ -719,6 +735,11 @@ class CartController extends GetxController {
       double totalWithTax = 0;
 
       for (var item in cartItems.where((i) => !i.isDeleted.value)) {
+        final int resolvedUnitId = await _resolveRealUnitId(item.product.id, item.unit.unitId);
+        if (resolvedUnitId != item.unit.unitId) {
+          log("⚠️ Resolved unit_id 0 → $resolvedUnitId for ${item.product.name}");
+          item.unit = item.unit.copyWith(unitId: resolvedUnitId);
+        }
         double itemRate = item.priceAtAdd.value;
         double itemTaxPer = isVatDisabled ? 0 : item.product.prd_tax;
 
@@ -941,7 +962,7 @@ class CartController extends GetxController {
         // "sale_acc_ledger_id": cashLedgerId ?? 0,
         "sq_tax": totalTax,
         "inv_type": 2,
-        "pos_odr_type": AppState.orderType.id,
+        "pos_odr_type": GetStorage().read('selected_order_type_id'),
         "address": customerAddress,
         "phone_no": customerMobile,
         "vat_no": customerVat,
@@ -1173,6 +1194,11 @@ class CartController extends GetxController {
       log("╚══════════════════════════════════════════");
 
       for (var item in cartItems) {
+        final int resolvedUnitId = await _resolveRealUnitId(item.product.id, item.unit.unitId);
+        if (resolvedUnitId != item.unit.unitId) {
+          log("⚠️ Resolved unit_id 0 → $resolvedUnitId for ${item.product.name} (updateOrder)");
+          item.unit = item.unit.copyWith(unitId: resolvedUnitId);
+        }
         log("┌─ ITEM: ${item.product.name}");
         log("│  subId: ${item.subId}");
         log("│  originalUnitId: ${item.originalUnitId}");

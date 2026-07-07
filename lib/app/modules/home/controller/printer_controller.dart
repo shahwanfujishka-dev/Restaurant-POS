@@ -11,6 +11,7 @@ import 'package:get/get_navigation/src/extension_navigation.dart';
 import 'package:get/get_navigation/src/root/parse_route.dart';
 import 'package:get/get_rx/src/rx_types/rx_types.dart';
 import 'package:get/get_state_manager/src/simple/get_controllers.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:intl/intl.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -691,12 +692,13 @@ class PrinterController extends GetxController {
       bytes += generator.row([
         PosColumn(text: "Order type:", width: 5),
         PosColumn(
-          text: OrderType.values
-              .firstWhere(
-                (e) => e.id == order.sales_odr_order_type,
-                orElse: () => OrderType.dineIn,
-              )
-              .displayName,
+          // text: OrderType.values
+          //     .firstWhere(
+          //       (e) => e.id == order.sales_odr_order_type,
+          //       orElse: () => OrderType.dineIn,
+          //     )
+          //     .displayName,
+          text: (GetStorage().read('selected_order_type_id')==0?'Dine In' : GetStorage().read('selected_order_type_id')==1?'Delivery': GetStorage().read('selected_order_type_id')==2? 'Pick Up':''),
           width: 7,
           styles: const PosStyles(align: PosAlign.right),
         ),
@@ -712,8 +714,7 @@ class PrinterController extends GetxController {
         ]);
       }
 
-      if (order.sales_odr_order_type == OrderType.dineIn.id) {
-        bytes += generator.row([
+      if (GetStorage().read('selected_order_type_id') == 0) {        bytes += generator.row([
           PosColumn(text: "Table:", width: 6),
           PosColumn(
             text: order.tableName,
@@ -841,12 +842,13 @@ class PrinterController extends GetxController {
     printer.row([
       PosColumn(text: "Order type:", width: 5),
       PosColumn(
-        text: OrderType.values
-            .firstWhere(
-              (e) => e.id == order.sales_odr_order_type,
-              orElse: () => OrderType.dineIn,
-            )
-            .displayName,
+        // text: OrderType.values
+        //     .firstWhere(
+        //       (e) => e.id == order.sales_odr_order_type,
+        //       orElse: () => OrderType.dineIn,
+        //     )
+        //     .displayName,
+        text: (GetStorage().read('selected_order_type_id')==0?'Dine In' : GetStorage().read('selected_order_type_id')==1?'Delivery': GetStorage().read('selected_order_type_id')==2? 'Pick Up':''),
         width: 7,
         styles: const PosStyles(align: PosAlign.right),
       ),
@@ -863,8 +865,7 @@ class PrinterController extends GetxController {
       ]);
     }
 
-    if (order.sales_odr_order_type == OrderType.dineIn.id) {
-      printer.row([
+    if (GetStorage().read('selected_order_type_id') == 0) {      printer.row([
         PosColumn(text: "Table:", width: 6),
         PosColumn(
           text: "${order.tableName} (${order.chairNumber} Seats)",
@@ -1013,23 +1014,24 @@ class PrinterController extends GetxController {
           styles: const PosStyles(align: PosAlign.right),
         ),
       ]);
-      bytes += generator.row([
-        PosColumn(text: "Captain:", width: 5),
-        PosColumn(
-          text: order.captainName.toString(),
-          width: 7,
-          styles: const PosStyles(align: PosAlign.right),
-        ),
-      ]);
+      // bytes += generator.row([
+      //   PosColumn(text: "Captain:", width: 5),
+      //   PosColumn(
+      //     text: order.captainName.toString(),
+      //     width: 7,
+      //     styles: const PosStyles(align: PosAlign.right),
+      //   ),
+      // ]);
       bytes += generator.row([
         PosColumn(text: "Order type:", width: 5),
         PosColumn(
-          text: OrderType.values
-              .firstWhere(
-                (e) => e.id == order.sales_odr_order_type,
-                orElse: () => OrderType.dineIn,
-              )
-              .displayName,
+          // text: OrderType.values
+          //     .firstWhere(
+          //       (e) => e.id == order.sales_odr_order_type,
+          //       orElse: () => OrderType.dineIn,
+          //     )
+          //     .displayName,
+          text: (GetStorage().read('selected_order_type_id')==0?'Dine In' : GetStorage().read('selected_order_type_id')==1?'Delivery': GetStorage().read('selected_order_type_id')==2? 'Pick Up':''),
           width: 7,
           styles: const PosStyles(align: PosAlign.right),
         ),
@@ -1060,8 +1062,7 @@ class PrinterController extends GetxController {
           styles: const PosStyles(align: PosAlign.right),
         ),
       ]);
-      if (order.sales_odr_order_type == OrderType.dineIn.id) {
-        bytes += generator.row([
+      if (GetStorage().read('selected_order_type_id') == 0) {        bytes += generator.row([
           PosColumn(text: "Table:", width: 5),
           PosColumn(
             text: order.tableName,
@@ -1346,12 +1347,13 @@ class PrinterController extends GetxController {
     printer.row([
       PosColumn(text: "Order type:", width: 5),
       PosColumn(
-        text: OrderType.values
-            .firstWhere(
-              (e) => e.id == order.sales_odr_order_type,
-          orElse: () => OrderType.dineIn,
-        )
-            .displayName,
+        // text: OrderType.values
+        //     .firstWhere(
+        //       (e) => e.id == order.sales_odr_order_type,
+        //   orElse: () => OrderType.dineIn,
+        // )
+        //     .displayName,
+        text: (GetStorage().read('selected_order_type_id')==0?'Dine In' : GetStorage().read('selected_order_type_id')==1?'Delivery': GetStorage().read('selected_order_type_id')==2? 'Pick Up':''),
         width: 7,
         styles: const PosStyles(align: PosAlign.right),
       ),
@@ -1382,8 +1384,7 @@ class PrinterController extends GetxController {
         styles: const PosStyles(align: PosAlign.right),
       ),
     ]);
-    if (order.sales_odr_order_type == OrderType.dineIn.id) {
-      printer.row([
+    if (GetStorage().read('selected_order_type_id') == 0) {      printer.row([
         PosColumn(text: "Table:", width: 5),
         PosColumn(
           text: order.tableName,
@@ -2013,12 +2014,13 @@ print("Price: ${item.priceAtOrder}");
       bytes += generator.row([
         PosColumn(text: "Order type:", width: 6),
         PosColumn(
-          text: OrderType.values
-              .firstWhere(
-                (e) => e.id == order.sales_odr_order_type,
-                orElse: () => OrderType.dineIn,
-              )
-              .displayName,
+          // text: OrderType.values
+          //     .firstWhere(
+          //       (e) => e.id == order.sales_odr_order_type,
+          //       orElse: () => OrderType.dineIn,
+          //     )
+          //     .displayName,
+          text: (GetStorage().read('selected_order_type_id')==0?'Dine In' : GetStorage().read('selected_order_type_id')==1?'Delivery': GetStorage().read('selected_order_type_id')==2? 'Pick Up':''),
           width: 6,
           styles: const PosStyles(align: PosAlign.right),
         ),
@@ -2034,8 +2036,7 @@ print("Price: ${item.priceAtOrder}");
         ]);
       }
 
-      if (order.sales_odr_order_type == OrderType.dineIn.id) {
-        bytes += generator.row([
+      if (GetStorage().read('selected_order_type_id') == 0) {        bytes += generator.row([
           PosColumn(text: "Table:", width: 6),
           PosColumn(
             text: "${order.tableName} (${order.chairNumber} Seats)",
@@ -2203,8 +2204,7 @@ print("Price: ${item.priceAtOrder}");
     buffer.writeln(
       "Order Type   : ${OrderType.values.firstWhere((e) => e.id == order.sales_odr_order_type, orElse: () => OrderType.dineIn).displayName}",
     );
-    if (order.sales_odr_order_type == OrderType.dineIn.id) {
-      buffer.writeln(
+    if (GetStorage().read('selected_order_type_id') == 0) {      buffer.writeln(
         "Table        : ${order.tableName} (${order.chairNumber} Seats)",
       );
     }
@@ -2303,12 +2303,13 @@ print("Price: ${item.priceAtOrder}");
     printer.row([
       PosColumn(text: "Order type:", width: 6),
       PosColumn(
-        text: OrderType.values
-            .firstWhere(
-              (e) => e.id == order.sales_odr_order_type,
-              orElse: () => OrderType.dineIn,
-            )
-            .displayName,
+        // text: OrderType.values
+        //     .firstWhere(
+        //       (e) => e.id == order.sales_odr_order_type,
+        //       orElse: () => OrderType.dineIn,
+        //     )
+        //     .displayName,
+        text: (GetStorage().read('selected_order_type_id')==0?'Dine In' : GetStorage().read('selected_order_type_id')==1?'Delivery': GetStorage().read('selected_order_type_id')==2? 'Pick Up':''),
         width: 6,
         styles: const PosStyles(align: PosAlign.right),
       ),
@@ -2325,8 +2326,7 @@ print("Price: ${item.priceAtOrder}");
       ]);
     }
 
-    if (order.sales_odr_order_type == OrderType.dineIn.id) {
-      printer.row([
+    if (GetStorage().read('selected_order_type_id') == 0) {      printer.row([
         PosColumn(text: "Table:", width: 6),
         PosColumn(
           text: "${order.tableName} (${order.chairNumber} Seats)",

@@ -356,7 +356,13 @@ class CartSummary extends StatelessWidget {
               PrimaryButton(
                 isLoading: controller.isProcessing.value,
                 height: 48.h,
-                onPressed: _navigateToCashier,
+                onPressed: () {
+                  if (controller.selectedCaptainId.value == null) {
+                    showSafeSnackbar("Captain Required", "Please select a captain before placing the order.");
+                    return;
+                  }
+                  _navigateToCashier();
+                },
                 color: colors.isDark ? Colors.redAccent.shade700 : Colors.redAccent.shade400,
                 text: "Receipt",
               ),

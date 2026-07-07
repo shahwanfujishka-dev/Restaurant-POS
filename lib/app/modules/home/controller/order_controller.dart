@@ -449,8 +449,6 @@ class OrdersController extends GetxController {
           qrLink = (payload['qr_link'] ?? payload['zatca_qr'])?.toString();
           customerName = (payload['sq_cust_name'] ?? payload['customer_name'] ?? payload['cust_name'] ?? payload['ledger_name'])?.toString();
           captainName = (payload['agent_name'] ?? payload['sale_agent_name'] ?? payload['captain_name'])?.toString();
-
-          // Robust name resolution logic
           tableName = _resolveName(payload, orderType, tableName);
 
           if (payload['sq_inv_no'] != null && payload['sq_inv_no'].toString() != '0') {

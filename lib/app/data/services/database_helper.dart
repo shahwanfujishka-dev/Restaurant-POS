@@ -1026,6 +1026,25 @@ class DatabaseHelper {
     await batch.commit(noResult: true);
   }
 
+  // Future<List<Map<String, dynamic>>> getUnits() async {
+  //   final db = await instance.database;
+  //   return await db.query('units');
+  // }
+
+  // Add to DatabaseHelper
+  Future<List<String>> getProductIdsMissingBulkUnits() async {
+    final db = await instance.database;
+    final result = await db.rawQuery('''
+    SELECT DISTINCT p.id 
+    FROM products p
+    WHERE NOT EXISTS (
+      SELECT 1 FROM bulk_product_units b 
+      WHERE b.produnit_prod_id = CAST(p.id AS INTEGER)
+    )
+  ''');
+    return result.map((r) => r['id'].toString()).toList();
+  }
+
   Future<Map<String, dynamic>?> getUnitById(int unitId) async {
     final db = await instance.database;
     final maps = await db.query('units', where: 'id = ?', whereArgs: [unitId]);
@@ -1042,8 +1061,7 @@ class DatabaseHelper {
     }
 
     await db.transaction((txn) async {
-      // 1. Clear inside transaction so UI never sees an empty table
-      await txn.delete('bulk_product_units');
+      // FIX: Removed txn.delete('bulk_product_units') which was wiping data during paginated sync
 
       final batch = txn.batch();
       int validCount = 0;

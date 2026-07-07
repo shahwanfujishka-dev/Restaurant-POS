@@ -50,7 +50,6 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
   void _startPeriodicSync() {
     _syncTimer?.cancel();
-    // Check every 1 minute if background sync is enabled for better responsiveness
     _syncTimer = Timer.periodic(const Duration(minutes: 2), (timer) {
       if (AppState.isBackgroundSyncEnabled) {
         syncPendingOrders();
@@ -78,6 +77,12 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         for (var payment in unsyncedPayments) {
           await _syncPayment(payment);
         }
+      }
+
+      try {
+        await fillMissingProductUnits();
+      } catch (e) {
+        log("SyncService: fillMissingProductUnits failed during periodic sync: $e");
       }
 
     } catch (e) {
@@ -425,6 +430,45 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     }
   }
 
+  // Add to SyncService
+  Future<void> fillMissingProductUnits() async {
+    final missingIds = await _dbHelper.getProductIdsMissingBulkUnits();
+    if (missingIds.isEmpty) {
+      log("SyncService: No missing product units, nothing to fill.");
+      return;
+    }
+    log("SyncService: ${missingIds.length} products missing unit data, fetching...");
+
+    final int userId = int.tryParse(AppState.userId) ?? 0;
+    const chunkSize = 50;
+
+    for (int i = 0; i < missingIds.length; i += chunkSize) {
+      final chunk = missingIds.sublist(
+        i, (i + chunkSize > missingIds.length) ? missingIds.length : i + chunkSize,
+      );
+      try {
+        final response = await _apiService.post(
+          "mobileapp/product_unit/get_prd_unit_and_addon",
+          data: {
+            "usr_id": userId,
+            "prd_ids": chunk, // adjust param name to match your actual endpoint contract
+            "limit": chunkSize,
+            "sync_time": "",
+          },
+        );
+        if (response.statusCode == 200) {
+          final List<dynamic> pageData = response.data['data'] ?? [];
+          if (pageData.isNotEmpty) {
+            await _dbHelper.insertBulkProductUnits(pageData);
+            log("SyncService: Filled ${pageData.length} missing unit records.");
+          }
+        }
+      } catch (e) {
+        log("SyncService: fillMissingProductUnits chunk failed: $e");
+      }
+    }
+  }
+
   Future<void> _fetchAndInsertProducts({
     required int pgId,
     String? catId,
@@ -559,10 +603,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       if (response.statusCode == 200) {
         dynamic data = response.data;
         if (data is String) data = jsonDecode(data);
-
-        // ✅ Log the raw response so you can always debug key paths
         log("SyncService: RAW response → $data");
-
           if (data is Map && data['message'] is Map) {
             final msg = data['message'] as Map;
             if (msg['status'] == 0) {

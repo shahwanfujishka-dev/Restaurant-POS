@@ -11,6 +11,7 @@ import 'package:restaurant_pos/app/modules/home/views/orders/widgets/AnimatedTab
 
 import '../../../../../helper/screen_type.dart';
 import '../../../../data/models/order_model.dart';
+import '../../../../data/services/database_helper.dart';
 import '../../../../routes/app_pages.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/app_typography.dart';
@@ -1090,7 +1091,7 @@ class _OrderDetailsContent extends StatelessWidget {
     final displayColor = (order.status.value == OrderStatus.draft || order.status.value == OrderStatus.billed)
         ? _getStatusColor(order.status.value)
         : _getOrderTypeColor(order.sales_odr_order_type);
-
+    final DatabaseHelper _dbHelper = DatabaseHelper.instance;
     return Container(
       width: isMobile ? double.infinity : 0.4.sw,
       padding: EdgeInsets.all(isMobile ? 24.w : 20.w),
@@ -1328,9 +1329,10 @@ class _OrderDetailsContent extends StatelessWidget {
             if (currentOrder.status.value != OrderStatus.paid &&
                 currentOrder.status.value != OrderStatus.cancelled)
               ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   Get.back();
-                  controller.goToCashier(currentOrder);
+                  await _dbHelper.getCaptains();
+                  controller.goToCashier(order);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: displayColor,

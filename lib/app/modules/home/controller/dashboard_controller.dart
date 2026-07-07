@@ -249,12 +249,38 @@ class DashboardController extends GetxController {
     }
     return null;
   }
+  Future<ProductUnit> _applyStockRateOverride(ProductUnit unit, int productId, int pgId) async {
+    log("🔍 getStockUnitRate → prd_id: $productId, unit_id: ${unit.unitId}, pg_id: $pgId");
 
+    final Map<String, double>? rateMap = await _dbHelper.getStockUnitRate(productId, unit.unitId, pgId);
+
+    log("📦 rateMap result: $rateMap");
+
+    if (rateMap != null) {
+      double customRate = rateMap['sur_unit_rate'] ?? 0.0;
+      if (customRate <= 0) {
+        customRate = rateMap['sur_unit_rate2'] ?? 0.0;
+      }
+      log("💰 customRate resolved: $customRate");
+      if (customRate > 0) {
+        log("✅ Overriding unit ${unit.unitId} rate → $customRate");
+        return ProductUnit(
+          unitId: unit.unitId,
+          unitName: unit.unitName,
+          unitDisplay: unit.unitDisplay,
+          rate: customRate,
+          unitBaseQty: unit.unitBaseQty,
+          existAddOns: unit.existAddOns,
+        );
+      }
+    }
+    log("⚠️ No override applied for unit ${unit.unitId}, keeping rate: ${unit.rate}");
+    return unit;
+  }
   void onProductTapped(FoodItemModel product, {CartItem? existingItem}) async {
     if (isLoadingDetails.value) return;
 
-    log("onProductTapped: ${product.name} (ID: ${product.id})");
-
+    // ✅ Table/Chair validation only required for Dine-In (id: 0)
     if (AppState.orderType.id == 0 && !cartController.hasSelectedTable) {
       showSafeSnackbar("table_required".tr, "select_table_msg".tr);
       return;
@@ -263,139 +289,109 @@ class DashboardController extends GetxController {
     try {
       isLoadingDetails.value = true;
 
-      // Use String for product units query and Int for bulk query to cover all DB schemas
-      final String productIdStr = product.id.toString();
-      final int productIdInt = int.tryParse(productIdStr) ?? 0;
+      final int productId = int.tryParse(product.id) ?? 0;
       final int pgId = cartController.selectedPriceGroupId.value;
 
-      productUnits.clear();
-      commonAddons.clear();
-
-      // ─── 1. Bulk product units table ────────────────────────────────────────
-      final List<Map<String, dynamic>> localBulkUnits = await _dbHelper.getBulkProductUnits(productIdInt);
+      // 1. Load from local bulk DB
+      final List<Map<String, dynamic>> localBulkUnits = await _dbHelper.getBulkProductUnits(productId);
 
       if (localBulkUnits.isNotEmpty) {
+        log("DashboardController: Loaded units from Local Bulk DB");
+        productUnits.clear();
+        commonAddons.clear();
+
         for (var u in localBulkUnits) {
           final unit = ProductUnit.fromJson(u);
-          double? overrideRate = await _getOverrideRate(productIdInt, unit.unitId, pgId);
-          if (overrideRate == null && pgId != 0) {
-            overrideRate = await _getOverrideRate(productIdInt, unit.unitId, 0);
-          }
-          double finalRate = overrideRate ?? unit.rate;
-          if (finalRate <= 0) finalRate = product.price * unit.unitBaseQty;
 
-          productUnits.add(unit.copyWith(rate: finalRate));
+          // ✅ Apply stock rate override for BOTH pgId AND pgId=0 as fallback
+          ProductUnit resolvedUnit = await _applyStockRateOverride(unit, productId, pgId);
+          if (resolvedUnit.rate <= 0 && pgId != 0) {
+            resolvedUnit = await _applyStockRateOverride(unit, productId, 0);
+          }
+
+          // ⚡ NEW FALLBACK LOGIC: If no unit rate found, use (Product Base Rate * Unit Base Qty)
+          if (resolvedUnit.rate <= 0) {
+            final double fallbackRate = product.price * resolvedUnit.unitBaseQty;
+            log("⚡ Falling back to base rate calculation: ${product.price} * ${resolvedUnit.unitBaseQty} = $fallbackRate");
+            resolvedUnit = resolvedUnit.copyWith(rate: fallbackRate);
+          }
+
+          productUnits.add(resolvedUnit);
 
           // Load common addons once
-          if (commonAddons.isEmpty && u['common_addons'] != null) {
-            try {
-              final List<dynamic> commonList = jsonDecode(u['common_addons']);
-              commonAddons.assignAll(commonList.map((e) {
-                e['commonAddon'] = true;
-                return AddonModel.fromJson(e);
-              }));
-            } catch (_) {}
-          }
-        }
-      }
-
-      // ─── 2. Fallback: product_units table (With Price Group Fallback) ─────────
-      if (productUnits.isEmpty) {
-        log("Trying product_units table for $productIdStr with PG $pgId");
-        List<Map<String, dynamic>> localPgUnits = await _dbHelper.getProductUnits(productIdStr, pgId);
-        log("=== OFFLINE UNIT DEBUG for ${product.name} (id: ${product.id}) ===");
-        log("productIdInt: $productIdInt, pgId: $pgId");
-
-// Check what's actually in the DB
-        final bulkCheck = await _dbHelper.getBulkProductUnits(productIdInt);
-        log("bulk_product_units rows: ${bulkCheck.length}");
-        for (var r in bulkCheck) {
-          log("  produnit_id=${r['produnit_id']} produnit_prod_id=${r['produnit_prod_id']} rate=${r['rate']} common_addons=${r['common_addons']}");
-        }
-
-        final pgCheck = await _dbHelper.getProductUnits(product.id, pgId);
-        log("product_units rows (pg=$pgId): ${pgCheck.length}");
-
-        final pg0Check = await _dbHelper.getProductUnits(product.id, 0);
-        log("product_units rows (pg=0): ${pg0Check.length}");
-        // FIX: If no units found for specific price group, try default price group (0)
-        if (localPgUnits.isEmpty && pgId != 0) {
-          log("No units for PG $pgId, falling back to PG 0");
-          localPgUnits = await _dbHelper.getProductUnits(productIdStr, 0);
-        }
-
-        if (localPgUnits.isNotEmpty) {
-          for (var u in localPgUnits) {
-            final unit = ProductUnit.fromJson(u);
-            double? overrideRate = await _getOverrideRate(productIdInt, unit.unitId, pgId);
-            if (overrideRate == null && pgId != 0) {
-              overrideRate = await _getOverrideRate(productIdInt, unit.unitId, 0);
-            }
-            double finalRate = overrideRate ?? unit.rate;
-            if (finalRate <= 0) finalRate = product.price * unit.unitBaseQty;
-
-            productUnits.add(unit.copyWith(rate: finalRate));
-          }
-
-          // Load common addons from dedicated table for this fallback path
-          final List<Map<String, dynamic>> dbCommonAddons = await _dbHelper.getCommonAddons();
-          if (dbCommonAddons.isNotEmpty) {
-            commonAddons.assignAll(dbCommonAddons.map((e) {
-              var m = Map<String, dynamic>.from(e);
-              m['commonAddon'] = true;
-              return AddonModel.fromJson(m);
-            }));
-          }
-        }
-      }
-
-      // ─── 3. Fallback: API (Only if offline fails) ───────────────────────────
-      if (productUnits.isEmpty) {
-        try {
-          final response = await _apiService.post("mobileapp/pos/get_product_unit_and_addon", data: {
-            "usr_id": int.tryParse(AppState.userId) ?? 0,
-            "prd_id": productIdInt,
-            "price_group_id": pgId,
-          }).timeout(const Duration(seconds: 5));
-
-          if (response.statusCode == 200) {
-            final data = response.data['data'] as List? ?? [];
-            for (var e in data) {
-              final unit = ProductUnit.fromJson(e);
-              productUnits.add(unit);
+          if (commonAddons.isEmpty) {
+            final String? commonJson = u['common_addons'];
+            if (commonJson != null && commonJson.isNotEmpty) {
+              try {
+                final List<dynamic> commonList = jsonDecode(commonJson);
+                commonAddons.assignAll(commonList.where((e) {
+                  final flag = (e['prdaddon_flags'] as num? ?? 1).toInt();
+                  return flag != 0;
+                }).map((e) {
+                  e['commonAddon'] = true;
+                  return AddonModel.fromJson(e);
+                }).toList());
+              } catch (_) {}
             }
           }
-        } catch (e) {
-          log("Offline: API unit fetch skipped or failed.");
+        }
+
+        if (productUnits.isNotEmpty) {
+          _showProductDetails(product, existingItem);
+          return;
         }
       }
 
-      // ─── 4. Last resort: Synthetic unit (Guarantees the product is clickable) ──
-      if (productUnits.isEmpty) {
-        log("Creating emergency synthetic unit for ${product.name}");
-        // Even if price is 0, we add a unit so the item can be added to cart (e.g., open price items)
-        productUnits.add(ProductUnit(
-          unitId: 0,
-          unitName: (product.unitDisplay.isEmpty) ? "Unit" : product.unitDisplay,
-          unitDisplay: (product.unitDisplay.isEmpty) ? "Unit" : product.unitDisplay,
-          rate: product.price,
-          unitBaseQty: 1.0,
-          existAddOns: [],
-        ));
-      }
+      // 2. Fallback to API
+      final response = await _apiService.post(
+        "mobileapp/pos/get_product_unit_and_addon",
+        data: {
+          "usr_id": int.tryParse(AppState.userId) ?? 0,
+          "prd_id": productId,
+          "price_group_id": pgId,
+        },
+      );
 
-      if (productUnits.isNotEmpty) {
+      if (response.statusCode == 200) {
+        final data = response.data['data'] as List? ?? [];
+        final common = response.data['commonAddon'] as List? ?? [];
+
+        // ✅ Apply stock rate override to API units too
+        final List<ProductUnit> resolvedUnits = [];
+        for (var e in data) {
+          final unit = ProductUnit.fromJson(e);
+          ProductUnit resolvedUnit = await _applyStockRateOverride(unit, productId, pgId);
+          if (resolvedUnit.rate <= 0 && pgId != 0) {
+            resolvedUnit = await _applyStockRateOverride(unit, productId, 0);
+          }
+
+          // ⚡ NEW FALLBACK LOGIC: If no unit rate found, use (Product Base Rate * Unit Base Qty)
+          if (resolvedUnit.rate <= 0) {
+            final double fallbackRate = product.price * resolvedUnit.unitBaseQty;
+            log("⚡ Falling back to base rate calculation (API): ${product.price} * ${resolvedUnit.unitBaseQty} = $fallbackRate");
+            resolvedUnit = resolvedUnit.copyWith(rate: fallbackRate);
+          }
+
+          resolvedUnits.add(resolvedUnit);
+        }
+        productUnits.assignAll(resolvedUnits);
+
+        commonAddons.assignAll(common.where((e) {
+          final flag = (e['prdaddon_flags'] as num? ?? 1).toInt();
+          return flag != 0;
+        }).map((e) {
+          e['commonAddon'] = true;
+          return AddonModel.fromJson(e);
+        }).toList());
+
         _showProductDetails(product, existingItem);
-      } else {
-        showSafeSnackbar("Error", "Could not load units for ${product.name}");
       }
     } catch (e) {
-      log("onProductTapped Unexpected Error: $e");
+      debugPrint("Error fetching product details: $e");
     } finally {
       isLoadingDetails.value = false;
     }
   }
-
   void _showProductDetails(FoodItemModel product, CartItem? existingItem) {
     if (productUnits.isNotEmpty) {
       log("_showProductDetails: Showing details for ${product.name}");

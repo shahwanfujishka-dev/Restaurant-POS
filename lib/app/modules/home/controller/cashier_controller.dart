@@ -662,6 +662,19 @@ class CashierController extends GetxController {
           p['sales_odr_roundoff'] = finalRoundOff;
           p['tot_amount'] = finalTotal;
           p['sales_odr_total'] = finalTotal;
+
+          // // 🔥 Force payload into a "Paid/Settled" state so SyncService handles it in one step
+          // final Map<String, int> payTypeMap = {
+          //   'Cash': 2, 'Card': 5, 'Bank': 3, 'Credit': 1, 'Multiple': 4,
+          // };
+          // p['res_status'] = 3;
+          // p['sale_pay_type'] = isComp ? 2 : (payTypeMap[paymentMethod.value] ?? 2);
+          // p['is_compliment'] = isComp ? 1 : 0;
+          // p['sale_acc_ledger_id_cash'] = cashId;
+          // p['sale_acc_ledger_id_bank'] = bankId;
+          // p['cash_amnt'] = (paymentMethod.value == 'Cash') ? finalTotal : 0;
+          // p['card_amnt'] = (paymentMethod.value == 'Card' || paymentMethod.value == 'Bank') ? finalTotal : 0;
+
           updatedPayload = jsonEncode(p);
         }
       }

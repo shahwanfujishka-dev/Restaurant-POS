@@ -117,6 +117,10 @@ class MobileCartSummary extends StatelessWidget {
       final bool wasDraftVal = controller.wasDraft.value;
       final List<OrderItem> originalItemsCopy = List<OrderItem>.from(controller.originalItems);
 
+      // ✅ Capture BEFORE stopEditing/clearTable wipes these values
+      final String snapshotTableName = controller.selectedTableName.value;
+      final int snapshotChairCount = controller.selectedChairCount.value;
+
       if (wasEditing) {
         showSafeSnackbar(
             isDraft ? "Draft Updated" : "Order Updated",
@@ -141,6 +145,8 @@ class MobileCartSummary extends StatelessWidget {
         wasDraft: wasDraftVal,
         originalItems: originalItemsCopy,
         ordersController: ordersController,
+        snapshotTableName: snapshotTableName,
+        snapshotChairCount: snapshotChairCount,
       );
 
     } catch (e) {
@@ -214,11 +220,17 @@ class MobileCartSummary extends StatelessWidget {
     required bool wasDraft,
     required List<OrderItem> originalItems,
     required OrdersController ordersController,
+    String snapshotTableName = "",
+    int snapshotChairCount = 0,
   }) async {
     if (!isDraft) {
       try {
         final printerController = Get.find<PrinterController>();
-        final OrderModel liveOrder = ordersController.parseOrderResponse(responseData);
+        final OrderModel liveOrder = ordersController.parseOrderResponse(
+          responseData,
+          fallbackTableName: snapshotTableName,
+          fallbackChairCount: snapshotChairCount,
+        );
 
         List<OrderItem>? oldItemsForKOT;
         if (wasEditing && !wasDraft) {
@@ -372,7 +384,13 @@ class MobileCartSummary extends StatelessWidget {
                     PrimaryButton(
                       isLoading: controller.isProcessing.value,
                       height: 48.h,
-                      onPressed: _navigateToCashier,
+                      onPressed: () {
+                        if (controller.selectedCaptainId.value == null) {
+                          showSafeSnackbar("Captain Required", "Please select a captain before placing the order.");
+                          return;
+                        }
+                        _navigateToCashier();
+                      },
                       color: colors.isDark ? Colors.redAccent.shade700 : Colors.redAccent.shade400,
                       text: "Receipt",
                       icon: Icons.receipt,
