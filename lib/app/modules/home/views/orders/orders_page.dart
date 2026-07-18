@@ -7,6 +7,7 @@ import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
 import 'package:get/get_state_manager/src/simple/get_view.dart';
 import 'package:get/get_utils/src/extensions/internacionalization.dart';
 import 'package:intl/intl.dart';
+import 'package:restaurant_pos/app/data/utils/AppState.dart';
 import 'package:restaurant_pos/app/modules/home/views/orders/widgets/AnimatedTabBar.dart';
 
 import '../../../../../helper/screen_type.dart';
@@ -499,8 +500,12 @@ void _showOrderDetailsDialog(
                     _buildDetailRow(context, 'Subtotal', calculatedSubtotal, colors.text, bold: false),
                     if (currentOrder.discount > 0)
                       _buildDetailRow(context, 'Discount', -currentOrder.discount, Colors.red, bold: false),
-                    if (dashboardController.vatType.value == 0 || currentOrder.totalTax > 0)
+                    if (currentOrder.totalTax > 0 && AppState.cmpTaxType == 1)...[
                       _buildDetailRow(context, 'Tax', currentOrder.totalTax, colors.text, bold: false),
+                    ] else ...[
+                      _buildDetailRow(context, 'SGST', (currentOrder.totalTax/2), colors.text, bold: false),
+                      _buildDetailRow(context, 'CGST',( currentOrder.totalTax/2), colors.text, bold: false),
+                    ],
                     if (currentOrder.roundOff != 0)
                       _buildDetailRow(context, 'Round Off', currentOrder.roundOff, colors.text, bold: false),
                     const Divider(),
@@ -1316,9 +1321,15 @@ class _OrderDetailsContent extends StatelessWidget {
                   _buildDetailRow(context, 'Subtotal', calculatedSubtotal, colors.text, bold: false, fontSize: isMobile ? 14.sp : 10.sp),
                   if (currentOrder.discount > 0)
                     _buildDetailRow(context, 'Discount', -currentOrder.discount, Colors.red, bold: false, fontSize: isMobile ? 14.sp : 10.sp),
+                  if (AppState.cmpTaxType == 1)...[
                   if (dashboardController.vatType.value == 0 || currentOrder.totalTax > 0)
                     _buildDetailRow(context, 'Tax', currentOrder.totalTax, colors.text, bold: false, fontSize: isMobile ? 14.sp : 10.sp),
-                  if (currentOrder.roundOff != 0)
+                  ]else ...[
+                    _buildDetailRow(context, 'SGST', (currentOrder.totalTax/2), colors.text, bold: false, fontSize: isMobile ? 14.sp : 10.sp
+                    ),
+                    _buildDetailRow(context, 'CGST',( currentOrder.totalTax/2), colors.text, bold: false, fontSize: isMobile ? 14.sp : 10.sp)
+                  ]
+                  ,if (currentOrder.roundOff != 0)
                     _buildDetailRow(context, 'Round Off', currentOrder.roundOff, colors.text, bold: false, fontSize: isMobile ? 14.sp : 10.sp),
                   const Divider(),
                   _buildDetailRow(context, 'Total Amount', totAmt, displayColor, bold: true, fontSize: isMobile ? 18.sp : 12.sp),

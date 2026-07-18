@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart' hide ScreenType;
+import 'package:restaurant_pos/app/data/utils/AppState.dart';
 import 'package:restaurant_pos/app/modules/home/views/cashier/widgets/cashier_widgets.dart';
 import 'package:restaurant_pos/helper/screen_type.dart';
 
@@ -207,11 +208,25 @@ class CashierView extends GetView<CashierController> {
                     colors,
                   ),
                   SizedBox(height: 8.h),
+                  if(AppState.cmpTaxType == 1)...[
                   CashierWidgets.summaryRow(
                     "Tax",
                     controller.tax.toStringAsFixed(2),
                     colors,
                   ),
+                  ] else ...[
+                    CashierWidgets.summaryRow(
+                      "CGST",
+                      (controller.tax/2).toStringAsFixed(2),
+                      colors,
+                    ),
+                    SizedBox(height: 8.h),
+                    CashierWidgets.summaryRow(
+                      "SGST",
+                      (controller.tax/2).toStringAsFixed(2),
+                      colors,
+                    ),
+                  ],
                   SizedBox(height: 8.h),
                   CashierWidgets.minimalDiscountInput(
                     controller.discountController,

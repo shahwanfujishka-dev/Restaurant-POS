@@ -202,6 +202,7 @@ class AuthController extends GetxController {
           final branchData = dataList[0];
           final String token = branchData['token'] ?? '';
           final String bName = branchData['branch_name'] ?? branchData['branch_display_name'];
+          final int taxType = branchData['cmp_tax_type'] ?? 1;
 
           serverUrl.value = url;
           companyCode.value = code;
@@ -212,6 +213,7 @@ class AuthController extends GetxController {
           storage.write('branch_id', bId);
           storage.write('branch_name', bName);
           storage.write('branch_token', token);
+          storage.write('cmp_tax_type', taxType);
 
           isVerified.value = true;
           Get.snackbar("✓ Verified", "Branch verified: $code", backgroundColor: Colors.green, colorText: Colors.white);

@@ -20,6 +20,7 @@ import 'package:restaurant_pos/helper/snackbar_helper.dart';
 import '../../../data/models/order_model.dart';
 import '../../../data/models/order_type.dart';
 import '../../../data/services/database_helper.dart';
+import '../../../data/utils/AppState.dart';
 import '../views/dashoard/models/dashboard_models.dart';
 import 'dashboard_controller.dart';
 
@@ -983,21 +984,38 @@ class PrinterController extends GetxController {
       bytes += generator.setGlobalFont(PosFontType.fontA);
 
       // Header
-      bytes += generator.text(
-        "REST POS",
-        styles: const PosStyles(
-          align: PosAlign.center,
-          bold: false,
-          height: PosTextSize.size2,
-        ),
-      );
-      bytes += generator.text(
-        isBill ? "ORDER BILL" : "Final Receipt",
-        styles: const PosStyles(align: PosAlign.center),
-      );
+      // bytes += generator.text(
+      //   "REST POS",
+      //   styles: const PosStyles(
+      //     align: PosAlign.center,
+      //     bold: false,
+      //     height: PosTextSize.size2,
+      //   ),
+      // );
+      // bytes += generator.text(
+      //   isBill ? "ORDER BILL" : "Final Receipt",
+      //   styles: const PosStyles(align: PosAlign.center),
+      // );
+      if (order.branchName != null && order.branchName!.isNotEmpty) {
+        bytes += generator.text(order.branchName!,styles: const PosStyles(align: PosAlign.center,height: PosTextSize.size2,fontType: PosFontType.fontA,bold: false), );
+    }
+      if (order.branchAddress != null && order.branchAddress!.isNotEmpty) {
+        bytes += generator.text(order.branchAddress!,styles: const PosStyles(align: PosAlign.center), );
+      }
+      if (order.branchPhone != null && order.branchPhone!.isNotEmpty) {
+        bytes += generator.text("Ph:${order.branchPhone}"!,styles: const PosStyles(align: PosAlign.center), );
+      }
+      if (order.branchMob != null && order.branchMob!.isNotEmpty) {
+        bytes += generator.text("MOB:${order.branchMob}"!,styles: const PosStyles(align: PosAlign.center), );
+      }
+      if (order.branchTin != null && order.branchTin!.isNotEmpty && AppState.cmpTaxType!=1) {
+        bytes += generator.text(
+          "GST No: ${order.branchTin}",
+          styles: const PosStyles(align: PosAlign.center),
+        );
+      }
       bytes += generator.text("-" * 48);
 
-      // Detailed Info
       bytes += generator.row([
         PosColumn(text: "Customer:", width: 5),
         PosColumn(
@@ -1062,7 +1080,8 @@ class PrinterController extends GetxController {
           styles: const PosStyles(align: PosAlign.right),
         ),
       ]);
-      if (GetStorage().read('selected_order_type_id') == 0) {        bytes += generator.row([
+      if (GetStorage().read('selected_order_type_id') == 0) {
+        bytes += generator.row([
           PosColumn(text: "Table:", width: 5),
           PosColumn(
             text: order.tableName,
@@ -1076,22 +1095,26 @@ class PrinterController extends GetxController {
 
       // Column Titles
       bytes += generator.row([
-        PosColumn(text: "Qty", width: 1, styles: const PosStyles(bold: false, height: PosTextSize.size1)),
-        PosColumn(text: "Item", width: 4, styles: const PosStyles(bold: false, height: PosTextSize.size1)),
         PosColumn(
-          text: "Rate",
-          width: 2,
-          styles: const PosStyles(align: PosAlign.right,bold: false, height: PosTextSize.size1),
+          text: "Item",
+          width:  6, // 👈 increase when no VAT
         ),
+        PosColumn(text: "Qty", width: 1),
         PosColumn(
-          text: "Vat",
+          text: "Price",
           width: 2,
-          styles: const PosStyles(align: PosAlign.right,bold: false, height: PosTextSize.size1),
+          styles: const PosStyles(align: PosAlign.right),
         ),
+        // if (AppState.cmpTaxType == 1)
+        //   PosColumn(
+        //     text: "Vat",
+        //     width: 2,
+        //     styles: const PosStyles(align: PosAlign.right),
+        //   ),
         PosColumn(
           text: "Amount",
           width: 3,
-          styles: const PosStyles(align: PosAlign.right,bold: false, height: PosTextSize.size1),
+          styles: const PosStyles(align: PosAlign.right),
         ),
       ]);
       bytes += generator.text("-" * 48);
@@ -1110,7 +1133,7 @@ class PrinterController extends GetxController {
           qty = item.quantity.toDouble();
         } else {
           price = item.product.price * (baseqty > 1.0 ? baseqty : 1.0);
-          qty = item.quantity.toDouble(); // already display qty from parseOrderResponse
+          qty = item.quantity.toDouble();
         }
         double vatAmount;
         double lineTotal;
@@ -1126,25 +1149,33 @@ class PrinterController extends GetxController {
           // Price excludes tax
           lineSubTotal = price * qty;
           vatAmount = (lineSubTotal * taxPer) / 100;
-          lineTotal = lineSubTotal + vatAmount;
+          lineTotal = lineSubTotal;
         }
 
         calculatedSubTotal += lineSubTotal;
         calculatedTax += vatAmount;
 
+        // final hasVat = AppState.cmpTaxType == 1;
+
         bytes += generator.row([
+          PosColumn(
+            text: item.product.name,
+            width: 6, // 👈 expand when no VAT
+          ),
           PosColumn(text: item.quantity.toString(), width: 1),
-          PosColumn(text: item.product.name, width: 4),
           PosColumn(
             text: price.toStringAsFixed(2),
             width: 2,
             styles: const PosStyles(align: PosAlign.right),
           ),
-          PosColumn(
-            text: vatAmount.toStringAsFixed(2),
-            width: 2,
-            styles: const PosStyles(align: PosAlign.right),
-          ),
+
+          // if (hasVat)
+          //   PosColumn(
+          //     text: vatAmount.toStringAsFixed(2),
+          //     width: 2,
+          //     styles: const PosStyles(align: PosAlign.right),
+          //   ),
+
           PosColumn(
             text: lineTotal.toStringAsFixed(2),
             width: 3,
@@ -1195,14 +1226,38 @@ class PrinterController extends GetxController {
           styles: const PosStyles(align: PosAlign.right),
         ),
       ]);
-      bytes += generator.row([
-        PosColumn(text: "VAT", width: 6),
-        PosColumn(
-          text: finalVat.toStringAsFixed(2),
-          width: 6,
-          styles: const PosStyles(align: PosAlign.right),
-        ),
-      ]);
+      if (AppState.cmpTaxType == 1) {
+        bytes += generator.row([
+          PosColumn(text: "VAT", width: 6),
+          PosColumn(
+            text: finalVat.toStringAsFixed(2),
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      } else {
+        final double finalCgst =
+        order.totalCgst > 0 ? order.totalCgst : (finalVat / 2);
+        final double finalSgst =
+        order.totalSgst > 0 ? order.totalSgst : (finalVat / 2);
+
+        bytes += generator.row([
+          PosColumn(text: "CGST(${order.Taxpercentage/2}%)", width: 6),
+          PosColumn(
+            text: finalCgst.toStringAsFixed(2),
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+        bytes += generator.row([
+          PosColumn(text: "SGST(${order.Taxpercentage/2}%)", width: 6),
+          PosColumn(
+            text: finalSgst.toStringAsFixed(2),
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
       if (discount > 0) {
         bytes += generator.row([
           PosColumn(text: "Discount", width: 6),
@@ -1279,9 +1334,11 @@ class PrinterController extends GetxController {
       // }
 
       bytes += generator.text("-" * 48);
-      if (order.qrLink != null && order.qrLink!.isNotEmpty) {
-        bytes += generator.qrcode(order.qrLink!, size: QRSize.size4);
-      }
+      // if (order.qrLink != null && order.qrLink!.isNotEmpty && AppState.cmpTaxType==1) {
+      //   bytes += generator.qrcode(order.qrLink!, size: QRSize.size5,cor: QRCorrection.L);
+      //   bytes += generator.emptyLines(1); // or generator.feed(1)
+      // }
+
       bytes += generator.text(
         "Thank You!",
         styles: const PosStyles(align: PosAlign.center),
@@ -1305,18 +1362,25 @@ class PrinterController extends GetxController {
         double discount = 0,
         double roundOff = 0,
       }) {
-    printer.text(
-      "REST POS",
-      styles: const PosStyles(
-        align: PosAlign.center,
-        bold: false,
-        height: PosTextSize.size3,
-      ),
-    );
-    printer.text(
-      isBill ? "ORDER BILL" : "Final Receipt",
-      styles: const PosStyles(align: PosAlign.center),
-    );
+    if (order.branchName != null && order.branchName!.isNotEmpty) {
+      printer.text(order.branchName!,styles: const PosStyles(align: PosAlign.center,height: PosTextSize.size2,fontType: PosFontType.fontA,bold: false), );
+    }
+    if (order.branchAddress != null && order.branchAddress!.isNotEmpty) {
+      printer.text(order.branchAddress!,styles: const PosStyles(align: PosAlign.center), );
+    }
+    if (order.branchPhone != null && order.branchPhone!.isNotEmpty) {
+      printer.text("Ph:${order.branchPhone}"!,styles: const PosStyles(align: PosAlign.center), );
+    }
+    if (order.branchMob != null && order.branchMob!.isNotEmpty) {
+      printer.text("MOB:${order.branchMob}"!,styles: const PosStyles(align: PosAlign.center), );
+    }
+    if (order.branchTin != null && order.branchTin!.isNotEmpty && AppState.cmpTaxType!=1) {
+      printer.text(
+        "GST No: ${order.branchTin}",
+        styles: const PosStyles(align: PosAlign.center),
+      );
+    }
+    printer.text("-" * 48);
     printer.hr();
 
     // Detailed Info
@@ -1405,11 +1469,19 @@ class PrinterController extends GetxController {
         width: 2,
         styles: const PosStyles(align: PosAlign.right, bold: true),
       ),
+      if(AppState.cmpTaxType == 1)...[
       PosColumn(
         text: "Vat",
         width: 2,
         styles: const PosStyles(align: PosAlign.right, bold: true),
       ),
+      ] else ...[
+        PosColumn(
+          text: "Gst Total",
+          width: 2,
+          styles: const PosStyles(align: PosAlign.right, bold: true),
+        ),
+      ],
       PosColumn(
         text: "Amount",
         width: 3,
@@ -1509,14 +1581,38 @@ print("Price: ${item.priceAtOrder}");
         styles: const PosStyles(align: PosAlign.right),
       ),
     ]);
-    printer.row([
-      PosColumn(text: "VAT", width: 6),
-      PosColumn(
-        text: finalVat.toStringAsFixed(2),
-        width: 6,
-        styles: const PosStyles(align: PosAlign.right),
-      ),
-    ]);
+    if (AppState.cmpTaxType == 1) {
+      printer.row([
+        PosColumn(text: "VAT", width: 6),
+        PosColumn(
+          text: finalVat.toStringAsFixed(2),
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    } else {
+      final double finalCgst =
+      order.totalCgst > 0 ? order.totalCgst : (finalVat / 2);
+      final double finalSgst =
+      order.totalSgst > 0 ? order.totalSgst : (finalVat / 2);
+
+      printer.row([
+        PosColumn(text: "CGST", width: 6),
+        PosColumn(
+          text: finalCgst.toStringAsFixed(2),
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+      printer.row([
+        PosColumn(text: "SGST", width: 6),
+        PosColumn(
+          text: finalSgst.toStringAsFixed(2),
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
 
     if (discount > 0) {
       printer.row([
@@ -1585,9 +1681,9 @@ print("Price: ${item.priceAtOrder}");
 
     printer.hr();
 
-    if (order.qrLink != null && order.qrLink!.isNotEmpty) {
-      printer.qrcode(order.qrLink!);
-    }
+    // if (order.qrLink != null && order.qrLink!.isNotEmpty && AppState.cmpTaxType == 1) {
+    //   printer.qrcode(order.qrLink!);
+    // }
 
     printer.text("Thank You!", styles: const PosStyles(align: PosAlign.center));
     printer.feed(3);

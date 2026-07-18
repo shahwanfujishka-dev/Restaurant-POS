@@ -340,7 +340,27 @@ class MobileCartSummary extends StatelessWidget {
               _buildTotalRow(context, label: 'subtotal'.tr, value: controller.totalAmount, isBold: false),
               if (showTax) ...[
                 SizedBox(height: 4.h),
-                _buildTotalRow(context, label: 'tax'.tr, value: controller.totalTaxAmount, isBold: false),
+                if (AppState.cmpTaxType == 1) ...[
+                  _buildTotalRow(
+                    context,
+                    label: 'tax'.tr,
+                    value: controller.totalTaxAmount,
+                    isBold: false,
+                  ),
+                ] else ...[
+                  _buildTotalRow(
+                    context,
+                    label: 'CGST',
+                    value: (controller.totalTaxAmount/2),
+                    isBold: false,
+                  ),
+                  _buildTotalRow(
+                    context,
+                    label: 'SGST',
+                    value: (controller.totalTaxAmount/2),
+                    isBold: false,
+                  ),
+                ]
               ],
               SizedBox(height: 4.h),
               _buildDivider(context),

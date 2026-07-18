@@ -356,6 +356,7 @@ class SyncController extends GetxController {
         "usr_id": userId,
         "sales_odr_inv_no": invNo,
         "is_reprint": 1,
+        "cmp_tax":AppState.cmpTaxType
       });
 
       if (response.statusCode == 200) {

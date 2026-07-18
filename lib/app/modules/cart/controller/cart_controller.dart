@@ -506,10 +506,10 @@ class CartController extends GetxController {
       );
     }
 
-    showSafeSnackbar(
-      "Added to Cart",
-      "${product.name} (${unit.unitDisplay}) added successfully",
-    );
+    // showSafeSnackbar(
+    //   "Added to Cart",
+    //   "${product.name} (${unit.unitDisplay}) added successfully",
+    // );
   }
 
 
@@ -765,6 +765,8 @@ class CartController extends GetxController {
           "salesub_price": itemRate,
           "salesub_tax": itemTaxAmount,
           "salesub_tax_per": isVatDisabled ? 0 : itemTaxPer,
+          if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": isVatDisabled ? 0 : itemTaxPer / 2,
+          if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": isVatDisabled ? 0 : itemTaxPer / 2,
           "salesub_qty": itemQty,
           "count": itemQty,
           "sale_total_amount": itemTotalWithTax,
@@ -863,6 +865,8 @@ class CartController extends GetxController {
               "salesub_price": rate,
               "salesub_tax": taxAmntPerUnit,
               "salesub_tax_per": isVatDisabled ? 0 : taxPer,
+              if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": isVatDisabled ? 0 : taxPer / 2,
+              if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": isVatDisabled ? 0 : taxPer / 2,
               "salesub_qty": freePart,
               "count": freePart,
               "sale_total_amount": 0,
@@ -910,6 +914,8 @@ class CartController extends GetxController {
               "salesub_price": rate,
               "salesub_tax": taxAmntPerUnit,
               "salesub_tax_per": isVatDisabled ? 0 : taxPer,
+              if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": isVatDisabled ? 0 : taxPer / 2,
+              if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": isVatDisabled ? 0 : taxPer / 2,
               "salesub_qty": paidPart,
               "count": paidPart,
               "sale_total_amount": totalWithTaxLine,
@@ -961,6 +967,9 @@ class CartController extends GetxController {
         "balance_amount": 0,
         // "sale_acc_ledger_id": cashLedgerId ?? 0,
         "sq_tax": totalTax,
+        "cmp_tax": AppState.cmpTaxType,
+        if (AppState.cmpTaxType != 1) "sq_cgst_tax": totalTax / 2,
+        if (AppState.cmpTaxType != 1) "sq_sgst_tax": totalTax / 2,
         "inv_type": 2,
         "pos_odr_type": GetStorage().read('selected_order_type_id'),
         "address": customerAddress,
@@ -1239,6 +1248,8 @@ class CartController extends GetxController {
             "salesub_price": deletedRate,
             "salesub_tax": deletedTaxAmount,
             "salesub_tax_per": deletedTaxPer,
+            if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": deletedTaxPer / 2,
+            if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": deletedTaxPer / 2,
             "salesub_qty": item.initialQty,
             "count": item.initialQty,
             "sale_total_amount": deletedTotalWithTax,
@@ -1290,6 +1301,8 @@ class CartController extends GetxController {
                 "salesub_price": 0,
                 "salesub_tax": 0,
                 "salesub_tax_per": 0,
+                if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": 0,
+                if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": 0,
                 "salesub_qty": addonQty,
                 "count": addonQty,
                 "sale_total_amount": 0,
@@ -1374,6 +1387,8 @@ class CartController extends GetxController {
           "salesub_price": rate,
           "salesub_tax": itemTaxAmountPerUnit,
           "salesub_tax_per": itemTaxPer,
+          if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": itemTaxPer / 2,
+          if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": itemTaxPer / 2,
           "salesub_qty": newQty,
           "count": oldQty,
           "sale_total_amount": itemTotalWithTax,
@@ -1559,6 +1574,8 @@ class CartController extends GetxController {
                 "salesub_price": 0,
                 "salesub_tax": 0,
                 "salesub_tax_per": isVatDisabled ? 0 : addon.taxPer,
+                if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": isVatDisabled ? 0 : addon.taxPer / 2,
+                if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": isVatDisabled ? 0 : addon.taxPer / 2,
                 "salesub_qty": currentFreePart,
                 "count": oldFreePart,
                 "sale_total_amount": 0,
@@ -1599,6 +1616,8 @@ class CartController extends GetxController {
                 "salesub_tax": 0,
                 "salesub_tax_per": 0,
                 "salesub_qty": 0,
+                if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": 0,
+                if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": 0,
                 "count": oldFreePart,
                 "sale_total_amount": 0,
                 "salesub_tax_amnt": 0,
@@ -1715,6 +1734,8 @@ class CartController extends GetxController {
                 "salesub_price": 0,
                 "salesub_tax": 0,
                 "salesub_tax_per": 0,
+                if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": 0,
+                if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": 0,
                 "salesub_qty": 0,
                 "count": oldPaidPart,
                 "sale_total_amount": 0,
@@ -1764,6 +1785,8 @@ class CartController extends GetxController {
                 "salesub_price": 0,
                 "salesub_tax": 0,
                 "salesub_tax_per": oa.taxPer,
+                if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": oa.taxPer / 2,
+                if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": oa.taxPer / 2,
                 "salesub_qty": 0,
                 "count": oa.initialQty,
                 "sale_total_amount": 0,
@@ -1794,11 +1817,8 @@ class CartController extends GetxController {
             "│  >>> ADDONS CHANGED - parent already included above as context ✅",
           );
         }
-
         log("└─ END ITEM: ${item.product.name}");
       }
-
-      // ── Final summary log ─────────────────────────────────────────────────────
       log("╔══════════════════════════════════════════");
       log("║ FINAL SUMMARY");
       log("║ saleItems count: ${saleItems.length}");
@@ -1825,10 +1845,8 @@ class CartController extends GetxController {
         _clearDashboardSearch();
         return {"no_change": true};
       }
-
       final double finalTotal = isCompliment ? 0 : (totalWithTax - discountAmount + roundOffAmount).clamp(0, double.infinity);
       final double finalDiscount = isCompliment ? totalWithTax : discountAmount;
-
       final body = {
         "usr_id": int.tryParse(AppState.userId) ?? 0,
         "sales_cust_type" : (registerCustEnabled == true) ? 1 :0,
@@ -1842,6 +1860,9 @@ class CartController extends GetxController {
         "sale_pay_type": payType ?? 2,
         "balance_amount": 0,
         "sq_tax": totalTax,
+        "cmp_tax": AppState.cmpTaxType,
+        if (AppState.cmpTaxType != 1) "sq_cgst_tax": totalTax / 2,
+        if (AppState.cmpTaxType != 1) "sq_sgst_tax": totalTax / 2,
         "inv_type": 2,
         "pos_odr_type": AppState.orderType.id,
         "address": customerAddress,
@@ -1889,18 +1910,15 @@ class CartController extends GetxController {
       log("Final Body with ${saleItems.length} items");
       log('Api Body: ${jsonEncode(body)}');
 
-      // --- LOCAL DB UPDATE ---
       try {
         final bool editingUnsyncedOrder =
             editingOrderId.value.startsWith('ORD-') ||
             editingInvNo.value.isEmpty ||
             editingInvNo.value == 'OFFLINE' ||
             (int.tryParse(editingInvNo.value) ?? 0) == 0;
-
-        // ✅ Override is_pos_edit in the payload so SyncService picks the right endpoint
         final Map<String, dynamic> payloadToSave = {
           ...body,
-          'is_pos_edit': !editingUnsyncedOrder, // false = add, true = update
+          'is_pos_edit': !editingUnsyncedOrder,
         };
         await _dbHelper.updateOrderStatusByServerId(
           editingOrderId.value,
@@ -1913,7 +1931,6 @@ class CartController extends GetxController {
       } catch (dbError) {
         log("❌ Local DB Update Error: $dbError");
       }
-
       try {
         final response = await _apiService.post(
           "mobileapp/pos/update_sales_order",

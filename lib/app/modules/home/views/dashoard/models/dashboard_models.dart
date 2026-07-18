@@ -81,7 +81,6 @@ class FoodItemModel {
   });
 
   factory FoodItemModel.fromJson(Map<String, dynamic> json, {String baseUrl = ""}) {
-    // Check both API key (prd_img_url) and DB key (image)
     String imgUrl = (json['prd_img_url'] ?? json['image'])?.toString() ?? '';
     if (imgUrl.isNotEmpty && baseUrl.isNotEmpty && !imgUrl.startsWith('http')) {
       imgUrl = baseUrl + imgUrl;

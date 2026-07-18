@@ -26,6 +26,7 @@ class AppState {
   static String get ledgerId => _storage.read('ledger_id')?.toString() ?? '0';
   static String get cashLedgerId => _storage.read('usr_cash_ledger_id')?.toString() ?? '0';
   static String get bankLedgerId => _storage.read('usr_bank_ledger_id')?.toString() ?? '0';
+  static int get cmpTaxType => _storage.read('cmp_tax_type') ?? 1;
 
 
   // Order Type Persistence

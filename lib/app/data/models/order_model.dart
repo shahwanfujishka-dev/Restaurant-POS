@@ -18,6 +18,8 @@ class OrderItem {
   final bool isRemoved; // ✅ Added to track if item was removed/decreased
   Map<int, int>? addonSubIdMap;
   final bool isKotModified;
+  final double cgstRate; // ✅ Added for GST
+  final double sgstRate; // ✅ Added for GST
 
   OrderItem({
     this.subId,
@@ -33,6 +35,8 @@ class OrderItem {
     required this.quantity,
     required this.priceAtOrder,
     this.isKotModified = false,
+    this.cgstRate = 0.0,
+    this.sgstRate = 0.0,
   });
 
   double get subtotal => priceAtOrder * quantity;
@@ -43,21 +47,29 @@ class OrderModel {
   final String invNo;
   final String tableId;
   final String tableName;
-  final String? customerName; // ✅ Added
-  final String? captainName; // ✅ Added
+  final String? customerName;
+  final String? captainName;
   final int chairNumber;
   final int sales_odr_pos_status;
   final List<OrderItem> items;
   final Rx<OrderStatus> status;
   final DateTime createdAt;
-  double subTotal; // ✅ Added to store tot_rate
+  double subTotal;
   double totalAmount;
   double totalTax;
+  double totalCgst;
+  double totalSgst;
+  double Taxpercentage;
+  final List<Map<String, dynamic>>? gstList;
   double discount;
   double roundOff;
-  int paymentType; // ✅ Added
-  String? qrLink; // ✅ Added for ZATCA QR (Non-final for background updates)
-
+  int paymentType;
+  String? qrLink;
+  String? branchTin;
+  String? branchName;
+  String? branchPhone;
+  String? branchMob;
+  String? branchAddress;
   final int? areaId;
   final String? areaName;
   final int? priceGroupId;
@@ -79,10 +91,19 @@ class OrderModel {
     this.subTotal = 0.0, // ✅ Added
     required this.totalAmount,
     required this.totalTax,
+    this.totalCgst = 0.0,
+    this.totalSgst = 0.0,
+    this.Taxpercentage = 0.0,
+    this.gstList,
     this.discount = 0.0,
     this.roundOff = 0.0,
     this.paymentType = 2, // Default to Cash (2)
     this.qrLink,
+    this.branchTin,
+    this.branchName,
+    this.branchPhone,
+    this.branchMob,
+    this.branchAddress,
     this.areaId,
     this.areaName,
     this.priceGroupId,
@@ -110,10 +131,19 @@ class OrderModel {
     double? subTotal, // ✅ Added
     double? totalAmount,
     double? totalTax,
+    double? totalCgst,
+    double? totalSgst,
+    double? Taxpercentage,
+    List<Map<String, dynamic>>? gstList,
     double? discount,
     double? roundOff,
     int? paymentType,
     String? qrLink,
+    String? branchTin,
+    String? branchName,
+    String? branchPhone,
+    String? branchMob,
+    String? branchAddress,
     int? areaId,
     String? areaName,
     int? priceGroupId,
@@ -135,10 +165,19 @@ class OrderModel {
       subTotal: subTotal ?? this.subTotal, // ✅ Added
       totalAmount: totalAmount ?? this.totalAmount,
       totalTax: totalTax ?? this.totalTax,
+      totalCgst: totalCgst ?? this.totalCgst,
+      totalSgst: totalSgst ?? this.totalSgst,
+      Taxpercentage: Taxpercentage ?? this.Taxpercentage,
+      gstList: gstList ?? this.gstList,
       discount: discount ?? this.discount,
       roundOff: roundOff ?? this.roundOff,
       paymentType: paymentType ?? this.paymentType,
       qrLink: qrLink ?? this.qrLink,
+      branchTin: branchTin?? this.branchTin,
+      branchName: branchName?? this.branchName,
+      branchPhone: branchPhone?? this.branchPhone,
+      branchMob: branchMob?? this.branchMob,
+      branchAddress: branchAddress?? this.branchAddress,
       areaId: areaId ?? this.areaId,
       areaName: areaName ?? this.areaName,
       priceGroupId: priceGroupId ?? this.priceGroupId,

@@ -310,10 +310,28 @@ class CartSummary extends StatelessWidget {
                   value: controller.totalAmount,
                   isBold: false),
               if (showTax) ...[
-                SizedBox(height: 1.h),
-                _buildTotalRow(context, label: 'tax'.tr,
+                SizedBox(height: 4.h),
+                if (AppState.cmpTaxType == 1) ...[
+                  _buildTotalRow(
+                    context,
+                    label: 'tax'.tr,
                     value: controller.totalTaxAmount,
-                    isBold: false),
+                    isBold: false,
+                  ),
+                ] else ...[
+                  _buildTotalRow(
+                    context,
+                    label: 'CGST',
+                    value: (controller.totalTaxAmount/2),
+                    isBold: false,
+                  ),
+                  _buildTotalRow(
+                    context,
+                    label: 'SGST',
+                    value: (controller.totalTaxAmount/2),
+                    isBold: false,
+                  ),
+                ]
               ],
               SizedBox(height: 2.h),
               _buildDivider(context),

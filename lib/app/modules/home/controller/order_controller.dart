@@ -138,6 +138,8 @@ class OrdersController extends GetxController {
                   areaName: area.name,
                   priceGroupId: area.priceGroupID,
                   totalTax: (processing['sales_odr_tax'] ?? processing['tot_tax'] ?? processing['total_tax'] as num? ?? 0.0).toDouble(),
+                  totalCgst: (processing['tot_cgst_tax'] as num? ?? 0.0).toDouble(),
+                  totalSgst: (processing['tot_sgst_tax'] as num? ?? 0.0).toDouble(),
                   sales_odr_order_type: orderType,
                   discount: (processing['tot_disc'] ?? processing['discount'] as num? ?? 0.0).toDouble(),
                   roundOff: (processing['sales_odr_roundoff'] as num? ?? 0.0).toDouble(),
@@ -196,6 +198,8 @@ class OrdersController extends GetxController {
               areaName: processingOrder?.areaName,
               priceGroupId: processingOrder?.priceGroupId,
               totalTax: (json['sales_odr_tax'] ?? json['tot_tax'] ?? json['total_tax'] as num? ?? 0.0).toDouble(),
+              totalCgst: (json['tot_cgst_tax'] as num? ?? processingOrder?.totalCgst ?? 0.0).toDouble(),
+              totalSgst: (json['tot_sgst_tax'] as num? ?? processingOrder?.totalSgst ?? 0.0).toDouble(),
               sales_odr_order_type: orderType,
               discount: (json['tot_disc'] ?? json['discount'] ?? processingOrder?.discount ?? 0.0).toDouble(),
               roundOff: (json['sales_odr_roundoff'] ?? processingOrder?.roundOff ?? 0.0).toDouble(),
@@ -232,6 +236,8 @@ class OrdersController extends GetxController {
           localOrder.roundOff = serverOrder.roundOff;
           localOrder.subTotal = serverOrder.subTotal;
           localOrder.qrLink = serverOrder.qrLink;
+          localOrder.totalCgst = serverOrder.totalCgst;
+          localOrder.totalSgst = serverOrder.totalSgst;
           localOrder.status.value = serverOrder.status.value; // Sync status
 
           // Auto-repair local DB sync status
@@ -310,6 +316,8 @@ class OrdersController extends GetxController {
               subTotal: (json['tot_rate'] as num? ?? json['sub_total'] as num? ?? 0.0).toDouble(),
               totalAmount: (json['sales_odr_total'] ?? json['tot_amount'] ?? json['total_amount'] as num? ?? 0.0).toDouble(),
               totalTax: (json['sales_odr_tax'] ?? json['tot_tax'] ?? json['total_tax'] as num? ?? 0.0).toDouble(),
+              totalCgst: (json['tot_cgst_tax'] as num? ?? 0.0).toDouble(),
+              totalSgst: (json['tot_sgst_tax'] as num? ?? 0.0).toDouble(),
               discount: (json['tot_disc'] ?? json['discount'] as num? ?? 0.0).toDouble(),
               roundOff: (json['sales_odr_roundoff'] as num? ?? 0.0).toDouble(),
               qrLink: (json['qr_link'] ?? json['zatca_qr'] ?? '').toString(),
@@ -404,7 +412,7 @@ class OrdersController extends GetxController {
       // If we don't have items, check if we have them in local DB payload
       final db = await _dbHelper.database;
       final rows = await db.query('orders', columns: ['payload'], where: 'uuid = ?', whereArgs: [order.id]);
-      
+
       if (rows.isNotEmpty && (rows.first['payload'] == null || (rows.first['payload'] as String).isEmpty)) {
         // Fetch details if missing in local DB
         log("Background fetching details for sold order: ${order.invNo}");
@@ -430,6 +438,8 @@ class OrdersController extends GetxController {
     double subTotal = (json['sub_total'] as num? ?? json['tot_rate'] as num? ?? 0.0).toDouble();
     double totalAmount = (json['total_amount'] as num? ?? json['tot_amount'] as num? ?? json['sales_odr_total'] as num? ?? 0.0).toDouble();
     double totalTax = (json['total_tax'] as num? ?? json['tot_tax'] as num? ?? json['sales_odr_tax'] as num? ?? 0.0).toDouble();
+    double totalCgst = (json['tot_cgst_tax'] as num? ?? 0.0).toDouble();
+    double totalSgst = (json['tot_sgst_tax'] as num? ?? 0.0).toDouble();
     String? qrLink;
     String? captainName;
 
@@ -446,6 +456,8 @@ class OrdersController extends GetxController {
           subTotal = (payload['tot_rate'] ?? payload['sub_total'] ?? subTotal).toDouble();
           totalAmount = (payload['tot_amount'] ?? payload['sales_odr_total'] ?? payload['total_amount'] ?? totalAmount).toDouble();
           totalTax = (payload['tot_tax'] ?? payload['sales_odr_tax'] ?? payload['total_tax'] ?? totalTax).toDouble();
+          totalCgst = (payload['tot_cgst_tax'] ?? totalCgst).toDouble();
+          totalSgst = (payload['tot_sgst_tax'] ?? totalSgst).toDouble();
           qrLink = (payload['qr_link'] ?? payload['zatca_qr'])?.toString();
           customerName = (payload['sq_cust_name'] ?? payload['customer_name'] ?? payload['cust_name'] ?? payload['ledger_name'])?.toString();
           captainName = (payload['agent_name'] ?? payload['sale_agent_name'] ?? payload['captain_name'])?.toString();
@@ -524,6 +536,9 @@ class OrdersController extends GetxController {
             final double quantity = (si['salesub_qty'] ?? si['sales_ord_sub_qty'] as num? ?? 1).toDouble();
             final double baseRate = (si['salesub_rate'] ?? si['sales_ord_sub_rate'] ?? si['rate'] as num? ?? 0.0).toDouble();
             final double taxAmt = (si['salesub_tax'] ?? si['sales_ord_sub_tax'] ?? si['sales_ord_sub_tax_rate'] as num? ?? 0.0).toDouble();
+            final double cgstRate = (si['sales_ord_sub_cgst_rate'] as num? ?? 0.0).toDouble();
+            final double sgstRate = (si['sales_ord_sub_sgst_rate'] as num? ?? 0.0).toDouble();
+
             // final bool isDeleted = (si['is_deleted'] ?? 0) == 1;
             // Use DashboardController to determine if VAT is included in price
             double price = baseRate;
@@ -599,6 +614,8 @@ class OrdersController extends GetxController {
               selectedAddons: addons,
               quantity: quantity.toInt(),
               priceAtOrder: price,
+              cgstRate: cgstRate,
+              sgstRate: sgstRate,
             ));
           }
         }
@@ -632,6 +649,8 @@ class OrdersController extends GetxController {
       subTotal: subTotal,
       totalAmount: totalAmount,
       totalTax: totalTax,
+      totalCgst: totalCgst,
+      totalSgst: totalSgst,
       discount: discount,
       captainName: captainName,
       roundOff: roundOff,
@@ -718,18 +737,12 @@ class OrdersController extends GetxController {
           }
         }
       }
-
-      // Update local status to reflect bill-printed (pos_status=2)
       final idx = orders.indexWhere((o) => o.id == order.id);
       if (idx != -1) {
         orders[idx] = orders[idx].copyWith(sales_odr_pos_status: 2, status: OrderStatus.billed);
         orders.refresh();
-
-        // Update in DB as well
         await _dbHelper.updateOrderStatusByUuid(order.id, 'billed');
       }
-
-      // Now print
       final printerController = Get.find<PrinterController>();
       await printerController.printReceipt(currentOrder, 0, 0, isBill: true);
     } catch (e) {
@@ -756,7 +769,7 @@ class OrdersController extends GetxController {
       // Prioritize identifying names
       if (ledger != null && ledger.isNotEmpty && !dummyNames.contains(ledger)) return ledger;
       if (customer != null && customer.isNotEmpty && !dummyNames.contains(customer)) return customer;
-      
+
       // Secondary check: if fallback was more specific than what we're finding now
       if (fallback.isNotEmpty && !dummyNames.contains(fallback)) return fallback;
 
@@ -776,12 +789,12 @@ class OrdersController extends GetxController {
 
     if (activeIndex != -1) {
       final existingOrder = orders[activeIndex];
-      
+
       // If the updated order is paid or cancelled, remove it from active orders
       if (updatedOrder.status.value == OrderStatus.paid || updatedOrder.status.value == OrderStatus.cancelled) {
         orders.removeAt(activeIndex);
         orders.refresh();
-        
+
         // Add to sold orders if it's paid
         if (updatedOrder.status.value == OrderStatus.paid) {
           updateExistingOrderInList(soldOrders, updatedOrder);
@@ -796,6 +809,8 @@ class OrdersController extends GetxController {
         subTotal: updatedOrder.subTotal,
         totalAmount: updatedOrder.totalAmount,
         totalTax: updatedOrder.totalTax,
+        totalCgst: updatedOrder.totalCgst,
+        totalSgst: updatedOrder.totalSgst,
         discount: updatedOrder.discount,
         roundOff: updatedOrder.roundOff,
         sales_odr_order_type: updatedOrder.sales_odr_order_type,
@@ -813,7 +828,7 @@ class OrdersController extends GetxController {
 
     // Check in sold orders
     updateExistingOrderInList(soldOrders, updatedOrder);
-    
+
     // If not found in either and it's not paid/cancelled, add to active
     if (activeIndex == -1 && updatedOrder.status.value != OrderStatus.paid && updatedOrder.status.value != OrderStatus.cancelled) {
       orders.insert(0, updatedOrder);
@@ -835,6 +850,8 @@ class OrdersController extends GetxController {
         subTotal: updatedOrder.subTotal,
         totalAmount: updatedOrder.totalAmount,
         totalTax: updatedOrder.totalTax,
+        totalCgst: updatedOrder.totalCgst,
+        totalSgst: updatedOrder.totalSgst,
         discount: updatedOrder.discount,
         roundOff: updatedOrder.roundOff,
         sales_odr_order_type: updatedOrder.sales_odr_order_type,
@@ -874,6 +891,7 @@ class OrdersController extends GetxController {
       final Map<String, dynamic> requestData = {
         "usr_id": int.tryParse(AppState.userId) ?? 18,
         "sales_odr_inv_no": int.tryParse(order.invNo) ?? 0,
+        "cmp_tax":AppState.cmpTaxType
       };
 
       if (isPaid) {
@@ -885,15 +903,13 @@ class OrdersController extends GetxController {
       if (response.statusCode == 200) {
         final data = response.data['data'];
         if (data == null) return;
-
-        // Paid API wraps preview data differently
         final preview = isPaid ? data['preview'] : data;
         if (preview == null) return;
-
         final double authoritativeTotal = (preview['tot_amount'] ?? preview['sales_odr_total'] ?? preview['total_amount'] as num? ?? 0.0).toDouble();
         final double authoritativeTax = (preview['tot_tax'] ?? preview['sales_odr_tax'] ?? preview['total_tax'] as num? ?? 0.0).toDouble();
+        final double authoritativeCgst = (preview['tot_cgst_tax'] as num? ?? 0.0).toDouble();
+        final double authoritativeSgst = (preview['tot_sgst_tax'] as num? ?? 0.0).toDouble();
 
-        // Cache detailed order data locally
         await _dbHelper.updateOrderStatusByUuid(
           order.id,
           order.status.value.name,
@@ -924,6 +940,8 @@ class OrdersController extends GetxController {
           final double quantity = (productJson['salesub_qty'] ?? productJson['sales_ord_sub_qty'] as num? ?? 1).toDouble();
           final double baseRate = (productJson['rate'] ?? productJson['sales_ord_sub_rate'] as num? ?? 0.0).toDouble();
           final double taxAmt = (productJson['sales_ord_sub_tax'] ?? productJson['sales_ord_sub_tax_rate'] as num? ?? 0.0).toDouble();
+          final double cgstRate = (productJson['sales_ord_sub_cgst_rate'] as num? ?? 0.0).toDouble();
+          final double sgstRate = (productJson['sales_ord_sub_sgst_rate'] as num? ?? 0.0).toDouble();
 
           double price = baseRate;
           // if (Get.isRegistered<DashboardController>()) {
@@ -990,6 +1008,8 @@ class OrdersController extends GetxController {
             selectedAddons: selectedAddons,
             quantity: quantity.toInt(),
             priceAtOrder: price,
+            cgstRate: cgstRate,
+            sgstRate: sgstRate,
           ));
         }
 
@@ -1012,6 +1032,8 @@ class OrdersController extends GetxController {
             subTotal: (preview['tot_rate'] as num? ?? preview['sub_total'] as num? ?? preview['tot_subtotal'] as num? ?? preview['sales_odr_subtotal'] as num? ?? current.subTotal).toDouble(),
             totalAmount: authoritativeTotal,
             totalTax: authoritativeTax,
+            totalCgst: authoritativeCgst,
+            totalSgst: authoritativeSgst,
             discount: (preview['tot_disc'] ?? preview['discount'] ?? current.discount).toDouble(),
             roundOff: (preview['sales_odr_roundoff'] ?? current.roundOff).toDouble(),
             sales_odr_order_type: type,
@@ -1040,6 +1062,8 @@ class OrdersController extends GetxController {
               subTotal: (preview['tot_rate'] as num? ?? preview['sub_total'] as num? ?? preview['tot_subtotal'] as num? ?? preview['sales_odr_subtotal'] as num? ?? current.subTotal).toDouble(),
               totalAmount: authoritativeTotal,
               totalTax: authoritativeTax,
+              totalCgst: authoritativeCgst,
+              totalSgst: authoritativeSgst,
               discount: (preview['tot_disc'] ?? preview['discount'] ?? current.discount).toDouble(),
               roundOff: (preview['sales_odr_roundoff'] ?? current.roundOff).toDouble(),
               sales_odr_order_type: type,
@@ -1127,6 +1151,8 @@ class OrdersController extends GetxController {
       double rawQty = (sub['sales_ord_sub_qty'] as num? ?? 1).toDouble();
       double rawRate = (sub['sales_ord_sub_rate'] as num? ?? sub['rate'] as num? ?? 0.0).toDouble();
       double baseQty = (sub['unit_base_qty'] as num? ?? 1.0).toDouble();
+      double cgstRate = (sub['sales_ord_sub_cgst_rate'] as num? ?? 0.0).toDouble();
+      double sgstRate = (sub['sales_ord_sub_sgst_rate'] as num? ?? 0.0).toDouble();
 
       int displayQty;
       double displayRate = rawRate;
@@ -1199,6 +1225,8 @@ class OrdersController extends GetxController {
         tokenPrinterId: tokenPrinterId,
         selectedAddons: selectedAddons,
         isRemoved: isRemoved,
+        cgstRate: cgstRate,
+        sgstRate: sgstRate,
         product: FoodItemModel(
           id: prdId,
           name: sub['prd_name']?.toString() ?? cartItem?.product.name ?? 'Unknown',
@@ -1267,9 +1295,19 @@ class OrdersController extends GetxController {
       subTotal: (preview['tot_rate'] as num? ?? preview['sub_total'] as num? ?? preview['tot_subtotal'] as num? ?? preview['sales_odr_subtotal'] as num? ?? 0.0).toDouble(),
       totalAmount: (preview['tot_amount'] ?? preview['sales_odr_total'] ?? preview['total_amount'] as num? ?? 0.0).toDouble(),
       totalTax: (preview['tot_tax'] ?? preview['sales_odr_tax'] ?? preview['total_tax'] as num? ?? 0.0).toDouble(),
+      totalCgst: (preview['tot_cgst_tax'] as num? ?? 0.0).toDouble(),
+      totalSgst: (preview['tot_sgst_tax'] as num? ?? 0.0).toDouble(),
       discount: (preview['tot_disc'] ?? preview['discount'] ?? 0.0).toDouble(),
       roundOff: (preview['sales_odr_roundoff'] ?? 0.0).toDouble(),
       qrLink: (preview['qr_link'] ?? preview['zatca_qr'] ?? responseJson['qr_link'] ?? responseJson['zatca_qr'])?.toString(),
+      branchTin: preview['branch_tin']?.toString(),
+      branchName: preview['branch_name']?.toString(),
+      branchPhone: preview['branch_phone']?.toString(),
+      branchMob: preview['branch_mob']?.toString(),
+      branchAddress: preview['branch_address']?.toString(),
+      Taxpercentage: ((preview['gst'] is List && (preview['gst'] as List).isNotEmpty)
+          ? (preview['gst'][0]['Taxpercentage'] as num? ?? 0.0)
+          : 0.0).toDouble(),
       captainName: captainName,  // ✅ ADD
       areaId: (preview['rt_area_id'] as num? ?? cartController.selectedAreaId.value).toInt(),
       areaName: cartController.selectedAreaName.value,
@@ -1381,7 +1419,7 @@ class OrdersController extends GetxController {
           (o) => o.id == order.id,
           orElse: () => order,
         );
-        
+
         final printerController = Get.find<PrinterController>();
         if (updatedOrder.status.value != OrderStatus.draft) {
           await printerController.printCancelledOrder(updatedOrder).catchError((e) {
@@ -1462,7 +1500,7 @@ class OrdersController extends GetxController {
   // Paid orders filtered by date
   List<OrderModel> get paidOrders {
     final dateStr = DateFormat('yyyy-MM-dd').format(selectedSoldDate.value);
-    return soldOrders.where((o) => 
+    return soldOrders.where((o) =>
       DateFormat('yyyy-MM-dd').format(o.createdAt) == dateStr
     ).toList();
   }
