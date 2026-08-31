@@ -22,7 +22,11 @@ class AuthController extends GetxController {
   final companyCode = ''.obs;
   final branchId = ''.obs;
   final branchName = ''.obs;
-
+  final branchDisplayName = ''.obs;
+  final branchAddress = ''.obs;
+  final branchMob = ''.obs;
+  final branchVat = ''.obs;
+  final branchPhNo = ''.obs;
   final isVerified = false.obs;
   final isLoading = false.obs;
 
@@ -77,6 +81,11 @@ class AuthController extends GetxController {
     companyCode.value = storage.read('company_code') ?? '';
     branchId.value = storage.read('branch_id')?.toString() ?? '';
     branchName.value = storage.read('branch_name') ?? '';
+    branchDisplayName.value = storage.read('branch_display_name') ?? '';
+    branchAddress.value = storage.read('branch_address') ?? '';
+    branchPhNo.value = storage.read('branch_phone') ?? '';
+    branchMob.value = storage.read('branch_mob') ?? '';
+    branchVat.value = storage.read('branch_mob') ?? '';
 
     _checkVerificationStatus();
   }
@@ -201,17 +210,31 @@ class AuthController extends GetxController {
         if (dataList.isNotEmpty) {
           final branchData = dataList[0];
           final String token = branchData['token'] ?? '';
-          final String bName = branchData['branch_name'] ?? branchData['branch_display_name'];
+          final String bName = branchData['branch_name'] ?? '';
+          final String bDisName = branchData['branch_display_name'] ?? '';
+          final String bAddress = branchData['branch_address'] ?? '';
+          final String bMob = branchData['branch_mob'] ?? '';
+          final String bPh = branchData['branch_phone'] ?? '';
+          final String bTin = branchData['branch_tin'] ?? '';
           final int taxType = branchData['cmp_tax_type'] ?? 1;
-
+          debugPrint("✅ Branch Display Name: $bDisName");
           serverUrl.value = url;
           companyCode.value = code;
           branchId.value = bId;
           branchName.value = bName;
-
+          branchDisplayName.value = bDisName;
+          branchAddress.value = bAddress;
+          branchMob.value = bMob;
+          branchPhNo.value = bPh;
+          branchVat.value = bTin;
           storage.write('company_code', code);
           storage.write('branch_id', bId);
           storage.write('branch_name', bName);
+          storage.write('branch_display_name', bDisName);
+          storage.write('branch_address', bAddress);
+          storage.write('branch_mob', bMob);
+          storage.write('branch_phone', bPh);
+          storage.write('branch_tin', bTin);
           storage.write('branch_token', token);
           storage.write('cmp_tax_type', taxType);
 
@@ -263,25 +286,20 @@ class AuthController extends GetxController {
 
         systemId = "$id - $deviceName";
       }
-
-      /// 🔹 Request Body
       final requestBody = {
         "company_code": companyCode.value,
         "usr_email": username,
         "usr_password": password,
         "system_id": systemId,
       };
-
       debugPrint("📤 LOGIN REQUEST BODY: $requestBody");
-
       final response = await _apiService.post(
         'mobileapp/login',
         data: requestBody,
       );
-
-      /// 🔹 Response Logs
       debugPrint("📥 STATUS CODE: ${response.statusCode}");
       debugPrint("📥 RESPONSE DATA: ${response.data}");
+      debugPrint("Branch Name: ${AppState.branchDisName}");
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
@@ -292,7 +310,7 @@ class AuthController extends GetxController {
           AppState.updateSession(
             profile: data['profile'] ?? {},
           );
-
+          debugPrint("Branch Disp: ${AppState.branchDisName}");
           Get.offAllNamed('/sync');
         } else {
           debugPrint("❌ API ERROR: ${data['error']}");

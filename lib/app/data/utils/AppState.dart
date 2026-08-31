@@ -12,13 +12,18 @@ import '../models/order_type.dart';
 import '../services/database_helper.dart';
 
 class AppState {
-  static final GetStorage _storage = GetStorage();
 
+  static final GetStorage _storage = GetStorage();
   static bool get isLoggedIn => _storage.read('user_profile') != null;
   static String get token => _storage.read('branch_token') ?? '';
   static String get companyCode => _storage.read('company_code') ?? '';
   static String get branchToken => _storage.read('mobileapptoken') ?? '';
   static String get branchName => _storage.read('branch_name') ?? '';
+  static String get branchDisName => _storage.read('branch_display_name') ?? '';
+  static String get branchAddress => _storage.read('branch_address') ?? '';
+  static String get branchMob => _storage.read('branch_mob') ?? '';
+  static String get branchPhNo => _storage.read('branch_phone') ?? '';
+  static String get branchVat => _storage.read('branch_tin') ?? '';
   static String get cmptoken => _storage.read('cmptoken') ?? '';
   static String get username => _storage.read('usr_name') ?? '';
   static String get userId => _storage.read('usr_id')?.toString() ?? '';
@@ -27,24 +32,12 @@ class AppState {
   static String get cashLedgerId => _storage.read('usr_cash_ledger_id')?.toString() ?? '0';
   static String get bankLedgerId => _storage.read('usr_bank_ledger_id')?.toString() ?? '0';
   static int get cmpTaxType => _storage.read('cmp_tax_type') ?? 1;
-
-
-  // Order Type Persistence
-  static OrderType get orderType {
-    final int? id = _storage.read('selected_order_type_id');
-    if (id == null) return OrderType.dineIn;
-    return OrderType.values.firstWhere((e) => e.id == id, orElse: () => OrderType.dineIn);
-  }
-
-  static set orderType(OrderType type) {
-    _storage.write('selected_order_type_id', type.id);
-  }
-
-  // Sync Preferences
+  static String get upiId => _storage.read('as_upi_id') ?? '';
+  static bool get isUpiEnabled => (_storage.read('as_upi_enable') ?? 0) == 1;
+  static OrderType get orderType { final int? id = _storage.read('selected_order_type_id'); if (id == null) return OrderType.dineIn; return OrderType.values.firstWhere((e) => e.id == id, orElse: () => OrderType.dineIn); }
+  static set orderType(OrderType type) { _storage.write('selected_order_type_id', type.id); }
   static bool get isBackgroundSyncEnabled => _storage.read('bg_sync_enabled') ?? true;
   static set isBackgroundSyncEnabled(bool value) => _storage.write('bg_sync_enabled', value);
-
-  // Sync In Progress Flag
   static bool get isSyncInProgress => _storage.read('is_sync_in_progress') ?? false;
   static set isSyncInProgress(bool value) => _storage.write('is_sync_in_progress', value);
 

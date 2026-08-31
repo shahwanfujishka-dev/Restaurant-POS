@@ -31,6 +31,7 @@ class MobileCartSummary extends StatelessWidget {
     double? cashAmt,
     double? cardAmt,
     bool isCompliment = false,
+    bool shouldPrintReceipt = false,
   }) async {
     if (controller.cartItems.isEmpty || controller.isProcessing.value) return;
 
@@ -147,6 +148,7 @@ class MobileCartSummary extends StatelessWidget {
         ordersController: ordersController,
         snapshotTableName: snapshotTableName,
         snapshotChairCount: snapshotChairCount,
+        shouldPrintReceipt: shouldPrintReceipt,
       );
 
     } catch (e) {
@@ -189,6 +191,7 @@ class MobileCartSummary extends StatelessWidget {
               addonParentPrdId: ci.addonprntId,
               addonParentUnitId: ci.addonuntId,
               unitId: ci.unit.unitId,
+              notes: ci.note.value,
             ))
         .toList();
 
@@ -222,6 +225,7 @@ class MobileCartSummary extends StatelessWidget {
     required OrdersController ordersController,
     String snapshotTableName = "",
     int snapshotChairCount = 0,
+    bool shouldPrintReceipt = false,
   }) async {
     if (!isDraft) {
       try {
@@ -241,6 +245,10 @@ class MobileCartSummary extends StatelessWidget {
           liveOrder,
           oldItems: oldItemsForKOT,
         );
+
+        if (shouldPrintReceipt) {
+          await printerController.printReceipt(liveOrder, 0, 0);
+        }
       } catch (e) {
         debugPrint("Background Printing failed: $e");
       }
@@ -401,19 +409,36 @@ class MobileCartSummary extends StatelessWidget {
                       ],
                     ),
                     SizedBox(height: 8.h),
-                    PrimaryButton(
-                      isLoading: controller.isProcessing.value,
-                      height: 48.h,
-                      onPressed: () {
-                        if (controller.selectedCaptainId.value == null) {
-                          showSafeSnackbar("Captain Required", "Please select a captain before placing the order.");
-                          return;
-                        }
-                        _navigateToCashier();
-                      },
-                      color: colors.isDark ? Colors.redAccent.shade700 : Colors.redAccent.shade400,
-                      text: "Receipt",
-                      icon: Icons.receipt,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: PrimaryButton(
+                            isLoading: controller.isProcessing.value,
+                            height: 48.h,
+                            onPressed: () => _handlePlaceOrUpdateOrder(isDraft: false, shouldPrintReceipt: true),
+                            color: Colors.blueGrey,
+                            text: "KOT & Print",
+                            icon: Icons.print,
+                          ),
+                        ),
+                        SizedBox(width: 8.w),
+                        Expanded(
+                          child: PrimaryButton(
+                            isLoading: controller.isProcessing.value,
+                            height: 48.h,
+                            onPressed: () {
+                              if (controller.selectedCaptainId.value == null) {
+                                showSafeSnackbar("Captain Required", "Please select a captain before placing the order.");
+                                return;
+                              }
+                              _navigateToCashier();
+                            },
+                            color: colors.isDark ? Colors.redAccent.shade700 : Colors.redAccent.shade400,
+                            text: "Receipt",
+                            icon: Icons.receipt,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

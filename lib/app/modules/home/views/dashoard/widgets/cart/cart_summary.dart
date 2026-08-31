@@ -1,7 +1,9 @@
+import 'dart:developer';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get.dart';
+import 'package:get/get.dart' hide ScreenType;
 
 import '../../../../../../../helper/snackbar_helper.dart';
 import '../../../../../../data/models/order_model.dart';
@@ -15,6 +17,7 @@ import '../../../../controller/home_controller.dart';
 import '../../../../controller/order_controller.dart';
 import '../../../../controller/printer_controller.dart';
 import '../../../../../../data/utils/AppState.dart';
+import '../../../../../../../helper/screen_type.dart';
 
 class CartSummary extends StatelessWidget {
   final CartController controller;
@@ -27,12 +30,13 @@ class CartSummary extends StatelessWidget {
     double? cashAmt,
     double? cardAmt,
     bool isCompliment = false,
+    bool shouldPrintReceipt = false,
   }) async {
     if (controller.cartItems.isEmpty || controller.isProcessing.value) return;
 
     // ✅ Table/Chair validation only required for Dine-In (id: 0)
     if (AppState.orderType.id == 0 && !controller.hasSelectedTable) {
-      showSafeSnackbar("table_required".tr, "select_table_msg".tr);
+      Get.find<DashboardController>().showError("table_required".tr, "select_table_msg".tr);
       return;
     }
 
@@ -77,7 +81,8 @@ class CartSummary extends StatelessWidget {
         return;
       }
 
-      debugPrint("Order Success Response: $responseData");
+      log("Order Success Response: $responseData");
+      // log(message)
 
       // ✅ CHECK FOR ERROR STATUS IN RESPONSE
       bool hasError = false;
@@ -137,7 +142,7 @@ class CartSummary extends StatelessWidget {
         controller.clearTable();
       }
 
-      Get.offAllNamed(Routes.ORDER_TYPE);
+      Get.offAllNamed(ScreenType.isMobile() ? Routes.ORDER_TYPE : Routes.HOME);
 
       _runBackgroundTasks(
         responseData: responseData,
@@ -148,6 +153,7 @@ class CartSummary extends StatelessWidget {
         ordersController: ordersController,
         snapshotTableName: snapshotTableName,    // ✅ new
         snapshotChairCount: snapshotChairCount,  // ✅ new
+        shouldPrintReceipt: shouldPrintReceipt,
       );
 
     } catch (e) {
@@ -162,7 +168,7 @@ class CartSummary extends StatelessWidget {
     if (controller.cartItems.isEmpty || controller.isProcessing.value) return;
 
     if (AppState.orderType.id == 0 && !controller.hasSelectedTable) {
-      showSafeSnackbar("table_required".tr, "select_table_msg".tr);
+      Get.find<DashboardController>().showError("table_required".tr, "select_table_msg".tr);
       return;
     }
 
@@ -198,6 +204,7 @@ class CartSummary extends StatelessWidget {
               addonParentPrdId: ci.addonprntId,
               addonParentUnitId: ci.addonuntId,
               unitId: ci.unit.unitId,
+              notes: ci.note.value,
             ))
         .toList();
 
@@ -231,16 +238,18 @@ class CartSummary extends StatelessWidget {
     required OrdersController ordersController,
     String snapshotTableName = "",    // ✅ new
     int snapshotChairCount = 0,       // ✅ new
+    bool shouldPrintReceipt = false,
   }) async {
     if (!isDraft) {
       try {
         final printerController = Get.find<PrinterController>();
         final OrderModel liveOrder = ordersController.parseOrderResponse(
           responseData,
-          fallbackTableName: snapshotTableName,    // ✅ new
-          fallbackChairCount: snapshotChairCount,  // ✅ new
+          fallbackTableName: snapshotTableName,
+          fallbackChairCount: snapshotChairCount,
         );
-
+        debugPrint("🖨️ liveOrder.items.length = ${liveOrder.items.length}"); // ADD
+        debugPrint("🖨️ liveOrder.invNo = ${liveOrder.invNo}");
         List<OrderItem>? oldItemsForKOT;
         if (wasEditing && !wasDraft) {
           oldItemsForKOT = originalItems;
@@ -250,6 +259,10 @@ class CartSummary extends StatelessWidget {
           liveOrder,
           oldItems: oldItemsForKOT,
         );
+
+        if (shouldPrintReceipt) {
+          await printerController.printReceipt(liveOrder, 0, 0);
+        }
       } catch (e) {
         debugPrint("Background Printing failed: $e");
       }
@@ -371,18 +384,34 @@ class CartSummary extends StatelessWidget {
                 ],
               ),
               SizedBox(height: 2.h),
-              PrimaryButton(
-                isLoading: controller.isProcessing.value,
-                height: 48.h,
-                onPressed: () {
-                  if (controller.selectedCaptainId.value == null) {
-                    showSafeSnackbar("Captain Required", "Please select a captain before placing the order.");
-                    return;
-                  }
-                  _navigateToCashier();
-                },
-                color: colors.isDark ? Colors.redAccent.shade700 : Colors.redAccent.shade400,
-                text: "Receipt",
+              Row(
+                children: [
+                  Expanded(
+                    child: PrimaryButton(
+                      isLoading: controller.isProcessing.value,
+                      height: 48.h,
+                      onPressed: () => _handlePlaceOrUpdateOrder(isDraft: false, shouldPrintReceipt: true),
+                      color: Colors.blueGrey,
+                      text: "KOT & Print",
+                    ),
+                  ),
+                  SizedBox(width: 2.w),
+                  Expanded(
+                    child: PrimaryButton(
+                      isLoading: controller.isProcessing.value,
+                      height: 48.h,
+                      onPressed: () {
+                        if (controller.selectedCaptainId.value == null) {
+                          showSafeSnackbar("Captain Required", "Please select a captain before placing the order.");
+                          return;
+                        }
+                        _navigateToCashier();
+                      },
+                      color: colors.isDark ? Colors.redAccent.shade700 : Colors.redAccent.shade400,
+                      text: "Receipt",
+                    ),
+                  ),
+                ],
               ),
               if (controller.isEditing && !controller.isProcessing.value)
                 TextButton(
@@ -446,7 +475,7 @@ class CartSummary extends StatelessWidget {
   Widget _buildTotalRow(BuildContext context, {required String label, required double value, required bool isBold}) {
     final colors = AppColors.of(context);
     final accentColor = controller.isEditing ? Colors.blue : AppTheme.primaryGreen;
-    
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -454,7 +483,7 @@ class CartSummary extends StatelessWidget {
           label,
           style: isBold
               ? AppTypography.cardTitle.copyWith(fontWeight: FontWeight.w600, color: colors.text)
-              : AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+              : AppTypography.cardTitle.copyWith(color: colors.subtext, fontSize: AppTypography.sizeText),
         ),
         Text(
           value.toStringAsFixed(2),

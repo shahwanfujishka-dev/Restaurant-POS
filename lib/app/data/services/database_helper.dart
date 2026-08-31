@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 14, // bumped to 14 for captains table
+      version: 18, // bumped from 17 → 18 for branch_inv in orders
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -197,6 +197,26 @@ class DatabaseHelper {
         )
       ''');
     }
+    if (oldVersion < 15) {
+      try {
+        await db.execute('ALTER TABLE orders ADD COLUMN offline_seq INTEGER');
+      } catch (e) {}
+    }
+    if (oldVersion < 16) {
+      try {
+        await db.execute('ALTER TABLE products ADD COLUMN is_veg INTEGER DEFAULT 0');
+      } catch (e) {}
+    }
+    if (oldVersion < 17) {
+      try {
+        await db.execute('ALTER TABLE order_items ADD COLUMN notes TEXT');
+      } catch (e) {}
+    }
+    if (oldVersion < 18) {
+      try {
+        await db.execute('ALTER TABLE orders ADD COLUMN branch_inv TEXT');
+      } catch (e) {}
+    }
   }
 
   Future _createDB(Database db, int version) async {
@@ -222,6 +242,7 @@ class DatabaseHelper {
         unit_display TEXT,
         tax_cat_id INTEGER,
         tax_per REAL,
+        is_veg INTEGER DEFAULT 0,
         sort_order INTEGER,
         PRIMARY KEY (id, price_group_id)
       )
@@ -329,23 +350,25 @@ class DatabaseHelper {
     ''');
 
     await db.execute('''
-      CREATE TABLE orders (
-        local_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        uuid TEXT UNIQUE,
-        server_id TEXT,
-        inv_no TEXT,
-        order_type_id INTEGER,
-        table_id INTEGER,
-        customer_name TEXT,
-        customer_phone TEXT,
-        total_amount REAL,
-        total_tax REAL,
-        status TEXT, 
-        is_synced INTEGER DEFAULT 0,
-        payload TEXT,
-        created_at TEXT
-      )
-    ''');
+  CREATE TABLE orders (
+    local_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT UNIQUE,
+    server_id TEXT,
+    inv_no TEXT,
+    branch_inv TEXT,
+    order_type_id INTEGER,
+    table_id INTEGER,
+    customer_name TEXT,
+    customer_phone TEXT,
+    total_amount REAL,
+    total_tax REAL,
+    status TEXT, 
+    is_synced INTEGER DEFAULT 0,
+    payload TEXT,
+    offline_seq INTEGER,
+    created_at TEXT
+  )
+''');
 
     await db.execute('''
       CREATE TABLE order_items (
@@ -358,6 +381,7 @@ class DatabaseHelper {
         tax REAL,
         subtotal REAL,
         is_printed INTEGER DEFAULT 0,
+        notes TEXT,
         FOREIGN KEY (order_uuid) REFERENCES orders (uuid) ON DELETE CASCADE
       )
     ''');
@@ -610,7 +634,7 @@ class DatabaseHelper {
     return await db.query('order_items', where: 'order_uuid = ?', whereArgs: [uuid]);
   }
 
-  Future<int> updateOrderStatusByServerId(String serverId, String status, {int? isSynced, double? total, double? tax, String? payload, String? invNo}) async {
+  Future<int> updateOrderStatusByServerId(String serverId, String status, {int? isSynced, double? total, double? tax, String? payload, String? invNo, String? branchInv}) async {
     final db = await instance.database;
     final Map<String, dynamic> values = {'status': status};
     if (isSynced != null) values['is_synced'] = isSynced;
@@ -618,6 +642,7 @@ class DatabaseHelper {
     if (tax != null) values['total_tax'] = tax;
     if (payload != null) values['payload'] = payload;
     if (invNo != null) values['inv_no'] = invNo;
+    if (branchInv != null) values['branch_inv'] = branchInv;
 
     int count = await db.update('orders', values, where: 'server_id = ?', whereArgs: [serverId]);
     if (count == 0) {
@@ -632,6 +657,7 @@ class DatabaseHelper {
       for (var json in serverOrders) {
         final serverId = (json['sales_odr_id'] ?? '').toString();
         final invNo = (json['sales_odr_inv_no'] ?? '').toString();
+        final branchInv = (json['sales_odr_branch_inv'] ?? '').toString();
 
         // Check if we have an unsynced local version first
         final List<Map<String, dynamic>> existing = await txn.query(
@@ -655,6 +681,7 @@ class DatabaseHelper {
           'uuid': serverId,
           'server_id': serverId,
           'inv_no': invNo,
+          'branch_inv': branchInv,
           'order_type_id': (json['sales_odr_order_type'] as num? ?? 0).toInt(),
           'table_id': (json['sales_odr_table_id'] ?? 0).toString(),
           'customer_name': json['sales_odr_table_name']?.toString() ?? json['ledger_name']?.toString() ?? 'N/A',
@@ -668,12 +695,13 @@ class DatabaseHelper {
     });
   }
 
-  Future<void> updateOrderStatusByUuid(String uuid, String status, {int? isSynced, String? serverId, String? invNo, String? payload, double? total, double? tax}) async {
+  Future<void> updateOrderStatusByUuid(String uuid, String status, {int? isSynced, String? serverId, String? invNo, String? branchInv, String? payload, double? total, double? tax}) async {
     final db = await instance.database;
     final Map<String, dynamic> values = {'status': status};
     if (isSynced != null) values['is_synced'] = isSynced;
     if (serverId != null) values['server_id'] = serverId;
     if (invNo != null) values['inv_no'] = invNo;
+    if (branchInv != null) values['branch_inv'] = branchInv;
     if (payload != null) values['payload'] = payload;
     if (total != null) values['total_amount'] = total;
     if (tax != null) values['total_tax'] = tax;
@@ -834,9 +862,11 @@ class DatabaseHelper {
         AND NOT EXISTS (SELECT 1 FROM products p2 WHERE p2.id = p1.id AND p2.price_group_id = ?)
       ) p
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.name LIKE ?
+      WHERE p.name LIKE ? 
+         OR p.id = ? 
+         OR EXISTS (SELECT 1 FROM bulk_product_units b WHERE b.produnit_prod_id = CAST(p.id AS INTEGER) AND b.produnit_ean_barcode = ?)
       ORDER BY p.sort_order ASC
-    ''', [priceGroupId, priceGroupId, '%$query%']);
+    ''', [priceGroupId, priceGroupId, '%$query%', query, query]);
   }
 
   Future<void> insertProductUnits(String prdId, int pgId, List<dynamic> units) async {
@@ -1169,6 +1199,7 @@ class DatabaseHelper {
             'uuid': serverId,
             'server_id': serverId,
             'inv_no': (order['sales_odr_inv_no'] ?? '').toString(),
+            'branch_inv': (order['sales_odr_branch_inv'] ?? '').toString(),
             'customer_name': order['ledger_name']?.toString() ?? 'Walk-in Customer',
             'total_amount': _toDouble(order['sales_odr_total'] ?? order['tot_amount'] ?? order['total_amount']),
             'total_tax': _toDouble(order['sales_odr_tax'] ?? order['tot_tax'] ?? order['total_tax']),
@@ -1223,8 +1254,6 @@ class DatabaseHelper {
 
   Future<Map<String, double>?> getStockUnitRate(int prdId, int unitId, int priceGroupId) async {
     final db = await instance.database;
-
-    // 1. Try with specific price group
     List<Map<String, dynamic>> maps = await db.query(
       'stock_unit_rates',
       columns: ['sur_unit_rate', 'sur_unit_rate2'],
@@ -1232,8 +1261,6 @@ class DatabaseHelper {
       whereArgs: [prdId, unitId, priceGroupId],
       limit: 1,
     );
-
-    // 2. Fallback: Try with price group 0 if the requested one was non-zero
     if (maps.isEmpty && priceGroupId != 0) {
       maps = await db.query(
         'stock_unit_rates',
@@ -1243,7 +1270,6 @@ class DatabaseHelper {
         limit: 1,
       );
     }
-
     if (maps.isNotEmpty) {
       return {
         'sur_unit_rate': _toDouble(maps.first['sur_unit_rate']),
@@ -1277,4 +1303,81 @@ class DatabaseHelper {
       await txn.delete('captains');
     });
   }
+
+  Future<int> getLocalOrderNumber(String uuidOrServerId) async {
+    final db = await instance.database;
+    final maps = await db.query(
+      'orders',
+      columns: ['local_id', 'created_at'],
+      where: 'uuid = ? OR server_id = ?',
+      whereArgs: [uuidOrServerId, uuidOrServerId],
+      limit: 1,
+    );
+    if (maps.isNotEmpty) {
+      final String? createdAt = maps.first['created_at']?.toString();
+      final int localId = maps.first['local_id'] as int;
+
+      if (createdAt != null && createdAt.length >= 10) {
+        final String datePart = createdAt.substring(0, 10);
+        final countResult = await db.rawQuery(
+          "SELECT COUNT(*) as count FROM orders WHERE created_at LIKE ? AND local_id <= ?",
+          ["$datePart%", localId],
+        );
+        return Sqflite.firstIntValue(countResult) ?? 1;
+      }
+      return localId;
+    }
+    return 0;
+  }
+  // --- Offline sequential numbering ---
+  Future<int> _getNextOfflineSeq() async {
+    final db = await instance.database;
+    return await db.transaction((txn) async {
+      final rows = await txn.query(
+        'app_settings',
+        where: 'key = ?',
+        whereArgs: ['offline_order_seq'],
+      );
+      int current = 0;
+      if (rows.isNotEmpty) {
+        current = int.tryParse(rows.first['value'].toString()) ?? 0;
+      }
+      final next = current + 1;
+      await txn.insert(
+        'app_settings',
+        {'key': 'offline_order_seq', 'value': next.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      return next;
+    });
+  }
+
+  Future<int?> getOfflineSeqForOrder(String uuidOrServerId) async {
+    final db = await instance.database;
+    final rows = await db.query(
+      'orders',
+      columns: ['offline_seq'],
+      where: 'uuid = ? OR server_id = ?',
+      whereArgs: [uuidOrServerId, uuidOrServerId],
+      limit: 1,
+    );
+    if (rows.isNotEmpty && rows.first['offline_seq'] != null) {
+      return rows.first['offline_seq'] as int;
+    }
+    return null;
+  }
+
+  Future<int> assignOfflineSeqForOrder(String uuidOrServerId) async {
+    final seq = await _getNextOfflineSeq();
+    final db = await instance.database;
+    await db.update(
+      'orders',
+      {'offline_seq': seq},
+      where: 'uuid = ? OR server_id = ?',
+      whereArgs: [uuidOrServerId, uuidOrServerId],
+    );
+    return seq;
+  }
+
+
 }

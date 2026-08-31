@@ -135,13 +135,43 @@ class _FoodItemCardState extends State<FoodItemCard>
                   ),
                 ),
 
+                if (widget.item.isVeg != 0)
+                  Positioned(
+                    top: 8.h,
+                    right: 5,
+                    child: Transform.rotate(
+                      angle: -0.785398, // -45 degrees
+                      child: Container(
+                        width: 75.w,
+                        padding: EdgeInsets.symmetric(vertical: 3.h),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color:   widget.item.isVeg == 1 ? Colors.green : Colors.red.shade900,
+                          border: Border.all(
+                            color: widget.item.isVeg == 1
+                                ? Colors.green
+                                : Colors.red.shade900,
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          widget.item.isVeg == 1 ? "Veg" : "Non-Veg",
+                          style: TextStyle(
+                            fontSize: AppTypography.smallText,
+                            fontWeight: FontWeight.bold,
+                            color:Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 /// 💲 PRICE BADGE (Modern)
                 Positioned(
                   top: 10.h,
-                  right: 10.w,
+                  right: 1.w,
                   child: Container(
                     padding:
-                    EdgeInsets.symmetric(horizontal: 8.w, vertical: 5.h),
+                    EdgeInsets.symmetric(horizontal: 4.w, vertical: 5.h),
                     decoration: BoxDecoration(
                       color: Colors.black.withOpacity(0.6),
                       borderRadius: BorderRadius.circular(10.r),
@@ -252,4 +282,22 @@ class _FoodItemCardState extends State<FoodItemCard>
         child: Icon(Icons.fastfood,
             color: colors.subtext.withOpacity(0.3), size: AppTypography.foodIcon));
   }
+}
+class _TrianglePainter extends CustomPainter {
+  final Color color;
+  _TrianglePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    final path = Path()
+      ..moveTo(size.width / 2, 0)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_TrianglePainter oldDelegate) => oldDelegate.color != color;
 }

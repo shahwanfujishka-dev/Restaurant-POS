@@ -66,6 +66,7 @@ class FoodItemModel {
   final int taxCatId;
   final double taxPer;
   final int? tokenPrinterId; // Added for offline routing
+  final int isVeg; // 0-none, 1-veg, 2-non veg
 
   FoodItemModel({
     required this.id,
@@ -78,6 +79,7 @@ class FoodItemModel {
     this.taxCatId = 0,
     this.taxPer = 0.0,
     this.tokenPrinterId,
+    this.isVeg = 0,
   });
 
   factory FoodItemModel.fromJson(Map<String, dynamic> json, {String baseUrl = ""}) {
@@ -97,6 +99,7 @@ class FoodItemModel {
       taxCatId: parseInt(json['prd_tax_cat_id'] ?? json['tax_cat_id']),
       taxPer: parseDouble(json['tax_per'], defaultValue: 0.0),
       tokenPrinterId: parseInt(json['cat_token_printer']) == 0 ? null : parseInt(json['cat_token_printer']),
+      isVeg: parseInt(json['prd_is_veg'], defaultValue: 0),
     );
   }
 }

@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import 'package:restaurant_pos/app/data/models/order_model.dart';
 import 'package:restaurant_pos/app/data/models/order_type.dart';
 import '../../../../helper/snackbar_helper.dart';
+import '../../../../local_server_test.dart';
 import '../../../data/services/api_services.dart';
 import '../../../data/services/database_helper.dart';
 import '../../../data/services/sync_service.dart';
@@ -44,12 +45,35 @@ class DashboardController extends GetxController {
   RxBool get isSyncing => _syncService.isSyncing;
   bool isDisposed = false;
 
+  // Local Snackbar State
+  final localErrorTitle = ''.obs;
+  final localErrorMessage = ''.obs;
+  final showLocalError = false.obs;
+
+  void showError(String title, String message) {
+    localErrorTitle.value = title;
+    localErrorMessage.value = message;
+    showLocalError.value = true;
+
+    Future.delayed(const Duration(seconds: 3), () {
+      if (localErrorMessage.value == message) {
+        showLocalError.value = false;
+      }
+    });
+  }
+  // final _testServer = TestLocalServer();
+
   @override
   void onInit() {
     super.onInit();
+    // _testServer.start();
     categoryScrollController = ScrollController();
     searchController = TextEditingController();
     searchFocusNode = FocusNode();
+    
+    // Add debounce to search to avoid excessive DB queries while typing
+    debounce(searchKeyword, (_) => fetchProducts(), time: const Duration(milliseconds: 350));
+    
     _initDashboard();
   }
 
@@ -177,7 +201,8 @@ class DashboardController extends GetxController {
 
   Future<void> fetchProducts() async {
     isLoadingProducts.value = true;
-    filteredFoodItems.clear();
+    // Removing filteredFoodItems.clear() to prevent UI flickering during search
+    // The list will be updated all at once with assignAll()
 
     try {
       final pgId = cartController.selectedPriceGroupId.value;
@@ -187,7 +212,19 @@ class DashboardController extends GetxController {
         await _dbHelper.getFavoriteProducts(selectedFavoriteId.value!, pgId);
 
         if (localFavProducts.isNotEmpty) {
-          final fetchedProducts = localFavProducts.map((json) => FoodItemModel.fromJson(json)).toList();
+          final fetchedProducts = localFavProducts.map((json) => FoodItemModel.fromJson({
+            'prd_id': json['id']?.toString() ?? '',
+            'prd_name': json['name'] ?? '',
+            'prd_cat_id': json['category_id']?.toString() ?? '',
+            'sale_rate': double.tryParse(json['price']?.toString() ?? '0') ?? 0.0,
+            'prd_tax': json['prd_tax'] ?? 0,
+            'prd_img_url': json['image'] ?? '',
+            'unit_display': json['unit_display']?.toString() ?? '',
+            'prd_tax_cat_id': json['tax_cat_id'],
+            'tax_per': json['tax_per'],
+            'cat_token_printer': json['cat_token_printer'],
+            'prd_is_veg': json['is_veg'],
+          })).toList();
           filteredFoodItems.assignAll(fetchedProducts);
         } else {
           final response = await _apiService.post("mobileapp/pos/get_product_list", data: {
@@ -213,7 +250,6 @@ class DashboardController extends GetxController {
         }
 
         final fetchedProducts = localProducts.map((json) {
-          // Safe mapping to ensure no null types break the model
           return FoodItemModel.fromJson({
             'prd_id': json['id']?.toString() ?? '',
             'prd_name': json['name'] ?? '',
@@ -225,6 +261,7 @@ class DashboardController extends GetxController {
             'prd_tax_cat_id': json['tax_cat_id'],
             'tax_per': json['tax_per'],
             'cat_token_printer': json['cat_token_printer'],
+            'prd_is_veg': json['is_veg'],
           });
         }).toList();
 
@@ -280,9 +317,8 @@ class DashboardController extends GetxController {
   void onProductTapped(FoodItemModel product, {CartItem? existingItem}) async {
     if (isLoadingDetails.value) return;
 
-    // ✅ Table/Chair validation only required for Dine-In (id: 0)
     if (AppState.orderType.id == 0 && !cartController.hasSelectedTable) {
-      showSafeSnackbar("table_required".tr, "select_table_msg".tr);
+      showError("table_required".tr, "select_table_msg".tr);
       return;
     }
 
@@ -292,7 +328,6 @@ class DashboardController extends GetxController {
       final int productId = int.tryParse(product.id) ?? 0;
       final int pgId = cartController.selectedPriceGroupId.value;
 
-      // 1. Load from local bulk DB
       final List<Map<String, dynamic>> localBulkUnits = await _dbHelper.getBulkProductUnits(productId);
 
       if (localBulkUnits.isNotEmpty) {
@@ -303,13 +338,11 @@ class DashboardController extends GetxController {
         for (var u in localBulkUnits) {
           final unit = ProductUnit.fromJson(u);
 
-          // ✅ Apply stock rate override for BOTH pgId AND pgId=0 as fallback
           ProductUnit resolvedUnit = await _applyStockRateOverride(unit, productId, pgId);
           if (resolvedUnit.rate <= 0 && pgId != 0) {
             resolvedUnit = await _applyStockRateOverride(unit, productId, 0);
           }
 
-          // ⚡ NEW FALLBACK LOGIC: If no unit rate found, use (Product Base Rate * Unit Base Qty)
           if (resolvedUnit.rate <= 0) {
             final double fallbackRate = product.price * resolvedUnit.unitBaseQty;
             log("⚡ Falling back to base rate calculation: ${product.price} * ${resolvedUnit.unitBaseQty} = $fallbackRate");
@@ -318,7 +351,6 @@ class DashboardController extends GetxController {
 
           productUnits.add(resolvedUnit);
 
-          // Load common addons once
           if (commonAddons.isEmpty) {
             final String? commonJson = u['common_addons'];
             if (commonJson != null && commonJson.isNotEmpty) {
@@ -342,7 +374,6 @@ class DashboardController extends GetxController {
         }
       }
 
-      // 2. Fallback to API
       final response = await _apiService.post(
         "mobileapp/pos/get_product_unit_and_addon",
         data: {
@@ -356,7 +387,6 @@ class DashboardController extends GetxController {
         final data = response.data['data'] as List? ?? [];
         final common = response.data['commonAddon'] as List? ?? [];
 
-        // ✅ Apply stock rate override to API units too
         final List<ProductUnit> resolvedUnits = [];
         for (var e in data) {
           final unit = ProductUnit.fromJson(e);
@@ -365,7 +395,6 @@ class DashboardController extends GetxController {
             resolvedUnit = await _applyStockRateOverride(unit, productId, 0);
           }
 
-          // ⚡ NEW FALLBACK LOGIC: If no unit rate found, use (Product Base Rate * Unit Base Qty)
           if (resolvedUnit.rate <= 0) {
             final double fallbackRate = product.price * resolvedUnit.unitBaseQty;
             log("⚡ Falling back to base rate calculation (API): ${product.price} * ${resolvedUnit.unitBaseQty} = $fallbackRate");
@@ -443,8 +472,14 @@ class DashboardController extends GetxController {
   }
 
   void updateSearch(String value) {
-    searchKeyword.value = value;
-    fetchProducts();
+    String trimmed = value.trim();
+    if (searchKeyword.value == trimmed) return;
+    
+    searchKeyword.value = trimmed;
+    // If the search is cleared, fetch immediately, otherwise the debounce handles it
+    if (trimmed.isEmpty) {
+      fetchProducts();
+    }
   }
 
   void setFavorite(int? id) {

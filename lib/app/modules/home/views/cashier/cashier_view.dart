@@ -1,14 +1,14 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart' hide ScreenType;
-import 'package:restaurant_pos/app/data/utils/AppState.dart';
+import 'package:restaurant_pos/app/modules/home/controller/cashier_controller.dart';
 import 'package:restaurant_pos/app/modules/home/views/cashier/widgets/cashier_widgets.dart';
+import 'package:restaurant_pos/app/theme/app_theme.dart';
+import 'package:restaurant_pos/app/theme/app_typography.dart';
 import 'package:restaurant_pos/helper/screen_type.dart';
 
-import '../../../../theme/app_theme.dart';
-import '../../../../theme/app_typography.dart';
-import '../../controller/cashier_controller.dart';
+import '../../../../data/utils/AppState.dart';
+
 
 class CashierView extends GetView<CashierController> {
   const CashierView({super.key});
@@ -21,7 +21,7 @@ class CashierView extends GetView<CashierController> {
       backgroundColor: colors.bg,
       appBar: AppBar(
         title: Text(
-          "Settlement #${controller.order.invNo}",
+          "Checkout",
           style: AppTypography.appBarTitle.copyWith(
             color: colors.text,
             fontWeight: FontWeight.bold,
@@ -45,30 +45,31 @@ class CashierView extends GetView<CashierController> {
               _minimalHeader(colors),
               SizedBox(height: 10.h),
 
-              ScreenType.isMobile()?
-              /// Customer Section
-              CashierWidgets.customerSection(
-                controller.paymentMethod,
-                controller.isCustomerSelectEnabled,
-                controller.selectedCustomer,
-                controller.customerNameController,
-                controller.customerMobileController,
-                controller.customerAddressController,
-                controller.customerVatController,
-                controller.customers,
-                controller.onCustomerSelected,
-                colors,
-              ):SizedBox.shrink(),
+              ScreenType.isMobile()
+                  ?
+                    /// Customer Section
+                    CashierWidgets.customerSection(
+                      controller.paymentMethod,
+                      controller.isCustomerSelectEnabled,
+                      controller.selectedCustomer,
+                      controller.customerNameController,
+                      controller.customerMobileController,
+                      controller.customerAddressController,
+                      controller.customerVatController,
+                      controller.customers,
+                      controller.onCustomerSelected,
+                      colors,
+                    )
+                  : SizedBox.shrink(),
               const SizedBox(height: 10),
               Divider(height: 1, color: colors.border.withOpacity(0.5)),
               const SizedBox(height: 16),
-              Column(
-                children: [
-                  _cashSection(colors),
-                  _splitSection(colors),
-                  const SizedBox(height: 100),
-                ],
-              ),
+              // Column(
+              //   children: [
+              //     _cashSection(colors),
+              //     const SizedBox(height: 100),
+              //   ],
+              // ),
             ],
           ),
         ),
@@ -97,18 +98,18 @@ class CashierView extends GetView<CashierController> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ...controller.paymentMethods.map((method) =>
-                  CashierWidgets.paymentMethodItem(
-                    method,
-                    controller.paymentMethod,
-                    colors,
-                        () => controller.setPaymentMethod(method),
-                  ),
+              ...controller.paymentMethods.map(
+                (method) => CashierWidgets.paymentMethodItem(
+                  method,
+                  controller.paymentMethod,
+                  colors,
+                  () => controller.setPaymentMethod(method),
+                ),
               ),
               CashierWidgets.splitToggle(
                 controller.isSplit,
                 colors,
-                    () => controller.toggleSplit(!controller.isSplit.value),
+                () => controller.toggleSplit(!controller.isSplit.value),
               ),
             ],
           ),
@@ -122,10 +123,28 @@ class CashierView extends GetView<CashierController> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              !ScreenType.isMobile()
+                  ? CashierWidgets.customerSection(
+                      controller.paymentMethod,
+                      controller.isCustomerSelectEnabled,
+                      controller.selectedCustomer,
+                      controller.customerNameController,
+                      controller.customerMobileController,
+                      controller.customerAddressController,
+                      controller.customerVatController,
+                      controller.customers,
+                      controller.onCustomerSelected,
+                      colors,
+                    )
+                  : SizedBox.shrink(),
+              SizedBox(height: 5.h),
               Obx(() {
                 final method = controller.paymentMethod.value;
                 final showCash = method == 'Cash' || method == 'Multiple';
-                final showBank = method == 'Card' || method == 'Bank' || method == 'Multiple';
+                final showBank =
+                    method == 'Card' ||
+                    method == 'Bank' ||
+                    method == 'Multiple';
                 final showDropdowns = showCash || showBank;
 
                 return Column(
@@ -137,32 +156,34 @@ class CashierView extends GetView<CashierController> {
                           "Cash Account",
                           controller.cashAccounts,
                           controller.selectedCashLedgerId.value,
-                              (val) => controller.selectedCashLedgerId.value = val!,
+                          (val) => controller.selectedCashLedgerId.value = val!,
                           colors,
                         ),
                       if (showCash && showBank) SizedBox(height: 8.h),
                       if (showBank)
                         CashierWidgets.minimalDropdown(
-                          method == 'Multiple' ? "Bank Account" : "Select $method Account",
+                          method == 'Multiple'
+                              ? "Bank Account"
+                              : "Select $method Account",
                           controller.bankAccounts,
                           controller.selectedBankLedgerId.value,
-                              (val) => controller.selectedBankLedgerId.value = val!,
+                          (val) => controller.selectedBankLedgerId.value = val!,
                           colors,
                         ),
                       SizedBox(height: 10.h),
                     ],
 
-                    if (method == 'Card' || method == 'Bank') ...[
-                      CashierWidgets.inlineAmountField(
-                        "$method Amount",
-                        controller.bankAmountController,
-                        controller.updateBankReceivedAmount,
-                        colors,
-                        highlightColor: Colors.blue,
-                        readOnly: true,
-                      ),
-                      SizedBox(height: 10.h),
-                    ],
+                    // if (method == 'Card' || method == 'Bank') ...[
+                    //   CashierWidgets.inlineAmountField(
+                    //     "$method Amount",
+                    //     controller.bankAmountController,
+                    //     controller.updateBankReceivedAmount,
+                    //     colors,
+                    //     highlightColor: Colors.blue,
+                    //     readOnly: true,
+                    //   ),
+                    //   SizedBox(height: 10.h),
+                    // ],
 
                     if (method == 'Multiple') ...[
                       CashierWidgets.inlineAmountField(
@@ -200,216 +221,196 @@ class CashierView extends GetView<CashierController> {
               }),
 
               /// Summary Rows
-              Obx(() => Column(
-                children: [
-                  CashierWidgets.summaryRow(
-                    "Subtotal",
-                    controller.subtotal.toStringAsFixed(2),
-                    colors,
-                  ),
-                  SizedBox(height: 8.h),
-                  if(AppState.cmpTaxType == 1)...[
-                  CashierWidgets.summaryRow(
-                    "Tax",
-                    controller.tax.toStringAsFixed(2),
-                    colors,
-                  ),
-                  ] else ...[
+              Obx(
+                () => Column(
+                  children: [
                     CashierWidgets.summaryRow(
-                      "CGST",
-                      (controller.tax/2).toStringAsFixed(2),
+                      "Subtotal",
+                      controller.subtotal.toStringAsFixed(2),
                       colors,
                     ),
                     SizedBox(height: 8.h),
+                    if (AppState.cmpTaxType == 1) ...[
+                      CashierWidgets.summaryRow(
+                        "Tax",
+                        controller.tax.toStringAsFixed(2),
+                        colors,
+                      ),
+                    ] else ...[
+                      CashierWidgets.summaryRow(
+                        "CGST",
+                        (controller.tax / 2).toStringAsFixed(2),
+                        colors,
+                      ),
+                      SizedBox(height: 8.h),
+                      CashierWidgets.summaryRow(
+                        "SGST",
+                        (controller.tax / 2).toStringAsFixed(2),
+                        colors,
+                      ),
+                    ],
+                    SizedBox(height: 8.h),
+                    CashierWidgets.minimalDiscountInput(
+                      controller.discountController,
+                      controller.updateDiscountAmount,
+                      colors,
+                    ),
+                    SizedBox(height: 8.h),
+                    CashierWidgets.minimalRoundOffInput(
+                      controller.roundOffController,
+                      controller.updateRoundOffAmount,
+                      controller.incrementRoundOff,
+                      controller.decrementRoundOff,
+                      colors,
+                    ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12.h),
+                      child: Divider(height: 1, color: colors.border),
+                    ),
                     CashierWidgets.summaryRow(
-                      "SGST",
-                      (controller.tax/2).toStringAsFixed(2),
+                      "Grand Total",
+                      controller.totalToPay.toStringAsFixed(2),
+                      colors,
+                      isTotal: true,
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 15.h),
+              Obx(() {
+                if (!controller.isSplit.value) return const SizedBox.shrink();
+                return Column(
+                  children: [
+                    CashierWidgets.inputFieldRow(
+                      "Split Count",
+                      controller.splitCountController,
+                      controller.updateSplitCount,
+                      colors,
+                      isNumber: true,
+                    ),
+                    SizedBox(height: 8.h),
+                    Text(
+                      "Individual Amounts",
+                      style: AppTypography.cardSubtitle.copyWith(
+                        color: colors.subtext,
+                        fontWeight: FontWeight.bold, fontSize: AppTypography.sizeText
+                      ),
+                    ),
+                    SizedBox(height: 8.h),
+                    ...controller.splitControllers.asMap().entries.map((entry) {
+                      return CashierWidgets.splitAmountEditRow(
+                        entry.key,
+                        entry.value,
+                        (val) => controller.updateSplitAmount(entry.key, val),
+                        colors,
+                      );
+                    }),
+                    SizedBox(height: 12.h),
+                    CashierWidgets.splitSummaryRow(
+                      controller.currentSplitTotal,
+                      controller.splitDifference,
                       colors,
                     ),
                   ],
-                  SizedBox(height: 8.h),
-                  CashierWidgets.minimalDiscountInput(
-                    controller.discountController,
-                    controller.updateDiscountAmount,
-                    colors,
-                  ),
-                  SizedBox(height: 8.h),
-                  CashierWidgets.minimalRoundOffInput(
-                    controller.roundOffController,
-                    controller.updateRoundOffAmount,
-                    controller.incrementRoundOff,
-                    controller.decrementRoundOff,
-                    colors,
-                  ),
-                  Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12.h),
-                    child: Divider(height: 1, color: colors.border),
-                  ),
-                  CashierWidgets.summaryRow(
-                    "Grand Total",
-                    controller.totalToPay.toStringAsFixed(2),
-                    colors,
-                    isTotal: true,
-                  ),
-                ],
-              )),
-              !ScreenType.isMobile()?
-              CashierWidgets.customerSection(
-                controller.paymentMethod,
-                controller.isCustomerSelectEnabled,
-                controller.selectedCustomer,
-                controller.customerNameController,
-                controller.customerMobileController,
-                controller.customerAddressController,
-                controller.customerVatController,
-                controller.customers,
-                controller.onCustomerSelected,
-                colors,
-              )
-                  :SizedBox.shrink(),
+                );
+              }),
+              SizedBox(height: 10.h),
+              Obx(() {
+                final method = controller.paymentMethod.value;
+                if (method != 'Cash') return const SizedBox.shrink();
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    CashierWidgets.cashReceivedRow(
+                      controller.amountController,
+                      controller.updateReceivedAmount,
+                      controller.receivedAmount,
+                      controller.totalToPay,
+                      colors,
+                      readOnly: false,
+                    ),
+                    SizedBox(height: 16.h),
+                  ],
+                );
+              }),
             ],
           ),
         ),
-
       ],
     );
   }
 
-  // ─────────────────────────────────────────────
-  //  CASH SECTION
-  // ─────────────────────────────────────────────
-
-  Widget _cashSection(dynamic colors) {
-    return Obx(() {
-      final method = controller.paymentMethod.value;
-      if (method != 'Cash') return const SizedBox.shrink();
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CashierWidgets.inputFieldRow(
-            "Cash Received",
-            controller.amountController,
-            controller.updateReceivedAmount,
-            colors,
-            readOnly: true,
-          ),
-          SizedBox(height: 16.h),
-        ],
-      );
-    });
-  }
-
-  // ─────────────────────────────────────────────
-  //  SPLIT SECTION
-  // ─────────────────────────────────────────────
-
-  Widget _splitSection(dynamic colors) {
-    return Obx(() {
-      if (!controller.isSplit.value) return const SizedBox.shrink();
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CashierWidgets.inputFieldRow(
-            "Split Count",
-            controller.splitCountController,
-            controller.updateSplitCount,
-            colors,
-            isNumber: true,
-          ),
-          SizedBox(height: 16.h),
-          Text(
-            "Individual Amounts",
-            style: AppTypography.cardSubtitle.copyWith(
-              color: colors.subtext,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          SizedBox(height: 8.h),
-          ...controller.splitControllers.asMap().entries.map((entry) {
-            return CashierWidgets.splitAmountEditRow(
-              entry.key,
-              entry.value,
-              (val) => controller.updateSplitAmount(entry.key, val),
-              colors,
-            );
-          }),
-          SizedBox(height: 12.h),
-          CashierWidgets.splitSummaryRow(
-            controller.currentSplitTotal,
-            controller.splitDifference,
-            colors,
-          ),
-        ],
-      );
-    });
-  }
-
-  // ─────────────────────────────────────────────
-  //  ACTION BUTTONS
-  // ─────────────────────────────────────────────
-
   Widget _actionButtons(BuildContext context) {
-    return Obx(() => Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16.w),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 2,
-            child: SizedBox(
-              height: 52.h,
-              child: ElevatedButton.icon(
-                onPressed: controller.isProcessing.value ? null : controller.handleCompliment,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepPurpleAccent.shade400,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
-                  elevation: 4,
-                ),
-                icon: const Icon(Icons.card_giftcard),
-                label: Text(
-                  "COMPLIMENT",
-                  style: AppTypography.button.copyWith(
-                    fontWeight: FontWeight.w900,
-                    fontSize: AppTypography.sizeCategory,
+    return Obx(
+      () => Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16.w),
+        child: Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: SizedBox(
+                height: 52.h,
+                child: ElevatedButton.icon(
+                  onPressed: controller.isProcessing.value
+                      ? null
+                      : controller.handleCompliment,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepPurpleAccent.shade400,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16.r),
+                    ),
+                    elevation: 4,
+                  ),
+                  icon: const Icon(Icons.card_giftcard),
+                  label: Text(
+                    "COMPLIMENT",
+                    style: AppTypography.button.copyWith(
+                      fontWeight: FontWeight.w900,
+                      fontSize: AppTypography.sizeCategory,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          SizedBox(width: 12.w),
-          Expanded(
-            flex: 2,
-            child: SizedBox(
-              height: 52.h,
-              child: FloatingActionButton.extended(
-                onPressed: controller.isProcessing.value ? null : controller.settleOrder,
-                backgroundColor: AppTheme.primaryGreen,
-                elevation: 6,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
-                label: controller.isProcessing.value
-                    ? SizedBox(
-                  height: 24.h,
-                  width: 24.h,
-                  child: const CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 3,
+            SizedBox(width: 12.w),
+            Expanded(
+              flex: 2,
+              child: SizedBox(
+                height: 52.h,
+                child: FloatingActionButton.extended(
+                  onPressed: controller.isProcessing.value
+                      ? null
+                      : controller.settleOrder,
+                  backgroundColor: AppTheme.primaryGreen,
+                  elevation: 6,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16.r),
                   ),
-                )
-                    : Text(
-                  "SETTLE ORDER",
-                  style: AppTypography.button.copyWith(
-                    fontWeight: FontWeight.w900,
-                    fontSize: AppTypography.sizeCategory,
-                    letterSpacing: 1.2,
-                  ),
+                  label: controller.isProcessing.value
+                      ? SizedBox(
+                          height: 24.h,
+                          width: 24.h,
+                          child: const CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 3,
+                          ),
+                        )
+                      : Text(
+                          "SETTLE ORDER",
+                          style: AppTypography.button.copyWith(
+                            fontWeight: FontWeight.w900,
+                            fontSize: AppTypography.sizeCategory,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ));
+    );
   }
 }

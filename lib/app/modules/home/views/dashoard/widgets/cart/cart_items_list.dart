@@ -27,11 +27,30 @@ class CartItemList extends StatelessWidget {
         itemCount: visibleItems.length,
         itemBuilder: (context, index) {
           final cartItem = visibleItems[index];
-          return _AnimatedCartItem(
-            key: ValueKey("${cartItem.product.id}_${cartItem.unit.unitId}_${cartItem.subId ?? index}"),
-            cartItem: cartItem,
-            onDelete: () => controller.removeItem(cartItem),
-            controller: controller,
+          final itemKey = "${cartItem.product.id}_${cartItem.unit.unitId}_${cartItem.subId ?? index}";
+          
+          return Dismissible(
+            key: ValueKey(itemKey),
+            direction: DismissDirection.endToStart,
+            background: Container(
+              alignment: Alignment.centerRight,
+              padding: EdgeInsets.only(right: 20.w),
+              margin: EdgeInsets.symmetric(vertical: 1.h),
+              decoration: BoxDecoration(
+                color: Colors.red.shade400,
+                borderRadius: BorderRadius.circular(8.r),
+              ),
+              child: Icon(Icons.delete_outline, color: Colors.white, size: 8.sp),
+            ),
+            onDismissed: (direction) {
+              controller.removeItem(cartItem);
+            },
+            child: _AnimatedCartItem(
+              key: ValueKey(itemKey),
+              cartItem: cartItem,
+              onDelete: () => controller.removeItem(cartItem),
+              controller: controller,
+            ),
           );
         },
       );
@@ -133,20 +152,20 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
             ),
           ],
         ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                productImage(),
-                SizedBox(width: 2.w),
-                productDetails(),
-                quantityControls(),
-                SizedBox(width: 2.w),
-                deleteButton(),
-              ],
-            ),
-          ],
-        ),
+        child: Padding(
+      padding: EdgeInsets.symmetric(horizontal: 2.w, vertical: 1.5.h),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          productImage(),
+          SizedBox(width: 2.w),
+          productDetails(),
+          quantityControls(),
+          SizedBox(width: 2.w),
+          priceDisplay(),
+        ],
+      ),
+    ),
       ),
     );
   }
@@ -205,20 +224,11 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
                   ),
                 ),
               ),
-              SizedBox(width: 2.w),
-              Obx(() => Text(
-                '${widget.cartItem.subtotalWithTax.toStringAsFixed(2)}',
-                style: AppTypography.cardSubtitle.copyWith(
-                  color: colors.text,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 3.sp,
-                ),
-              )),
             ],
           ),
           if (widget.cartItem.selectedAddons.isNotEmpty)
             Padding(
-              padding: EdgeInsets.only(top: 2.h),
+              padding: EdgeInsets.only(top: 0.5.h),
               child: Obx(() {
                 final addons = widget.cartItem.selectedAddons
                     .where((a) => a.quantity.value > 0)
@@ -237,6 +247,20 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
                 );
               }),
             ),
+          Obx(() {
+            if (widget.cartItem.note.value.isEmpty) return const SizedBox.shrink();
+            return Padding(
+              padding: EdgeInsets.only(top: 0.5.h),
+              child: Text(
+                "Note: ${widget.cartItem.note.value}",
+                style: TextStyle(
+                  fontSize: 2.5.sp,
+                  color: Colors.orange.shade700,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            );
+          }),
         ],
       ),
     );
@@ -264,7 +288,7 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
           InkWell(
             onTap: () => QuantityDialog.show(widget.cartItem, widget.controller),
             child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 3.w),
+              // padding: EdgeInsets.symmetric(horizontal: 1.w),
               child: Obx(() => Text(
                 '${widget.cartItem.quantity.value}',
                 style: AppTypography.cardSubtitle.copyWith(
@@ -285,22 +309,19 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
     );
   }
 
-  Widget deleteButton() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.red.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(10.r),
-      ),
-      child: IconButton(
-        icon: Icon(
-          Icons.delete_outline,
-          color: Colors.red.shade400,
-          size: 6.sp,
+  Widget priceDisplay() {
+    final colors = AppColors.of(context);
+    return SizedBox(
+      width: AppTypography.iconXL,
+      child: Obx(() => Text(
+        widget.cartItem.subtotalWithTax.toStringAsFixed(2),
+        textAlign: TextAlign.right,
+        style: AppTypography.cardTitle.copyWith(
+          color: colors.text,
+          fontWeight: FontWeight.bold,
+          fontSize: 3.5.sp,
         ),
-        onPressed: _handleDelete,
-        constraints: const BoxConstraints(),
-        padding: EdgeInsets.all(2.w),
-      ),
+      )),
     );
   }
 

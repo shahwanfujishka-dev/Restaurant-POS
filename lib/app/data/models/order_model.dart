@@ -20,6 +20,7 @@ class OrderItem {
   final bool isKotModified;
   final double cgstRate; // ✅ Added for GST
   final double sgstRate; // ✅ Added for GST
+  final String notes; // ✅ Added for item notes
 
   OrderItem({
     this.subId,
@@ -37,6 +38,7 @@ class OrderItem {
     this.isKotModified = false,
     this.cgstRate = 0.0,
     this.sgstRate = 0.0,
+    this.notes = '',
   });
 
   double get subtotal => priceAtOrder * quantity;
@@ -45,6 +47,7 @@ class OrderItem {
 class OrderModel {
   final String id;
   final String invNo;
+  final String? branchInv; // ✅ Added for branch specific invoice number
   final String tableId;
   final String tableName;
   final String? customerName;
@@ -74,11 +77,13 @@ class OrderModel {
   final String? areaName;
   final int? priceGroupId;
   int sales_odr_order_type;
-  bool isUnsynced; 
+  bool isUnsynced;
+  final int? offlineSeq;
 
   OrderModel({
     required this.id,
     required this.invNo,
+    this.branchInv,
     required this.tableId,
     required this.tableName,
     this.customerName,
@@ -109,7 +114,11 @@ class OrderModel {
     this.priceGroupId,
     this.sales_odr_order_type = 0,
     this.isUnsynced = false,
+    this.offlineSeq,
   }) : status = status.obs;
+
+  /// Returns the branch invoice if available, otherwise standard invNo
+  String get displayInvNo => (branchInv != null && branchInv!.isNotEmpty && branchInv != "null") ? branchInv! : invNo;
 
   /// Returns the final payable amount.
   /// For offline orders, totalAmount already includes roundOff.
@@ -119,6 +128,7 @@ class OrderModel {
   OrderModel copyWith({
     String? id,
     String? invNo,
+    String? branchInv,
     String? tableId,
     String? tableName,
     String? customerName,
@@ -149,10 +159,12 @@ class OrderModel {
     int? priceGroupId,
     int? sales_odr_order_type,
     bool? isUnsynced,
+    int? offlineSeq,
   }) {
     return OrderModel(
       id: id ?? this.id,
       invNo: invNo ?? this.invNo,
+      branchInv: branchInv ?? this.branchInv,
       tableId: tableId ?? this.tableId,
       tableName: tableName ?? this.tableName,
       customerName: customerName ?? this.customerName,
@@ -183,6 +195,7 @@ class OrderModel {
       priceGroupId: priceGroupId ?? this.priceGroupId,
       sales_odr_order_type: sales_odr_order_type ?? this.sales_odr_order_type,
       isUnsynced: isUnsynced ?? this.isUnsynced,
+      offlineSeq: offlineSeq ?? this.offlineSeq,
     );
   }
 }

@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
-
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/src/extension_instance.dart';
@@ -24,7 +22,6 @@ import '../../../routes/app_pages.dart';
 import '../../cart/controller/cart_controller.dart';
 import '../../order_type/controller/order_type_controller.dart';
 import '../views/dashoard/models/dashboard_models.dart';
-import 'dashboard_controller.dart';
 import 'home_controller.dart';
 
 class OrdersController extends GetxController {
@@ -125,6 +122,7 @@ class OrdersController extends GetxController {
                   id: (processing['sales_odr_id'] ?? '').toString(),
                   tableId: (processing['sales_odr_table_id'] ?? table.id).toString(),
                   invNo: (processing['sales_odr_inv_no'] ?? '').toString(),
+                  branchInv: (processing['sales_odr_branch_inv'] ?? '').toString(), // ✅ Added
                   tableName: _resolveName(processing, orderType, table.name),
                   customerName: (processing['sq_cust_name'] ?? processing['customer_name'] ?? processing['cust_name'] ?? processing['ledger_name'])?.toString(),
                   chairNumber: (processing['sales_odr_no_seats'] as num? ?? 0).toInt(),
@@ -182,6 +180,7 @@ class OrdersController extends GetxController {
               id: (json['sales_odr_id'] ?? '').toString(),
               tableId: (json['sales_odr_table_id'] ?? processingOrder?.tableId ?? '').toString(),
               invNo: (json['sales_odr_inv_no'] ?? '').toString(),
+              branchInv: (json['sales_odr_branch_inv'] ?? processingOrder?.branchInv ?? '').toString(), // ✅ Added
               tableName: _resolveName(json, orderType, processingOrder?.tableName ?? 'Unknown Table'),
               customerName: (json['sq_cust_name'] ?? json['customer_name'] ?? json['cust_name'] ?? json['ledger_name'] ?? processingOrder?.customerName)?.toString(),
               chairNumber: (json['sales_odr_no_seats'] as num? ??
@@ -221,13 +220,9 @@ class OrdersController extends GetxController {
         });
 
         if (existingIndex != -1) {
-          // If the order is in any API result, it's SYNCED on the server.
           finalOrders[existingIndex].isUnsynced = false;
-
-          // Use server data but keep local items if they were loaded
           final localOrder = finalOrders[existingIndex];
           if (localOrder.items.isNotEmpty && serverOrder.items.isEmpty) {
-             // Keep local items
           } else if (serverOrder.items.isNotEmpty) {
              localOrder.items.clear();
              localOrder.items.addAll(serverOrder.items);
@@ -247,6 +242,7 @@ class OrdersController extends GetxController {
             isSynced: 1,
             serverId: serverOrder.id,
             invNo: serverOrder.invNo,
+            branchInv: serverOrder.branchInv, // ✅ Added
             total: serverOrder.totalAmount,
             tax: serverOrder.totalTax,
           );
@@ -303,6 +299,7 @@ class OrdersController extends GetxController {
             return OrderModel(
               id: (json['sales_odr_id'] ?? '').toString(),
               invNo: (json['sales_odr_inv_no'] ?? '').toString(),
+              branchInv: (json['sales_odr_branch_inv'] ?? '').toString(), // ✅ Added
               tableId: (json['sales_odr_table_id'] ?? '').toString(),
               tableName: _resolveName(json, type, 'Walk-in Customer'),
               customerName: (json['sq_cust_name'] ?? json['customer_name'] ?? json['cust_name'] ?? json['ledger_name'])?.toString(),
@@ -357,40 +354,15 @@ class OrdersController extends GetxController {
             }
           }
 
-          // ── Merge: API is authoritative; suppress any cached entry that
-          //    maps to an invNo already covered by the API result
           final Set<String> apiInvNos =
           apiSoldOrders.map((o) => o.invNo).toSet();
-
           final List<OrderModel> mergedList = [];
-
-          // 1. Add API orders first
           mergedList.addAll(apiSoldOrders);
-
-          // 2. Add cached orders only when they have no API counterpart
           for (var cached in cachedSoldOrders) {
-            // Direct invNo match → API already has it
-            if (cached.invNo != "LOCAL" &&
-                cached.invNo != "OFFLINE" &&
-                cached.invNo.isNotEmpty && // ✅ Handle empty invNo
-                apiInvNos.contains(cached.invNo)) {
-              continue;
-            }
-
-            // LOCAL/OFFLINE entry whose real invNo is now known → API has it
+            if (cached.invNo != "LOCAL" && cached.invNo != "OFFLINE" && cached.invNo.isNotEmpty && apiInvNos.contains(cached.invNo)) {continue;}
             final realInvNo = localUuidToRealInvNo[cached.id];
-            if (realInvNo != null && apiInvNos.contains(realInvNo)) {
-              // Clean up the stale LOCAL record from DB
-              await _dbHelper.deleteOrder(cached.id);
-              continue;
-            }
-
-            // ID match → API already has it
-            if (apiSoldOrders.any((api) => api.id == cached.id)) {
-              continue;
-            }
-
-            // Genuinely offline-only order not yet on server → keep it
+            if (realInvNo != null && apiInvNos.contains(realInvNo)) {await _dbHelper.deleteOrder(cached.id);continue;}
+            if (apiSoldOrders.any((api) => api.id == cached.id)) {continue;}
             mergedList.add(cached);
           }
 
@@ -431,6 +403,7 @@ class OrdersController extends GetxController {
     int? priceGroupId;
     int orderType = (json['order_type_id'] as num? ?? 0).toInt();
     String invNo = json['inv_no']?.toString() ?? "LOCAL";
+    String branchInv = json['branch_inv']?.toString() ?? ""; // ✅ Added
     String orderId = json['server_id']?.toString() ?? json['uuid']?.toString() ?? "";
     String tableId = json['table_id']?.toString() ?? "";
     double discount = (json['discount_amount'] as num? ?? 0.0).toDouble();
@@ -442,6 +415,7 @@ class OrdersController extends GetxController {
     double totalSgst = (json['tot_sgst_tax'] as num? ?? 0.0).toDouble();
     String? qrLink;
     String? captainName;
+    int? offlineSeq = json['offline_seq'] != null ? (json['offline_seq'] as num).toInt() : null;
 
     try {
       final payloadStr = json['payload'] as String?;
@@ -465,6 +439,10 @@ class OrdersController extends GetxController {
 
           if (payload['sq_inv_no'] != null && payload['sq_inv_no'].toString() != '0') {
             invNo = payload['sq_inv_no'].toString();
+          }
+          
+          if (payload['sales_odr_branch_inv'] != null) {
+            branchInv = payload['sales_odr_branch_inv'].toString();
           }
 
           final dynamic rawResTable = payload['res_table'];
@@ -554,15 +532,12 @@ class OrdersController extends GetxController {
             }).map((a) {
               final addonBaseRate = (a['salesub_rate'] ?? a['sales_ord_sub_rate'] ?? a['rate'] as num? ?? 0.0).toDouble();
 
-              // Fix: Safely parse addonSubId
               final dynamic rawAddonSubId = a['sales_ord_sub_id'] ?? a['salesub_id'];
               final int addonSubId = rawAddonSubId is num ? rawAddonSubId.toInt() : int.tryParse(rawAddonSubId?.toString() ?? '') ?? 0;
 
-              // Fix: Safely parse addonPrdId
               final dynamic rawAddonPrdId = a['salesub_prd_id'] ?? a['sales_ord_sub_prod_id'];
               final int addonPrdId = rawAddonPrdId is num ? rawAddonPrdId.toInt() : int.tryParse(rawAddonPrdId?.toString() ?? '') ?? 0;
 
-              // Fix: Safely parse taxCatId (The most likely culprit)
               final dynamic rawTaxCatId = a['prd_tax_cat_id'] ?? a['sales_ord_sub_taxcat_id'];
               final int taxCatId = rawTaxCatId is num ? rawTaxCatId.toInt() : int.tryParse(rawTaxCatId?.toString() ?? '') ?? 0;
 
@@ -592,6 +567,7 @@ class OrdersController extends GetxController {
               subId: subId == 0 ? null : subId,
               tokenPrinterId: tokenPrinterId,
               isRemoved: isDeleted,
+              notes: si['Item_descp']?.toString() ?? si['notes']?.toString() ?? '',
               product: FoodItemModel(
                 id: prdId,
                 name: si['prd_name']?.toString() ?? '',
@@ -602,6 +578,7 @@ class OrdersController extends GetxController {
                 unitDisplay: (si['salesub_unit_display'] ?? si['prd_unit_name'] ?? si['unit_display'] ?? '').toString(),
                 taxPer: (si['salesub_tax_per'] ?? si['sales_ord_sub_tax_per'] as num? ?? 0.0).toDouble(),
                 taxCatId: (si['prd_tax_cat_id'] ?? si['sales_ord_sub_taxcat_id'] as num? ?? 0).toInt(),
+                tokenPrinterId: (tokenPrinterId == null || tokenPrinterId == 0) ? null : tokenPrinterId,   // ADD
               ),
               unit: ProductUnit(
                 unitId: unitId,
@@ -638,6 +615,7 @@ class OrdersController extends GetxController {
     return OrderModel(
       id: orderId,
       invNo: invNo,
+      branchInv: branchInv, // ✅ Added
       tableId: tableId,
       tableName: tableName,
       customerName: customerName,
@@ -660,6 +638,7 @@ class OrdersController extends GetxController {
       areaName: areaName,
       priceGroupId: priceGroupId,
       sales_odr_order_type: orderType,
+      offlineSeq: offlineSeq,
     );
   }
 
@@ -819,6 +798,8 @@ class OrdersController extends GetxController {
         items: updatedOrder.items.isNotEmpty ? updatedOrder.items : existingOrder.items,
         status: updatedOrder.status.value,
         qrLink: updatedOrder.qrLink,
+        offlineSeq: updatedOrder.offlineSeq,
+        branchInv: updatedOrder.branchInv, // ✅ Added
       );
 
       orders.refresh();
@@ -860,6 +841,8 @@ class OrdersController extends GetxController {
         items: updatedOrder.items.isNotEmpty ? updatedOrder.items : existingOrder.items,
         status: updatedOrder.status.value,
         qrLink: updatedOrder.qrLink,
+        offlineSeq: updatedOrder.offlineSeq,
+        branchInv: updatedOrder.branchInv, // ✅ Added
       );
       list.refresh();
       debugPrint("✅ Updated existing order in list: ${updatedOrder.invNo}");
@@ -916,6 +899,7 @@ class OrdersController extends GetxController {
           payload: jsonEncode(preview),
           isSynced: 1,
           invNo: order.invNo,
+          branchInv: (preview['sales_odr_branch_inv'] ?? '').toString(), // ✅ Added
           serverId: order.id,
           total: authoritativeTotal,
           tax: authoritativeTax,
@@ -986,6 +970,7 @@ class OrdersController extends GetxController {
             tokenPrinterId: (productJson['cat_token_printer'] as num?)?.toInt(),
             isRemoved: productJson['sales_ord_sub_flags'] == 0,
             isKotModified: productJson['sales_ord_sub_flags'] == 1,
+            notes: productJson['Item_descp']?.toString() ?? productJson['notes']?.toString() ?? '',
             product: FoodItemModel(
               id: prdId,
               name: productJson['prd_name']?.toString() ?? '',
@@ -1041,6 +1026,7 @@ class OrdersController extends GetxController {
                 data['agent']?['ledger_name'])?.toString(),
             isUnsynced: false,
             qrLink: (preview['qr_link'] ?? preview['zatca_qr'] ?? data['qr_link'] ?? data['zatca_qr'] ?? current.qrLink).toString(),
+            branchInv: (preview['sales_odr_branch_inv'] ?? '').toString(), // ✅ Added
           );
           orders.refresh();
         } else {
@@ -1069,6 +1055,7 @@ class OrdersController extends GetxController {
               sales_odr_order_type: type,
               isUnsynced: false,
               qrLink: (preview['qr_link'] ?? preview['zatca_qr'] ?? data['qr_link'] ?? data['zatca_qr'] ?? current.qrLink).toString(),
+              branchInv: (preview['sales_odr_branch_inv'] ?? '').toString(), // ✅ Added
             );
             soldOrders.refresh();
           }
@@ -1171,10 +1158,21 @@ class OrdersController extends GetxController {
       }
 
       log("📊 Unit: $unitDisplay, rawQty: $rawQty, baseQty: $baseQty, displayQty: $displayQty");
-
+      log("🖨️ CART DUMP: total cartItems=${cartController.cartItems.length}");
+      for (var ci in cartController.cartItems) {
+        log("🖨️   cartItem → id='${ci.product.id}' unitId=${ci.unit.unitId} "
+            "isDeleted=${ci.isDeleted.value} name=${ci.product.name}");
+      }
+      log("🖨️ SEARCHING FOR → prdId='$prdId' unitId=$unitId");
       final cartItem = cartController.cartItems.firstWhereOrNull(
               (item) => item.product.id == prdId && item.unit.unitId == unitId && !item.isDeleted.value
       );
+      log("🖨️ TOKEN DEBUG: prdId=$prdId unitId=$unitId "
+          "cartItemFound=${cartItem != null} "
+          "cartItemName=${cartItem?.product.name} "
+          "cartItemCategoryId=${cartItem?.product.categoryId} "
+          "cartItemTokenPrinterId=${cartItem?.product.tokenPrinterId} "
+          "subTokenPrinterRaw=${sub['cat_token_printer']}");
 
       // if (cartItem != null && displayRate == rawRate) {
       //   double cartBaseQty = cartItem.unit.unitBaseQty;
@@ -1191,6 +1189,8 @@ class OrdersController extends GetxController {
               (ci) => ci.product.id == prdId,
         );
         tokenPrinterId = cartItem?.product.tokenPrinterId;
+        log("🖨️ TOKEN DEBUG FALLBACK: prdIdOnlyMatch=${cartItem != null} "
+            "fallbackTokenPrinterId=$tokenPrinterId");
       }
       final String prdImgUrl = sub['prd_img_url']?.toString() ?? "";
       String fullImgPath = prdImgUrl;
@@ -1227,6 +1227,7 @@ class OrdersController extends GetxController {
         isRemoved: isRemoved,
         cgstRate: cgstRate,
         sgstRate: sgstRate,
+        notes: sub['Item_descp']?.toString() ?? sub['notes']?.toString() ?? '',
         product: FoodItemModel(
           id: prdId,
           name: sub['prd_name']?.toString() ?? cartItem?.product.name ?? 'Unknown',
@@ -1239,6 +1240,7 @@ class OrdersController extends GetxController {
           unitDisplay: sub['unit_display']?.toString() ?? cartItem?.product.unitDisplay ?? '',
           taxPer: (sub['sales_ord_sub_tax_per'] as num? ?? cartItem?.product.taxPer ?? 0.0).toDouble(),
           taxCatId: (sub['sales_ord_sub_taxcat_id'] as num? ?? cartController.cartItems.firstWhereOrNull((i)=>i.product.id == prdId)?.product.taxCatId ?? 0).toInt(),
+          tokenPrinterId: tokenPrinterId ?? cartItem?.product.tokenPrinterId,
         ),
         unit: cartItem?.unit ?? ProductUnit(
           unitId: unitId,
@@ -1262,6 +1264,7 @@ class OrdersController extends GetxController {
 
     final String orderId = (preview['sales_odr_id'] ?? '').toString();
     final String invNo = (preview['sales_odr_inv_no'] ?? preview['sq_inv_no'] ?? '').toString();
+    final String branchInv = (preview['sales_odr_branch_inv'] ?? '').toString(); // ✅ Added
     final String localUuid = (preview['local_uuid'] ?? '').toString();
 
     final int orderType = (preview['sales_odr_order_type'] as num? ?? 0).toInt();
@@ -1284,13 +1287,20 @@ class OrdersController extends GetxController {
     return OrderModel(
       id: orderId.isEmpty ? localUuid : orderId,
       invNo: invNo.isEmpty ? "OFFLINE" : invNo,
+      branchInv: branchInv, // ✅ Added
       tableId: (preview['sales_odr_table_id'] ?? cartController.selectedTableId.value).toString(),
       tableName: tableName,
       customerName: customerName,
       chairNumber: chairNumber,
       sales_odr_pos_status: posStatus,
       items: items,
-      status: (posStatus == 2) ? OrderStatus.billed : OrderStatus.pending,
+      status: posStatus == 2
+          ? OrderStatus.billed
+          : posStatus == 3
+          ? OrderStatus.paid
+          : posStatus == 0
+          ? OrderStatus.draft
+          : OrderStatus.pending,
       createdAt: createdAt,
       subTotal: (preview['tot_rate'] as num? ?? preview['sub_total'] as num? ?? preview['tot_subtotal'] as num? ?? preview['sales_odr_subtotal'] as num? ?? 0.0).toDouble(),
       totalAmount: (preview['tot_amount'] ?? preview['sales_odr_total'] ?? preview['total_amount'] as num? ?? 0.0).toDouble(),
@@ -1398,7 +1408,7 @@ class OrdersController extends GetxController {
       bool? confirm = await Get.dialog<bool>(
         AlertDialog(
           title: Text('cancel_order'.tr),
-          content: Text('Are you sure you want to cancel order ${order.isUnsynced ? "(Offline)" : "#${order.invNo}"}?'),
+          content: Text('Are you sure you want to cancel order ${order.isUnsynced ? "(Offline)" : "#${order.branchInv}"}?'),
           actions: [
             TextButton(onPressed: () => Get.back(result: false), child: Text('no'.tr)),
             TextButton(
@@ -1408,9 +1418,7 @@ class OrdersController extends GetxController {
           ],
         ),
       );
-
       if (confirm != true) return;
-
       if (order.isUnsynced) {
         if (order.items.isEmpty) {
           await _loadOrderDetailsFromLocal(order);
@@ -1447,16 +1455,18 @@ class OrdersController extends GetxController {
       bool? success = await cartController.cancelOrder(order.invNo);
 
       if (success == true) {
-        await _dbHelper.deleteOrder(order.id);
         orders.removeWhere((o) => o.invNo == order.invNo);
         soldOrders.removeWhere((o) => o.invNo == order.invNo);
         showSafeSnackbar("Success", "Order #${order.invNo} cancelled successfully");
+
         if (originalStatus != OrderStatus.draft) {
           final printerController = Get.find<PrinterController>();
-          printerController.printCancelledOrder(updatedOrder).catchError((e) {
+          await printerController.printCancelledOrder(updatedOrder).catchError((e) {
             debugPrint("Background printing error: $e");
           });
         }
+
+        await _dbHelper.deleteOrder(order.id);
       } else {
         order.status.value = originalStatus;
         showSafeSnackbar("Error", "Failed to cancel order");

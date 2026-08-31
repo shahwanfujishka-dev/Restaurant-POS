@@ -123,23 +123,20 @@ class HomeView extends GetView<HomeController> {
                         ),
                       ),
                       if (ScreenType.isMobile())
-                        GestureDetector(
-                          onTap: () => Get.toNamed(Routes.ORDER_TYPE),
-                          child: Container(
-                            margin: EdgeInsets.only(top: 2.h),
-                            padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryGreen.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(4.r),
-                            ),
-                            child: Text(
-                              currentType.displayName.toUpperCase(),
-                              style: TextStyle(
-                                fontSize: 9.sp,
-                                color: AppTheme.primaryGreen,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
-                              ),
+                        Container(
+                          margin: EdgeInsets.only(top: 2.h),
+                          padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryGreen.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4.r),
+                          ),
+                          child: Text(
+                            currentType.displayName.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 9.sp,
+                              color: AppTheme.primaryGreen,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
                             ),
                           ),
                         ),
@@ -164,28 +161,32 @@ class HomeView extends GetView<HomeController> {
                     padding: EdgeInsets.only(right: 12.w),
                     child: Row(
                       children: [
-                        // Change Order Type Button
-                        TextButton.icon(
-                          onPressed: () => Get.toNamed(Routes.ORDER_TYPE),
-                          icon: Icon(Icons.swap_horiz, size: 4.sp, color: AppTheme.primaryGreen),
-                          label: Container(
-                            padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 7.h),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryGreen.withOpacity(0.1),
+                        ...OrderType.values.map((type) {
+                          final isSelected = currentType == type;
+                          return Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 2.w),
+                            child: InkWell(
+                              onTap: () => orderTypeController.selectOrderType(type, navigate: false),
                               borderRadius: BorderRadius.circular(4.r),
-                            ),
-                            child: Text(
-                              (orderTypeController.selectedType.value ?? AppState.orderType)
-                                  .displayName
-                                  .toUpperCase(),
-                              style: TextStyle(
-                                fontSize: ScreenType.isMobile() ? 12.sp : 5.sp,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.primaryGreen,
+                              child: Container(
+                                padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 7.h),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? AppTheme.primaryGreen : AppTheme.primaryGreen.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(4.r),
+                                ),
+                                child: Text(
+                                  type.displayName.toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 5.sp,
+                                    fontWeight: FontWeight.bold,
+                                    color: isSelected ? Colors.white : AppTheme.primaryGreen,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
+                          );
+                        }).toList(),
+                        SizedBox(width: 4.w),
                         Text(
                           AppState.username.toUpperCase(),
                           style: TextStyle(
@@ -250,7 +251,7 @@ class HomeView extends GetView<HomeController> {
                     userName: AppState.username, // or from your auth state
                     onLogout: controller.logout,
                     onSettings: () => Get.toNamed(Routes.SETTINGS),
-                    onChangeOrderType: () => Get.toNamed(Routes.ORDER_TYPE),
+                    onChangeOrderType: () {}, // Removed Order Type navigation
                     onToggleLanguage: _toggleLanguage,
                     isArabic: Get.locale?.languageCode == 'ar',
                   )

@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
 import 'package:get/get_state_manager/src/simple/get_view.dart';
@@ -38,15 +39,18 @@ class FoodItemsGrid extends GetView<DashboardController> {
               itemCount: controller.filteredFoodItems.length,
               itemBuilder: (context, index) {
                 final item = controller.filteredFoodItems[index];
+                
+                // Optimized animation: reduced duration and staggered delay to make search feel snappy
                 return TweenAnimationBuilder(
-                  duration: Duration(milliseconds: 300 + (index % 20 * 60)),
+                  key: ValueKey(item.id), // Use key to help Flutter recycle widgets efficiently
+                  duration: const Duration(milliseconds: 200),
                   tween: Tween<double>(begin: 0, end: 1),
                   curve: Curves.easeOut,
                   builder: (context, double value, child) {
                     return Opacity(
                       opacity: value,
                       child: Transform.scale(
-                        scale: 0.95 + (value * 0.05),
+                        scale: 0.98 + (value * 0.02),
                         child: child,
                       ),
                     );
@@ -54,7 +58,6 @@ class FoodItemsGrid extends GetView<DashboardController> {
                   child: FoodItemCard(
                     item: item,
                     onTap: () {
-                      print(item.id);
                       controller.onProductTapped(item);
                     },
                   ),

@@ -6,10 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import '../../../../helper/snackbar_helper.dart';
+import '../../../data/Device_Roles/device_roles.dart';
 import '../../../data/models/order_model.dart';
 import '../../../data/models/order_type.dart';
 import '../../../data/services/api_services.dart';
 import '../../../data/services/database_helper.dart';
+import '../../../data/services/local_hub_client.dart';
 import '../../../data/services/sync_service.dart';
 import '../../../data/utils/AppState.dart';
 import 'package:get_storage/get_storage.dart';
@@ -33,6 +35,8 @@ class CartItem {
   final int initialQty;
   final RxDouble priceAtAdd = 0.0.obs;
   final RxBool isDeleted = false.obs;
+  final RxString note = ''.obs;
+
 
   CartItem({
     this.subId,
@@ -48,10 +52,12 @@ class CartItem {
     int? initialQty,
     double? priceAtAdd,
     bool deleted = false,
+    String note = '',
   }) : quantity = qty.obs,
        initialQty = initialQty ?? qty {
     this.priceAtAdd.value = priceAtAdd ?? unit.rate;
     isDeleted.value = deleted;
+    this.note.value = note;
   }
 
   double _catalogPrice(AddonModel addon) {
@@ -79,7 +85,8 @@ class CartItem {
 
   double get unitPriceWithTax =>
       unitPrice + (unitPrice * product.prd_tax / 100);
-
+  double get cgstPer => product.prd_tax / 2;
+  double get sgstPer => product.prd_tax / 2;
   double get totalTax {
     final double itemTax = (unitPrice * product.prd_tax / 100) * quantity.value;
     final double addonsTax = selectedAddons.fold(0.0, (sum, addon) {
@@ -144,6 +151,7 @@ class CartItem {
       initialQty: initialQty,
       priceAtAdd: priceAtAdd.value,
       deleted: isDeleted.value,
+      note: note.value,
     );
   }
 }
@@ -161,6 +169,7 @@ class CartController extends GetxController {
   final selectedPriceGroupId = 0.obs;
   final editingOrderId = "".obs;
   final editingInvNo = "".obs;
+  final editingBranchInv = "".obs; // ✅ Added
   final wasDraft = false.obs;
   final originalTableId = "".obs;
   final originalChairCount = 0.obs;
@@ -171,6 +180,8 @@ class CartController extends GetxController {
   final selectedCaptainId = Rxn<int>();
   final selectedCaptainName = "".obs;
   final captainsList = <Map<String, dynamic>>[].obs;
+  bool get isLocalHubClient => DeviceConfig.operationMode == OperationMode.local && DeviceConfig.role == DeviceRole.client;
+  bool get isLocalHubHost => DeviceConfig.operationMode == OperationMode.local && DeviceConfig.role == DeviceRole.host;
 
   String _generateUuid() {
     final random = math.Random();
@@ -187,9 +198,7 @@ class CartController extends GetxController {
   void _clearDashboardSearch() {
     if (Get.isRegistered<DashboardController>()) {
       final dashboard = Get.find<DashboardController>();
-
-      if (dashboard.isDisposed) return; // ✅ prevent crash
-
+      if (dashboard.isDisposed) return;
       dashboard.searchKeyword.value = "";
       dashboard.searchController.clear();
       dashboard.fetchProducts();
@@ -197,17 +206,12 @@ class CartController extends GetxController {
   }
 
   Future<void> loadCaptains() async {
-    final list = await _dbHelper.getCaptains(); // already DESC from DB
-
+    final list = await _dbHelper.getCaptains();
     final storedLedgerId = GetStorage().read('ledger_id');
     final int? currentCaptainId = int.tryParse(storedLedgerId?.toString() ?? "");
-
     final List<Map<String, dynamic>> sortedList = List.from(list);
-
     if (currentCaptainId != null) {
-      final index = sortedList.indexWhere(
-            (c) => c['ledger_id'].toString() == currentCaptainId.toString(),
-      );
+      final index = sortedList.indexWhere((c) => c['ledger_id'].toString() == currentCaptainId.toString(),);
       if (index != -1) {
         final captain = sortedList.removeAt(index);
         sortedList.insert(0, captain);
@@ -215,7 +219,6 @@ class CartController extends GetxController {
     }
 
     captainsList.assignAll(sortedList);
-
     if (selectedCaptainId.value == null && sortedList.isNotEmpty) {
       final first = sortedList.first;
       setCaption(
@@ -225,7 +228,6 @@ class CartController extends GetxController {
             : first['ledger_name'] as String? ?? '',
       );
     }
-
     print("🎯 CAPTAINS LOADED: ${captainsList.length} → $captainsList");
   }
 
@@ -287,6 +289,7 @@ class CartController extends GetxController {
       /// 🔥 IMPORTANT → existing order identity
       "sq_id": int.tryParse(order.id),
       "sq_inv_no": int.tryParse(order.invNo),
+      "sales_odr_branch_inv": order.branchInv, // ✅ Added
 
       /// Optional but safe
       "created_at": order.createdAt.toIso8601String(),
@@ -297,6 +300,7 @@ class CartController extends GetxController {
   void startEditingOrder(OrderModel order) {
     editingOrderId.value = order.id;
     editingInvNo.value = order.invNo;
+    editingBranchInv.value = order.branchInv ?? ""; // ✅ Added
     wasDraft.value = order.sales_odr_pos_status == 0;
     originalItems.assignAll(order.items);
     editingOrderFullData = _buildProcessingTable(order);
@@ -367,7 +371,7 @@ class CartController extends GetxController {
           .toList();
 
       // ✅ originalAddons = selectedAddons + free addons from existAddOns
-      final originalAddonsCopy = [
+      final originalAddonCopy = [
         ...clonedAddons.map((a) => a.copyWith()),
         ...freeAddonOriginals,
       ];
@@ -382,10 +386,11 @@ class CartController extends GetxController {
           product: item.product,
           unit: item.unit,
           selectedAddons: clonedAddons,
-          originalAddons: originalAddonsCopy,
+          originalAddons: originalAddonCopy,
           qty: item.quantity,
           initialQty: item.quantity,
           priceAtAdd: item.unit.rate,
+          note: item.notes,
         ),
       );
     }
@@ -396,6 +401,7 @@ class CartController extends GetxController {
   void stopEditing() {
     editingOrderId.value = "";
     editingInvNo.value = "";
+    editingBranchInv.value = ""; // ✅ Added
     wasDraft.value = false;
     originalItems.clear();
     originalTableId.value = "";
@@ -411,28 +417,27 @@ class CartController extends GetxController {
   void addItem(FoodItemModel product) {}
 
   void addItemWithDetails(
-    FoodItemModel product,
-    ProductUnit unit,
-    List<AddonModel> addons,
-  ) {
-    // Check for existing deleted item first
+      FoodItemModel product,
+      ProductUnit unit,
+      List<AddonModel> addons, {
+        String note = '',
+      }) {
     final existingDeletedIndex = cartItems.indexWhere((item) {
       bool sameProduct = item.product.id == product.id;
       bool sameUnit = item.unit.unitId == unit.unitId;
       bool sameAddons = _areAddonsEqual(item.selectedAddons, addons);
-      return sameProduct && sameUnit && sameAddons && item.isDeleted.value;
+      bool sameNote = item.note.value == note;
+      return sameProduct && sameUnit && sameAddons && sameNote && item.isDeleted.value;
     });
 
-    // In addItemWithDetails method, when reactivating a deleted item:
     if (existingDeletedIndex != -1) {
-      // Reactivate the deleted item
       final existingItem = cartItems[existingDeletedIndex];
       existingItem.isDeleted.value = false;
       existingItem.quantity.value = 1;
       existingItem.priceAtAdd.value = unit.rate;
       existingItem.unit = unit;
+      existingItem.note.value = note; // ← new
 
-      // Clear and update addons
       existingItem.selectedAddons.clear();
       for (var a in addons) {
         existingItem.selectedAddons.add(
@@ -453,7 +458,6 @@ class CartController extends GetxController {
         );
       }
 
-      // IMPORTANT: Reset originalAddons to match current state
       existingItem.originalAddons = existingItem.selectedAddons
           .map((a) => a.copyWith())
           .toList();
@@ -466,12 +470,12 @@ class CartController extends GetxController {
       return;
     }
 
-    // Check for existing active item
     final existingIndex = cartItems.indexWhere((item) {
       bool sameProduct = item.product.id == product.id;
       bool sameUnit = item.unit.unitId == unit.unitId;
       bool sameAddons = _areAddonsEqual(item.selectedAddons, addons);
-      return sameProduct && sameUnit && sameAddons && !item.isDeleted.value;
+      bool sameNote = item.note.value == note;
+      return sameProduct && sameUnit && sameAddons && sameNote && !item.isDeleted.value;
     });
 
     if (existingIndex != -1) {
@@ -484,9 +488,10 @@ class CartController extends GetxController {
         CartItem(
           product: product,
           unit: unit,
+          note: note, // ← new
           selectedAddons: List.from(
             addons.map(
-              (a) => AddonModel(
+                  (a) => AddonModel(
                 id: a.id,
                 prdId: a.prdId,
                 prdaddon_flags: a.prdaddon_flags,
@@ -505,11 +510,6 @@ class CartController extends GetxController {
         ),
       );
     }
-
-    // showSafeSnackbar(
-    //   "Added to Cart",
-    //   "${product.name} (${unit.unitDisplay}) added successfully",
-    // );
   }
 
 
@@ -532,11 +532,12 @@ class CartController extends GetxController {
   void updateItemDetails(
     CartItem item,
     ProductUnit unit,
-    List<AddonModel> addons,
-  ) {
+    List<AddonModel> addons,{
+        String note = '',
+  }) {
     item.unit = unit;
     item.priceAtAdd.value = unit.rate;
-
+    item.note.value = note;
     // Build a set of prdIds that are still selected (qty > 0)
     final selectedPrdIds = addons.map((a) => a.prdId).toSet();
 
@@ -715,7 +716,6 @@ class CartController extends GetxController {
     List<double> splitAmounts = const [],
   }) async {
     try {
-      // ✅ VALIDATION: Table selection required for Dine In
       if (AppState.orderType == OrderType.dineIn && selectedTableId.value.isEmpty) {
         showSafeSnackbar("Error", "Please select a table and chair first.");
         return null;
@@ -724,12 +724,9 @@ class CartController extends GetxController {
       final dateStr = DateFormat('yyyy-MM-dd').format(now);
       final syncTime = "${DateFormat('yyMMddHHmmssSSS').format(now)}000";
       final orderUuid = _generateUuid();
-
       List<Map<String, dynamic>> saleItems = [];
       List<Map<String, dynamic>> localItems = [];
-
-      final DashboardController dashboardController =
-          Get.find<DashboardController>();
+      final DashboardController dashboardController = Get.find<DashboardController>();
       final bool isVatDisabled = dashboardController.vatType.value == 1;
       double totalTax = 0;
       double totalWithTax = 0;
@@ -742,17 +739,10 @@ class CartController extends GetxController {
         }
         double itemRate = item.priceAtAdd.value;
         double itemTaxPer = isVatDisabled ? 0 : item.product.prd_tax;
-
         int itemQty = item.quantity.value;
         double itemSubtotal = itemRate * itemQty;
-
-        double itemTaxAmount = isVatDisabled
-            ? 0
-            : (itemRate * itemTaxPer) / 100;
-        double itemTotalWithTax = isVatDisabled
-            ? itemSubtotal
-            : (itemRate + itemTaxAmount) * itemQty;
-
+        double itemTaxAmount = isVatDisabled ? 0 : (itemRate * itemTaxPer) / 100;
+        double itemTotalWithTax = isVatDisabled ? itemSubtotal : (itemRate + itemTaxAmount) * itemQty;
         totalTax += isVatDisabled ? 0 : itemTaxAmount * itemQty;
         totalWithTax += itemTotalWithTax;
 
@@ -782,6 +772,8 @@ class CartController extends GetxController {
           "is_addon": 0,
           "addon_parent_prd_id": null,
           "addon_parent_unit_id": null,
+          "cat_token_printer": item.product.tokenPrinterId,
+          "Item_descp": item.note.value,
         });
 
         localItems.add({
@@ -793,27 +785,21 @@ class CartController extends GetxController {
           "tax": itemTaxAmount * itemQty,
           "subtotal": itemTotalWithTax,
           "is_printed": 0,
+          "notes": item.note.value,
         });
 
-        // Addons logic: Combine default free addons and selected ones
         final Map<int, AddonModel> allAddons = {};
-
-        // 1. Collect default free addons from unit
         for (var ea in item.unit.existAddOns) {
           if (ea.prdaddon_flags == 1) {
             allAddons[ea.prdId] = ea;
           }
         }
-
-        // 2. Override/add with selected addons
         for (var sa in item.selectedAddons) {
           allAddons[sa.prdId] = sa;
         }
 
         for (var addon in allAddons.values) {
           int totalQty = addon.quantity.value;
-
-          // Fallback to freeQty for default addons not explicitly adjusted
           if (totalQty == 0 &&
               addon.freeQty > 0 &&
               !item.selectedAddons.any((sa) => sa.prdId == addon.prdId)) {
@@ -821,30 +807,20 @@ class CartController extends GetxController {
           }
 
           if (totalQty <= 0) continue;
-
           int freeQtyLimit = addon.freeQty * item.quantity.value;
           int freePart = totalQty < freeQtyLimit ? totalQty : freeQtyLimit;
           int paidPart = totalQty - freePart;
-
-          final existSource = item.unit.existAddOns.firstWhereOrNull(
-            (ea) => ea.prdId == addon.prdId,
-          );
+          final existSource = item.unit.existAddOns.firstWhereOrNull((ea) => ea.prdId == addon.prdId);
           final double catalogPrice = existSource?.price ?? addon.price;
-          final bool isUserSelected = item.selectedAddons.any(
-            (sa) => sa.prdId == addon.prdId,
-          );
-
+          final bool isUserSelected = item.selectedAddons.any((sa) => sa.prdId == addon.prdId,);
           double paidRate = addon.price;
           if (paidPart > 0) {
-            // If it's a free addon overflow, use catalog price
             if (addon.price == 0 && addon.freeQty > 0 && freePart < totalQty) {
               paidRate = catalogPrice;
             }
-            // If user selected a paid addon, use their price
             else if (isUserSelected && addon.price > 0) {
               paidRate = addon.price;
             }
-            // For free addons with overflow, ensure we have a valid rate
             else if (paidRate == 0 && catalogPrice > 0) {
               paidRate = catalogPrice;
             }
@@ -883,6 +859,7 @@ class CartController extends GetxController {
               "addon_parent_prd_id": int.tryParse(item.product.id),
               "addon_parent_unit_id": item.unit.unitId,
               "is_default": 1,
+              "Item_descp": "",
             });
 
             localItems.add({
@@ -894,10 +871,10 @@ class CartController extends GetxController {
               "tax": 0.0,
               "subtotal": 0.0,
               "is_printed": 0,
+              "notes": item.note.value,
             });
           }
 
-          // Paid portion entry (full rate)
           if (paidPart > 0) {
             double rate = addon.price;
             double taxPer = isVatDisabled ? 0 : addon.taxPer;
@@ -931,6 +908,7 @@ class CartController extends GetxController {
               "is_addon": 0,
               "addon_parent_prd_id": int.tryParse(item.product.id),
               "addon_parent_unit_id": item.unit.unitId,
+              "Item_descp": "",
             });
 
             localItems.add({
@@ -942,8 +920,8 @@ class CartController extends GetxController {
               "tax": taxAmntPerUnit * paidPart,
               "subtotal": totalWithTaxLine,
               "is_printed": 0,
+              "notes": item.note.value,
             });
-
             totalTax += taxAmntPerUnit * paidPart;
             totalWithTax += totalWithTaxLine;
           }
@@ -1011,114 +989,158 @@ class CartController extends GetxController {
         "split_count": isSplit ? splitCount : null,
         "server_sync_time": syncTime,
       };
-      // --- SAVE TO LOCAL DB FIRST ---
-      try {
-        await _dbHelper.insertOrder({
-          "uuid": orderUuid,
-          "order_type_id": AppState.orderType.id,
-          "table_id": int.tryParse(selectedTableId.value),
-          "customer_name": customerData?['name'] ?? customerName ?? "Cash Customer",
-          "total_amount": totalWithTax,
-          "total_tax": totalTax,
-          "status": isDraft ? 'draft' : 'pending',
-          "is_synced": 0,
-          "payload": jsonEncode(body),
-          "created_at": now.toIso8601String(),
-          "inv_no": null,
-        }, localItems);
-        debugPrint("✅ Order saved locally: $orderUuid");
-      } catch (dbError) {
-        log("❌ Local DB Error: $dbError");
+      // try {
+      //   await _dbHelper.insertOrder({
+      //     "uuid": orderUuid,
+      //     "order_type_id": AppState.orderType.id,
+      //     "table_id": int.tryParse(selectedTableId.value),
+      //     "customer_name": customerData?['name'] ?? customerName ?? "Cash Customer",
+      //     "total_amount": totalWithTax,
+      //     "total_tax": totalTax,
+      //     "status": isDraft ? 'draft' : 'pending',
+      //     "is_synced": 0,
+      //     "payload": jsonEncode(body),
+      //     "created_at": now.toIso8601String(),
+      //     "inv_no": null,
+      //   }, localItems);
+      //   debugPrint("✅ Order saved locally: $orderUuid");
+      // } catch (dbError) {
+      //   log("❌ Local DB Error: $dbError");
+      // }
+      // Get.find<SyncService>().syncPendingOrders();
+      // try {
+      //   await _dbHelper.insertOrder({
+      //     "uuid": orderUuid,
+      //     "order_type_id": AppState.orderType.id,
+      //     "table_id": int.tryParse(selectedTableId.value),
+      //     "customer_name": customerData?['name'] ?? customerName ?? "Cash Customer",
+      //     "total_amount": totalWithTax,
+      //     "total_tax": totalTax,
+      //     "status": isDraft ? 'draft' : 'pending',
+      //     "is_synced": 0,
+      //     "payload": jsonEncode(body),
+      //     "created_at": now.toIso8601String(),
+      //     "inv_no": null,
+      //   }, localItems);
+      //   debugPrint("✅ Order saved locally: $orderUuid");
+      //   await _dbHelper.assignOfflineSeqForOrder(orderUuid);
+      // } catch (dbError) {
+      //   log("❌ Local DB Error: $dbError");
+      // }
+      // Get.find<SyncService>().syncPendingOrders();
+      // final syntheticResponse = _buildOfflineResponse(
+      //   orderUuid: orderUuid,
+      //   body: body,
+      //   totalWithTax: totalWithTax,
+      //   totalTax: totalTax,
+      //   saleItems: saleItems,
+      //   isDraft: isDraft,
+      //   now: now,
+      //   isCompliment: isCompliment,
+      //   isSplit: isSplit,
+      //   splitCount: splitCount,
+      //   splitAmounts: splitAmounts,
+      // );
+      // _clearDashboardSearch();
+      // return syntheticResponse;
+      if (DeviceConfig.operationMode == OperationMode.local &&
+          DeviceConfig.role == DeviceRole.client) {
+
+        final hostIp = DeviceConfig.hostIp;
+
+        if (hostIp == null || hostIp.trim().isEmpty) {
+          showSafeSnackbar(
+            "Local Hub Error",
+            "Main Cashier is not configured.",
+          );
+          return null;
+        }
+
+        try {
+          debugPrint('======================================');
+          debugPrint('LOCAL HUB ORDER');
+          debugPrint('Role       : CLIENT');
+          debugPrint('Host       : $hostIp');
+          debugPrint('Order UUID : $orderUuid');
+          debugPrint('======================================');
+
+          final hubPayload = {
+            ...body,
+            "uuid": orderUuid,
+            "source_device_role": "client",
+            "source_user_id": AppState.userId,
+            "source_user_name": AppState.username,
+          };
+
+          final hubResponse =
+          await LocalHubClient.instance.createOrder(
+            order: hubPayload,
+            hostIp: hostIp,
+            port: DeviceConfig.hostPort,
+          );
+
+          debugPrint('======================================');
+          debugPrint('LOCAL HUB ORDER SUCCESS');
+          debugPrint('Response: $hubResponse');
+          debugPrint('======================================');
+
+          _clearDashboardSearch();
+
+          return hubResponse;
+        } catch (e) {
+          log(
+            "❌ Local Hub order failed: $e",
+          );
+
+          showSafeSnackbar(
+            "Order Failed",
+            "Could not send order to Main Cashier.",
+          );
+
+          return null;
+        }
       }
 
-      // --- TRY API CALL ---
-      // --- TRY API CALL ---
+// ============================================================
+// EXISTING ONLINE MODE
+// ============================================================
+
       try {
-        log("📡 Sending API request...");
-        log("📦 BODY: ${jsonEncode(body)}");
         final response = await _apiService.post(
           "mobileapp/pos/add_sales_order",
           data: body,
         );
 
         if (response.statusCode == 200) {
-          dynamic data = response.data;
-          if (data is String) {
-            data = jsonDecode(data);
-          }
-
-          if (data is Map && data['message'] != null) {
-            final message = data['message'];
-            if (message is Map && message['status'] == 0) {
-              if (Get.isDialogOpen == true) Get.back();
-              Future.delayed(const Duration(milliseconds: 100), () {
-                print(message['msg']);
-                showSafeSnackbar(
-                  "Error",
-                  message['msg'] ?? "Seat not available",
-                );
-              });
-            }
-          }
-
-          final prettyResponse = const JsonEncoder.withIndent('  ').convert(data);
-          log("✅ SUCCESS RESPONSE (placeOrder):\n$prettyResponse");
-
-// Replace the existing serverId/invNo extraction:
-          final messageMap = data['message'] is Map ? data['message'] as Map : null;
-          final preview = messageMap?['preview'] is Map ? messageMap!['preview'] as Map : null;
-
-          final String serverId =
-              preview?['sq_id']?.toString() ??
-                  preview?['sales_odr_id']?.toString() ??
-                  data['id']?.toString() ?? "";
-
-          final String? invNo =
-              preview?['sq_inv_no']?.toString() ??
-                  preview?['sales_odr_inv_no']?.toString();
-          final String finalStatus = isDraft ? 'draft' : ((isCompliment || (payType != null && payType != 0)) ? 'paid' : 'pending');
-
-          await _dbHelper.updateOrderStatusByUuid(
-            orderUuid,
-            finalStatus,
-            isSynced: 1,
-            serverId: serverId,
-            invNo: invNo, // Now captures real Invoice Number
+          debugPrint(
+            "✅ Order placed online: $orderUuid",
           );
-          if (data is Map) {
-            (data as Map)['_local_uuid'] = orderUuid;
-          }
+
           _clearDashboardSearch();
-          return data;
+
+          return response.data is Map
+              ? Map<String, dynamic>.from(response.data)
+              : jsonDecode(response.data);
+        } else {
+          showSafeSnackbar(
+            "Error",
+            "Failed to place order. Please try again.",
+          );
+
+          return null;
         }
-      } catch (apiError) {
-        log("⚠️ API Failed (Offline): $apiError. Order preserved in local DB.");
-
-        // Ensure the local record has the correct status
-        await _dbHelper.updateOrderStatusByUuid(
-          orderUuid,
-          isDraft ? 'draft' : (isCompliment ? 'paid' : 'pending'),
-          isSynced: 0,
+      } catch (e) {
+        log(
+          "❌ Error placing order online: $e",
         );
 
-        final syntheticResponse = _buildOfflineResponse(
-          orderUuid: orderUuid,
-          body: body,
-          totalWithTax: totalWithTax,
-          totalTax: totalTax,
-          saleItems: saleItems,
-          isDraft: isDraft,
-          now: now,
-          isCompliment: isCompliment,
-          isSplit: isSplit,
-          splitCount: splitCount,
-          splitAmounts: splitAmounts,
+        showSafeSnackbar(
+          "Error",
+          "No internet connection or server error.",
         );
-        _clearDashboardSearch();
-        return syntheticResponse;
+
+        return null;
       }
-
-      return null;
     } catch (e) {
       log("Error in placeOrder: $e");
       if (Get.isDialogOpen == true) Get.back();
@@ -1127,7 +1149,6 @@ class CartController extends GetxController {
   }
 
   Map<String, dynamic>? editingOrderFullData;
-
   Future<Map<String, dynamic>?> updateOrder({
     bool isDraft = false,
     int? payType,
@@ -1150,7 +1171,6 @@ class CartController extends GetxController {
     List<double> splitAmounts = const [],
   }) async {
     try {
-      // ✅ VALIDATION: Table selection required for Dine In
       if (AppState.orderType == OrderType.dineIn && selectedTableId.value.isEmpty) {
         showSafeSnackbar("Error", "Please select a table and chair first.");
         return null;
@@ -1166,19 +1186,14 @@ class CartController extends GetxController {
       double totalTax = 0;
       double totalWithTax = 0;
       bool hasAnyChange = false;
-      // ✅ Check for status change (Draft <-> Order)
-
       if (wasDraft.value != isDraft) {
         hasAnyChange = true;
         log("║ Status changed: wasDraft ${wasDraft.value} -> isDraft $isDraft");
       }
-
-      // If payment details are being passed, this is a settlement — always send
       if (payType != null && payType != 0) {
         hasAnyChange = true;
         log("║ Payment settlement detected: payType=$payType → forcing update");
       }
-
       if (selectedTableId.value != originalTableId.value ||
           selectedChairCount.value != originalChairCount.value) {
         hasAnyChange = true;
@@ -1186,8 +1201,6 @@ class CartController extends GetxController {
           "║ Metadata changed: Table ${originalTableId.value} -> ${selectedTableId.value}, Seats ${originalChairCount.value} -> ${selectedChairCount.value}",
         );
       }
-
-      // ✅ Check for order type change
       if (AppState.orderType.id != originalOrderType.value) {
         hasAnyChange = true;
         log(
@@ -1368,10 +1381,11 @@ class CartController extends GetxController {
           hasAnyChange = true;
           changeReason = "QTY_CHANGED ($oldQty → $newQty)";
         } else if (item.hasAddonChanges()) {
-          // We also check addons below, but we need to know if parent needs to be sent
-          // because its child addons changed.
-          // hasAddonChanges is a helper in CartItem.
           hasAnyChange = true;
+        } else if (item.note.value != (originalItems.firstWhereOrNull((oi) => oi.subId == item.subId)?.notes ?? "")) {
+          parentChanged = true;
+          hasAnyChange = true;
+          changeReason = "NOTE_CHANGED";
         }
 
         log("│  parentChanged: $parentChanged  reason: $changeReason");
@@ -1404,10 +1418,11 @@ class CartController extends GetxController {
           "is_addon": 0,
           "addon_parent_prd_id": parentPrdId,
           "addon_parent_unit_id": parentUnitId,
-          "is_edited": item.subId != null && (unitChanged || newQty != oldQty),
+          "is_edited": item.subId != null && (unitChanged || newQty != oldQty || changeReason == "NOTE_CHANGED"),
           "oldqty": oldQty,
-          "Item_descp": "",
+          "Item_descp": item.note.value,
           "is_deleted": 0,
+          "cat_token_printer": item.product.tokenPrinterId,
         });
 
         if (parentChanged) {
@@ -1861,8 +1876,8 @@ class CartController extends GetxController {
         "balance_amount": 0,
         "sq_tax": totalTax,
         "cmp_tax": AppState.cmpTaxType,
-        if (AppState.cmpTaxType != 1) "sq_cgst_tax": totalTax / 2,
-        if (AppState.cmpTaxType != 1) "sq_sgst_tax": totalTax / 2,
+        if (AppState.cmpTaxType != 1) "sq_cgst_tax": isVatDisabled ? 0 : (totalTax / 2),
+        if (AppState.cmpTaxType != 1) "sq_sgst_tax": isVatDisabled ? 0 : (totalTax / 2),
         "inv_type": 2,
         "pos_odr_type": AppState.orderType.id,
         "address": customerAddress,
@@ -1910,27 +1925,57 @@ class CartController extends GetxController {
       log("Final Body with ${saleItems.length} items");
       log('Api Body: ${jsonEncode(body)}');
 
-      try {
-        final bool editingUnsyncedOrder =
-            editingOrderId.value.startsWith('ORD-') ||
-            editingInvNo.value.isEmpty ||
-            editingInvNo.value == 'OFFLINE' ||
-            (int.tryParse(editingInvNo.value) ?? 0) == 0;
-        final Map<String, dynamic> payloadToSave = {
-          ...body,
-          'is_pos_edit': !editingUnsyncedOrder,
-        };
-        await _dbHelper.updateOrderStatusByServerId(
-          editingOrderId.value,
-          isDraft ? 'draft' : 'pending',
-          isSynced: 0,
-          total: totalWithTax,
-          tax: totalTax,
-          payload: jsonEncode(payloadToSave),
-        );
-      } catch (dbError) {
-        log("❌ Local DB Update Error: $dbError");
-      }
+      // --- SAVE TO LOCAL DB FIRST ---
+      // try {
+      //   final bool editingUnsyncedOrder =
+      //       editingOrderId.value.startsWith('ORD-') ||
+      //           editingInvNo.value.isEmpty ||
+      //           editingInvNo.value == 'OFFLINE' ||
+      //           (int.tryParse(editingInvNo.value) ?? 0) == 0;
+      //   final Map<String, dynamic> payloadToSave = {
+      //     ...body,
+      //     'is_pos_edit': !editingUnsyncedOrder,
+      //   };
+      //   await _dbHelper.updateOrderStatusByServerId(
+      //     editingOrderId.value,
+      //     isDraft ? 'draft' : 'pending',
+      //     isSynced: 0,
+      //     total: totalWithTax,
+      //     tax: totalTax,
+      //     payload: jsonEncode(payloadToSave),
+      //   );
+      // } catch (dbError) {
+      //   log("❌ Local DB Update Error: $dbError");
+      // }
+      //
+      // // --- FIRE SYNC IN BACKGROUND — do NOT await this ---
+      // Get.find<SyncService>().syncPendingOrders();
+      //
+      // // --- RETURN IMMEDIATELY — build the synthetic response for KOT/printing ---
+      // final syntheticResponse = _buildOfflineUpdateResponse(
+      //   body: body,
+      //   saleItems: saleItems,
+      //   totalWithTax: totalWithTax,
+      //   totalTax: totalTax,
+      //   isDraft: isDraft,
+      //   now: now,
+      //   isSplit: isSplit,
+      //   splitCount: splitCount,
+      //   splitAmounts: splitAmounts,
+      //   isCompliment: isCompliment,
+      // );
+      //
+      // // Update the in-memory orders list immediately using the synthetic
+      // // response, so the UI reflects the edit without waiting on the network.
+      // // SyncService will reconcile with real server data once it syncs.
+      // if (Get.isRegistered<OrdersController>()) {
+      //   final ordersController = Get.find<OrdersController>();
+      //   final parsedOrder = ordersController.parseOrderResponse(syntheticResponse);
+      //   ordersController.updateExistingOrder(parsedOrder);
+      // }
+      //
+      // _clearDashboardSearch();
+      // return syntheticResponse;
       try {
         final response = await _apiService.post(
           "mobileapp/pos/update_sales_order",
@@ -1938,71 +1983,32 @@ class CartController extends GetxController {
         );
 
         if (response.statusCode == 200) {
-          dynamic data = response.data;
-          // In CartController.updateOrder(), after successful response:
+          debugPrint("✅ Order updated online: ${editingOrderId.value}");
+
+          final Map<String, dynamic> realResponse = response.data is Map
+              ? Map<String, dynamic>.from(response.data)
+              : jsonDecode(response.data);
+
           if (Get.isRegistered<OrdersController>()) {
             final ordersController = Get.find<OrdersController>();
-            final parsedOrder = ordersController.parseOrderResponse(data);
+            final parsedOrder = ordersController.parseOrderResponse(realResponse);
             ordersController.updateExistingOrder(parsedOrder);
           }
-          if (data is String) {
-            data = jsonDecode(data);
-          }
-
-          if (data is Map && data['message'] != null) {
-            final message = data['message'];
-            if (message is Map && message['status'] == 0) {
-              print(message['msg']);
-              showSafeSnackbar("Error", message['msg'] ?? "Update failed");
-              return null;
-            }
-          }
-
-          final prettyResponse = const JsonEncoder.withIndent('  ').convert(data);
-          log("✅ SUCCESS RESPONSE (updateOrder):\n$prettyResponse");
-
-          // Mark as synced locally
-          await _dbHelper.updateOrderStatusByServerId(
-            editingOrderId.value,
-            isDraft ? 'draft' : 'pending',
-            isSynced: 1,
-          );
 
           _clearDashboardSearch();
-          return data;
+          return realResponse;
+        } else {
+          showSafeSnackbar("Error", "Failed to update order. Please try again.");
+          return null;
         }
-      } catch (apiError) {
-        if (apiError is DioException && apiError.response != null) {
-          log("❌ SERVER 500 BODY: ${apiError.response?.data}");
-          log("❌ SERVER 500 HEADERS: ${apiError.response?.headers}");
-        }
-        log(
-          "⚠️ API Update Failed (Offline): $apiError. Update preserved locally.",
-        );
-        _clearDashboardSearch();
-
-        // Build a proper synthetic response so parseOrderResponse + KOT printing work
-        final syntheticResponse = _buildOfflineUpdateResponse(
-          body: body,
-          saleItems: saleItems,
-          totalWithTax: totalWithTax,
-          totalTax: totalTax,
-          isDraft: isDraft,
-          now: now,
-          isSplit: isSplit,
-          splitCount: splitCount,
-          splitAmounts: splitAmounts,
-          isCompliment: isCompliment,
-        );
-        return syntheticResponse;
+      } catch (e) {
+        log("❌ Error updating order online: $e");
+        showSafeSnackbar("Error", "No internet connection or server error.");
+        return null;
       }
-
-      return null;
     } catch (e) {
       log("❌ Error in updateOrder: $e");
       return null;
-    } finally {
-      // isProcessing.value = false; // Handled in UI for better UX
     }
   }
 
@@ -2076,9 +2082,14 @@ class CartController extends GetxController {
         "unit_display": item["salesub_unit_display"],
         "unit_base_qty": item["base_qty"],
         "cat_token_printer": _getTokenPrinterForItem(item),
+        "sales_ord_sub_cgst_rate": (item["salesub_cgst_tax_per"] as num?)?.toDouble()
+            ?? ((item["salesub_tax_per"] as num? ?? 0) / 2),
+        "sales_ord_sub_sgst_rate": (item["salesub_sgst_tax_per"] as num?)?.toDouble()
+            ?? ((item["salesub_tax_per"] as num? ?? 0) / 2),
         "is_split": isSplit,
         "split_count": splitCount,
         "split_amnt": splitAmounts,
+        "Item_descp": item["Item_descp"],
       });
     }
 
@@ -2093,6 +2104,7 @@ class CartController extends GetxController {
       "preview": {
         "sales_odr_id": null, // filled after SyncService pushes it
         "sales_odr_inv_no": null,
+        "sales_odr_branch_inv": null, // ✅ Added
         "sales_odr_date": dateStr,
         "agent_name": selectedCaptainName.value,
         "sales_odr_time": timeStr,
@@ -2181,6 +2193,10 @@ class CartController extends GetxController {
         "sales_ord_sub_is_kot_printed": 0,
         "sales_odr_sub_addon_parent_prd_id": si['addon_parent_prd_id'] ?? 0,
         "sales_odr_sub_addon_parent_unit_id": si['addon_parent_unit_id'] ?? 0,
+        "sales_ord_sub_cgst_rate": (si["salesub_cgst_tax_per"] as num?)?.toDouble()
+            ?? ((si["salesub_tax_per"] as num? ?? 0) / 2),
+        "sales_ord_sub_sgst_rate": (si["salesub_sgst_tax_per"] as num?)?.toDouble()
+            ?? ((si["salesub_tax_per"] as num? ?? 0) / 2),
         // Display fields
         "prd_name": si['prd_name'],
         "unit_display": si['salesub_unit_display'],
@@ -2188,14 +2204,14 @@ class CartController extends GetxController {
         "unit_base_qty": si['base_qty'] ?? 1.0,
         "prd_img_url": cartItem?.product.image ?? '',
         "prd_cat_id": cartItem?.product.categoryId ?? '',
-        "cat_token_printer": cartItem != null
-            ? _getTokenPrinterForItem(si)
-            : null,
+        "cat_token_printer": si['cat_token_printer'] ?? (cartItem != null ? _getTokenPrinterForItem(si) : null),
         // Aliases parseOrderResponse also reads
         "rate": si['salesub_rate'],
         "sales_ord_sub_amnt": si['salesub_amnt'],
         "salesub_qty": qty,
         "salesub_unit_id": si['salesub_unit_id'],
+        "Item_descp": si['Item_descp'],
+
       });
     }
 
@@ -2213,6 +2229,8 @@ class CartController extends GetxController {
     final String? realInvNo =
         processingTable?['sq_inv_no']?.toString() ??
         processingTable?['sales_odr_inv_no']?.toString();
+    final String? realBranchInv = 
+        processingTable?['sales_odr_branch_inv']?.toString(); // ✅ Added
 
     return {
       "status": 200,
@@ -2223,6 +2241,7 @@ class CartController extends GetxController {
       "preview": {
         "sales_odr_id": realServerId,
         "sales_odr_inv_no": realInvNo ?? editingInvNo.value,
+        "sales_odr_branch_inv": realBranchInv ?? editingBranchInv.value, // ✅ Added
         "sales_odr_date": dateStr,
         "sales_odr_time": timeStr,
         "agent_name": selectedCaptainName.value,
@@ -2233,6 +2252,7 @@ class CartController extends GetxController {
         "sales_odr_table_name": body["table_name"],
         "sales_odr_no_seats": body["no_seats"],
         "sales_odr_order_type": AppState.orderType.id,
+        "local_uuid": editingOrderId.value,
         "sales_order_sub": orderSub,
         "is_split": isSplit,
         "split_count": splitCount,

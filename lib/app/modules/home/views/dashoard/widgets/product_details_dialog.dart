@@ -17,17 +17,23 @@ import '../models/dashboard_models.dart';
 class ProductDetailsDialog extends GetView<DashboardController> {
   final FoodItemModel product;
   final CartItem? existingItem;
+  final TextEditingController _noteController;
 
-  const ProductDetailsDialog({super.key, required this.product, this.existingItem});
+  ProductDetailsDialog({super.key, required this.product, this.existingItem})
+      : _noteController = TextEditingController(text: existingItem?.note.value ?? '');
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
+    
     return AlertDialog(
       backgroundColor: colors.card,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.r)),
       titlePadding: EdgeInsets.zero,
+      // Setting scrollable to true allows the entire dialog body to scroll
+      // and automatically handles the keyboard by resizing/scrolling.
+      scrollable: true,
       title: Container(
         padding: EdgeInsets.all(16.w),
         decoration: BoxDecoration(
@@ -57,114 +63,143 @@ class ProductDetailsDialog extends GetView<DashboardController> {
       ),
       content: SizedBox(
         width: AppTypography.sizeDialogue,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Units Selection
-              Text(
-                'Select Unit',
-                style: AppTypography.cardSubtitle.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: colors.text,
-                ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Units Selection
+            Text(
+              'Select Unit',
+              style: AppTypography.cardSubtitle.copyWith(
+                fontWeight: FontWeight.bold,
+                color: colors.text,
               ),
-              SizedBox(height: 5.h),
-              Obx(() => Wrap(
-                spacing: 8.w,
-                runSpacing: 8.h,
-                children: controller.productUnits.map((unit) {
-                  final isSelected = controller.selectedUnit.value?.unitId == unit.unitId;
+            ),
+            SizedBox(height: 5.h),
+            Obx(() => Wrap(
+              spacing: 8.w,
+              runSpacing: 8.h,
+              children: controller.productUnits.map((unit) {
+                final isSelected = controller.selectedUnit.value?.unitId == unit.unitId;
 
-                  // Calculate display price based on vatType
-                  // vatType 0 = Exclusive (Price + Tax), vatType 1 = Inclusive (Price)
-                  double displayPrice = unit.rate;
-                  if (controller.vatType.value == 0) {
-                    displayPrice = unit.rate + (unit.rate * product.prd_tax / 100);
-                  }
-
-                  return ChoiceChip(
-                    label: Text("${unit.unitName} (${displayPrice.toStringAsFixed(2)})"),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      if (selected) {
-                        controller.selectedUnit.value = unit;
-                        debugPrint("Selected Unit: ${unit.unitName}");
-                        debugPrint("Base Qty: ${unit.unitBaseQty}");
-                      }
-                    },
-                    selectedColor: AppTheme.primaryGreen,
-                    backgroundColor: colors.textField,
-                    checkmarkColor: Colors.white,
-                    labelStyle: AppTypography.cardTitle.copyWith(
-                      color: isSelected ? Colors.white : colors.text,
-                      fontSize: AppTypography.smallText,
-                    ),
-                  );
-                }).toList(),
-              )),
-              Divider(height: 16, color: colors.border),
-              Obx(() {
-                final addons = (controller.selectedUnit.value?.existAddOns ?? [])
-                    .where((addon) => addon.prdaddon_flags == 1)
-                    .toList();
-
-                final common = controller.commonAddons
-                    .where((addon) => addon.prdaddon_flags == 1)
-                    .toList();
-
-                if (addons.isEmpty && common.isEmpty) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Add-ons',
-                        style: AppTypography.cardSubtitle.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colors.text,
-                        ),
-                      ),
-                      SizedBox(height: 10.h),
-                      Text(
-                        'No add-ons available',
-                        style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
-                      ),
-                    ],
-                  );
+                // Calculate display price based on vatType
+                // vatType 0 = Exclusive (Price + Tax), vatType 1 = Inclusive (Price)
+                double displayPrice = unit.rate;
+                if (controller.vatType.value == 0) {
+                  displayPrice = unit.rate + (unit.rate * product.prd_tax / 100);
                 }
 
+                return ChoiceChip(
+                  label: Text("${unit.unitName} (${displayPrice.toStringAsFixed(2)})"),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    if (selected) {
+                      controller.selectedUnit.value = unit;
+                      debugPrint("Selected Unit: ${unit.unitName}");
+                      debugPrint("Base Qty: ${unit.unitBaseQty}");
+                    }
+                  },
+                  selectedColor: AppTheme.primaryGreen,
+                  backgroundColor: colors.textField,
+                  checkmarkColor: Colors.white,
+                  labelStyle: AppTypography.cardTitle.copyWith(
+                    color: isSelected ? Colors.white : colors.text,
+                    fontSize: AppTypography.smallText,
+                  ),
+                );
+              }).toList(),
+            )),
+            Divider(height: 16, color: colors.border),
+            Obx(() {
+              final addons = (controller.selectedUnit.value?.existAddOns ?? [])
+                  .where((addon) => addon.prdaddon_flags == 1)
+                  .toList();
+
+              final common = controller.commonAddons
+                  .where((addon) => addon.prdaddon_flags == 1)
+                  .toList();
+
+              if (addons.isEmpty && common.isEmpty) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (addons.isNotEmpty) ...[
-                      Text(
-                        'Add-ons',
-                        style: AppTypography.cardSubtitle.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colors.text,
-                        ),
+                    Text(
+                      'Add-ons',
+                      style: AppTypography.cardSubtitle.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: colors.text,
                       ),
-                      SizedBox(height: 5.h),
-                      ...addons.map((addon) => _buildAddonQuantityItem(addon, colors)),
-                    ],
-                    if (common.isNotEmpty) ...[
-                      if (addons.isNotEmpty) Divider(height: 12, color: colors.border),
-                      Text(
-                        'Paid add ons',
-                        style: AppTypography.cardSubtitle.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colors.text,
-                        ),
-                      ),
-                      SizedBox(height: 5.h),
-                      ...common.map((addon) => _buildAddonQuantityItem(addon, colors)),
-                    ],
+                    ),
+                    SizedBox(height: 10.h),
+                    Text(
+                      'No add-ons available',
+                      style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+                    ),
                   ],
                 );
-              }),
-            ],
-          ),
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (addons.isNotEmpty) ...[
+                    Text(
+                      'Add-ons',
+                      style: AppTypography.cardSubtitle.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: colors.text,
+                      ),
+                    ),
+                    SizedBox(height: 5.h),
+                    ...addons.map((addon) => _buildAddonQuantityItem(addon, colors)),
+                  ],
+                  if (common.isNotEmpty) ...[
+                    if (addons.isNotEmpty) Divider(height: 12, color: colors.border),
+                    Text(
+                      'Paid add ons',
+                      style: AppTypography.cardSubtitle.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: colors.text,
+                      ),
+                    ),
+                    SizedBox(height: 5.h),
+                    ...common.map((addon) => _buildAddonQuantityItem(addon, colors)),
+                  ],
+                  Divider(height: 16, color: colors.border),
+
+                ],
+              );
+            }),
+            SizedBox(height: 10.h),
+            Text(
+              'Note',
+              style: AppTypography.cardSubtitle.copyWith(
+                fontWeight: FontWeight.bold,
+                color: colors.text,
+              ),
+            ),
+            SizedBox(height: 5.h),
+            TextField(
+              controller: _noteController,
+              maxLines: 2,
+              maxLength: 100,
+              // Ensuring the field remains visible when keyboard is open
+              scrollPadding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 20),
+              style: AppTypography.cardSubtitle.copyWith(color: colors.text),
+              decoration: InputDecoration(
+                hintText: 'Add notes here',
+                hintStyle: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+                filled: true,
+                fillColor: colors.textField,
+                contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8.r),
+                  borderSide: BorderSide.none,
+                ),
+                counterText: '',
+              ),
+            ),
+          ],
         ),
       ),
       actions: [
@@ -205,9 +240,9 @@ class ProductDetailsDialog extends GetView<DashboardController> {
                 }
 
                 if (existingItem != null) {
-                  cartController.updateItemDetails(existingItem!, selectedUnit, selectedAddons);
+                  cartController.updateItemDetails(existingItem!, selectedUnit, selectedAddons,note: _noteController.text.trim());
                 } else {
-                  cartController.addItemWithDetails(product, selectedUnit, selectedAddons);
+                  cartController.addItemWithDetails(product, selectedUnit, selectedAddons,note: _noteController.text.trim());
                 }
 
               } catch (e) {

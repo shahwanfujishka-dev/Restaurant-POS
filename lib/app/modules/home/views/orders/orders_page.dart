@@ -302,6 +302,7 @@ void _showOrderDetailsDialog(
         final String displayIdentifier = currentOrder.status.value == OrderStatus.paid
             ? _getOrderTypeName(currentOrder.sales_odr_order_type)
             : currentOrder.tableName;
+        final isVatDisabled = dashboardController.vatType.value == 1;
 
         // Calculate subtotal from items to ensure accuracy
         double calculatedSubtotal = 0;
@@ -335,7 +336,7 @@ void _showOrderDetailsDialog(
                             color: colors.subtext,
                           ),
                           children: [
-                            TextSpan(text: 'Inv: #${currentOrder.invNo} • '),
+                            TextSpan(text: 'Inv: #${_formatInvNo(currentOrder)} • '),
                             TextSpan(
                               text: displayIdentifier,
                               style: TextStyle(
@@ -364,14 +365,15 @@ void _showOrderDetailsDialog(
                                 0, // change
                                 roundOff: currentOrder.roundOff,    // ← add this
                                 discount: currentOrder.discount,    // ← add this
-                              );                            } else {
+                              );
+                            } else {
                               printerController.printKOT(currentOrder);
                             }
                           },
                           icon: const Icon(Icons.print, color: Colors.blue),
                           tooltip: 'print_kot'.tr,
                         ),
-                      if (currentOrder.sales_odr_pos_status == 1 || currentOrder.sales_odr_pos_status == 2 && currentOrder.status.value != OrderStatus.paid)
+                      if ((currentOrder.sales_odr_pos_status == 1 || currentOrder.sales_odr_pos_status == 2) && currentOrder.status.value != OrderStatus.paid)
                         IconButton(
                           onPressed: () {
                             final printerController = Get.find<PrinterController>();
@@ -503,7 +505,9 @@ void _showOrderDetailsDialog(
                     if (currentOrder.totalTax > 0 && AppState.cmpTaxType == 1)...[
                       _buildDetailRow(context, 'Tax', currentOrder.totalTax, colors.text, bold: false),
                     ] else ...[
+                      (isVatDisabled) ? const SizedBox.shrink() :
                       _buildDetailRow(context, 'SGST', (currentOrder.totalTax/2), colors.text, bold: false),
+                      (isVatDisabled) ? const SizedBox.shrink() :
                       _buildDetailRow(context, 'CGST',( currentOrder.totalTax/2), colors.text, bold: false),
                     ],
                     if (currentOrder.roundOff != 0)
@@ -682,7 +686,7 @@ class _MobileOrderCard extends StatelessWidget {
                         ),
                         SizedBox(height: 4.h),
                         Text(
-                          'Inv: #${order.invNo}${order.chairNumber > 0 ? " • Chair ${order.chairNumber}" : ""}',
+                          'Inv: #${order.branchInv}${order.chairNumber > 0 ? " • Chair ${order.chairNumber}" : ""}',
                           style: AppTypography.cardSubtitle.copyWith(
                             color: colors.subtext,
                           ),
@@ -873,7 +877,7 @@ class _OrderTicket extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'Inv: #${order.invNo}',
+                          'Inv: #${order.branchInv}',
                           style: AppTypography.cardSubtitle.copyWith(
                             fontWeight: FontWeight.bold,
                             color: colors.text,
@@ -1111,7 +1115,7 @@ class _OrderDetailsContent extends StatelessWidget {
         final String displayIdentifier = currentOrder.status.value == OrderStatus.paid
             ? _getOrderTypeName(currentOrder.sales_odr_order_type)
             : currentOrder.tableName;
-
+        final isVatDisabled = dashboardController.vatType.value == 1;
         // Calculate subtotal from items to ensure accuracy
         double calculatedSubtotal = 0;
         for (var item in currentOrder.items) {
@@ -1151,7 +1155,7 @@ class _OrderDetailsContent extends StatelessWidget {
                           color: colors.subtext,
                         ),
                         children: [
-                          TextSpan(text: 'Inv: #${currentOrder.invNo} • '),
+                          TextSpan(text: 'Inv: #${order.branchInv} • '),
                           TextSpan(
                             text: displayIdentifier,
                             style: TextStyle(
@@ -1325,8 +1329,12 @@ class _OrderDetailsContent extends StatelessWidget {
                   if (dashboardController.vatType.value == 0 || currentOrder.totalTax > 0)
                     _buildDetailRow(context, 'Tax', currentOrder.totalTax, colors.text, bold: false, fontSize: isMobile ? 14.sp : 10.sp),
                   ]else ...[
+                    (isVatDisabled)
+                        ? const SizedBox.shrink():
                     _buildDetailRow(context, 'SGST', (currentOrder.totalTax/2), colors.text, bold: false, fontSize: isMobile ? 14.sp : 10.sp
                     ),
+                    (isVatDisabled)
+                        ? const SizedBox.shrink():
                     _buildDetailRow(context, 'CGST',( currentOrder.totalTax/2), colors.text, bold: false, fontSize: isMobile ? 14.sp : 10.sp)
                   ]
                   ,if (currentOrder.roundOff != 0)
@@ -1373,4 +1381,19 @@ String _getOrderTypeName(int type) {
     default:
       return 'Other';
   }
+}
+
+String _formatInvNo(OrderModel order) {
+  if (order.offlineSeq != null) {
+    final branch = AppState.branchDisName.isNotEmpty
+        ? AppState.branchDisName
+        : AppState.branchName;
+    return "$branch ${order.offlineSeq.toString().padLeft(3, '0')}";
+  }
+  if (order.invNo.isNotEmpty &&
+      order.invNo != "LOCAL" &&
+      order.invNo != "OFFLINE") {
+    return order.branchInv.toString();
+  }
+  return order.branchInv.toString();
 }

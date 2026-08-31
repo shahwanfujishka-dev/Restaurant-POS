@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -5,6 +7,8 @@ import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 
 import 'app/data/services/api_services.dart';
+import 'app/data/services/database_helper.dart';
+import 'app/data/services/local_hub_server.dart';
 import 'app/data/services/sync_service.dart';
 import 'app/data/translations/app_translations.dart';
 import 'app/data/utils/AppState.dart';
@@ -15,7 +19,7 @@ import 'app/theme/theme_controller.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await GetStorage.init();
-
+  await LocalHubServer.instance.start();
   final apiService = Get.put(ApiService(), permanent: true);
   Get.put(SyncService(), permanent: true);
 
@@ -24,9 +28,7 @@ void main() async {
   final storage = GetStorage();
   String initialRoute = AppPages.INITIAL;
   bool sessionExpired = false;
-
   if (AppState.isLoggedIn) {
-    // If a previous sync was interrupted, force resync
     if (AppState.isSyncInProgress) {
       initialRoute = Routes.SYNC;
     } else {
@@ -42,9 +44,10 @@ void main() async {
         );
 
         if (response.statusCode == 200 && response.data['status'] == 200) {
-          print(response.data);
-          initialRoute = Routes.ORDER_TYPE;
+          log("Main: Session active. App State UPI: ${AppState.upiId}");
+          initialRoute = Routes.HOME;
         } else {
+          log("Main: Session check failed (${response.data['status']}), clearing data.");
           await AppState.clearAllData();
           sessionExpired = true;
         }
@@ -52,20 +55,32 @@ void main() async {
         if (e is DioException &&
             (e.response?.statusCode == 403 ||
                 e.type == DioExceptionType.badResponse)) {
+          log("Main: Session forbidden or bad response, clearing data.");
           await AppState.clearAllData();
           sessionExpired = true;
         } else {
-          // Offline / timeout — allow in with cached data
-          initialRoute = Routes.ORDER_TYPE;
+          log("Main: Network error during session check, allowing offline access.");
+          initialRoute = Routes.HOME;
         }
       }
     }
   }
 
+  if (AppState.upiId.isEmpty) {
+    final dbUpi = await DatabaseHelper.instance.getSetting('as_upi_id');
+    if (dbUpi != null && dbUpi.isNotEmpty) {
+      storage.write('as_upi_id', dbUpi);
+      log("Main: Restored UPI ID from Database: $dbUpi");
+    }
+    final dbUpiEnable = await DatabaseHelper.instance.getSetting('as_upi_enable');
+    if (dbUpiEnable != null) {
+      storage.write('as_upi_enable', int.tryParse(dbUpiEnable) ?? 0);
+    }
+  }
   if (sessionExpired) {
     storage.write('session_expired_flag', true);
   }
-
+  // print("UPI: ${AppState.upiId}");
   runApp(MyApp(
     initialRoute: initialRoute,
     themeController: themeController,

@@ -26,7 +26,7 @@ class CashierWidgets {
         child: Container(
           width: double.infinity,
           margin: EdgeInsets.only(bottom: 6.h),
-          padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
+          padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 16.h),
           decoration: BoxDecoration(
             color: isSelected
                 ? AppTheme.primaryGreen.withOpacity(0.1)
@@ -42,6 +42,7 @@ class CashierWidgets {
             style: AppTypography.cardSubtitle.copyWith(
               color: isSelected ? AppTheme.primaryGreen : colors.text,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+              fontSize: 7.sp
             ),
           ),
         ),
@@ -110,7 +111,8 @@ class CashierWidgets {
       dynamic colors,
       ) {
     return Obx(() {
-      // final isCredit = paymentMethod.value == 'Credit';
+      final isCard = paymentMethod.value == 'Card';
+      final isCredit = paymentMethod.value == 'Credit';
       final isSelectEnabled = isCustomerSelectEnabled.value;
 
       return Container(
@@ -137,11 +139,12 @@ class CashierWidgets {
                           color: colors.subtext,
                           fontWeight: FontWeight.w600,
                           letterSpacing: 0.5,
+                          fontSize: AppTypography.sizeText
                         ),
                       ),
                     ],
                   ),
-                  // if (!isCredit)
+                  if (isCard || isCredit)
                     CupertinoSwitch(
                       value: isSelectEnabled,
                       onChanged: (val) => isCustomerSelectEnabled.value = val,
@@ -157,6 +160,8 @@ class CashierWidgets {
               child: ( isSelectEnabled)
                   ? Column(
                 children: [
+                  minimalCustomerField("Mobile", customerMobileController, colors,Keyboard: TextInputType.number),
+                  SizedBox(height: 8.h),
                   minimalCustomerSelector(
                     selectedCustomer,
                     customers,
@@ -164,25 +169,24 @@ class CashierWidgets {
                     colors,
                   ),
                   SizedBox(height: 10.h),
-                  minimalCustomerField("Mobile", customerMobileController, colors),
+                  minimalCustomerField("VAT", customerVatController, colors,Keyboard: TextInputType.phone),
                   SizedBox(height: 8.h),
-                  minimalCustomerField("VAT", customerVatController, colors),
-                  SizedBox(height: 8.h),
-                  minimalCustomerField("Address", customerAddressController, colors, maxLines: 1),
+                  minimalCustomerField("Address", customerAddressController, colors, maxLines: 1,Keyboard: TextInputType.text),
                 ],
               )
                   : Column(
                 children: [
+                  minimalCustomerField("Mobile", customerMobileController, colors,Keyboard: TextInputType.number),
+                  SizedBox(height: 8.h),
                   minimalCustomerField(
                     "Customer",
                     customerNameController,
                     colors,
-                    isReadOnly: false,
+                    isReadOnly: false,Keyboard: TextInputType.text
                   ),
                   SizedBox(height: 10.h),
-                  minimalCustomerField("Mobile", customerMobileController, colors),
-                  SizedBox(height: 8.h),
-                  minimalCustomerField("Address", customerAddressController, colors, maxLines: 1),
+
+                  minimalCustomerField("Address", customerAddressController, colors, maxLines: 1,Keyboard: TextInputType.text),
                 ],
               ),
             ),
@@ -219,7 +223,7 @@ class CashierWidgets {
                 selectedCustomer.value?['name'] ?? "Select Customer",
                 style: AppTypography.cardSubtitle.copyWith(
                   color: selectedCustomer.value != null ? colors.text : colors.subtext,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w500,fontSize: AppTypography.sizeText
                 ),
               )),
             ),
@@ -238,7 +242,7 @@ class CashierWidgets {
       TextEditingController ctrl,
       dynamic colors, {
         int maxLines = 1,
-        bool isReadOnly = false,
+        bool isReadOnly = false, required TextInputType Keyboard,
       }) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
@@ -255,7 +259,7 @@ class CashierWidgets {
               label,
               style: AppTypography.cardInfo.copyWith(
                 color: colors.subtext,
-                fontSize: AppTypography.smallText,
+                  fontSize: AppTypography.sizeText
               ),
             ),
           ),
@@ -264,16 +268,17 @@ class CashierWidgets {
               controller: ctrl,
               readOnly: isReadOnly,
               maxLines: maxLines,
+              keyboardType: Keyboard,
               style: AppTypography.cardSubtitle.copyWith(
                 color: colors.text,
-                fontSize: AppTypography.smallText,
+                  fontSize: AppTypography.sizeText
               ),
               decoration: InputDecoration(
                 isDense: true,
                 contentPadding: EdgeInsets.symmetric(vertical: 8.h),
                 border: InputBorder.none,
                 hintText: isReadOnly ? "Cash Customer" : "Enter $label",
-                hintStyle: AppTypography.cardInfo.copyWith(color: colors.subtext.withOpacity(0.5)),
+                hintStyle: AppTypography.cardInfo.copyWith(color: colors.subtext.withOpacity(0.5),fontSize: AppTypography.sizeText),
               ),
             ),
           ),
@@ -297,8 +302,8 @@ class CashierWidgets {
         Text(
           label,
           style: isTotal
-              ? AppTypography.cardTitle.copyWith(color: colors.text)
-              : AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+              ? AppTypography.cardTitle.copyWith(color: colors.text,fontSize: AppTypography.sizeText)
+              : AppTypography.cardSubtitle.copyWith(color: colors.subtext,fontSize: AppTypography.sizeText),
         ),
         Text(
           value,
@@ -309,12 +314,13 @@ class CashierWidgets {
           )
               : AppTypography.cardSubtitle.copyWith(
             color: colors.text,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w600,fontSize: AppTypography.sizeText
           ),
         ),
       ],
     );
   }
+
 
   // ─────────────────────────────────────────────
   // MINIMAL DISCOUNT INPUT
@@ -328,12 +334,12 @@ class CashierWidgets {
       children: [
         Text(
           "Discount",
-          style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+          style: AppTypography.cardSubtitle.copyWith(color: colors.subtext,fontSize: AppTypography.sizeText),
         ),
-        SizedBox(width: 8.w),
+        SizedBox(width: ScreenType.isMobile() ? 8.w: 120.w),
         Expanded(
           child: SizedBox(
-            height: 32.h,
+            height: 30.h,
             child: TextField(
               controller: discountController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -346,11 +352,11 @@ class CashierWidgets {
               textAlign: TextAlign.right,
               style: AppTypography.cardSubtitle.copyWith(
                 color: colors.text,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.bold,fontSize: AppTypography.sizeText
               ),
               decoration: InputDecoration(
                 hintText: "0.00",
-                contentPadding: EdgeInsets.symmetric(horizontal: 8.w),
+                contentPadding: EdgeInsets.symmetric(horizontal: 0.w),
                 filled: true,
                 fillColor: colors.bg,
                 border: OutlineInputBorder(
@@ -387,7 +393,7 @@ class CashierWidgets {
       children: [
         Text(
           "Round Off",
-          style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+          style: AppTypography.cardSubtitle.copyWith(color: colors.subtext,fontSize: AppTypography.sizeText),
         ),
         SizedBox(width: 8.w),
         Expanded(
@@ -409,7 +415,7 @@ class CashierWidgets {
                     textAlign: TextAlign.center,
                     style: AppTypography.cardSubtitle.copyWith(
                       color: colors.text,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.bold,fontSize: AppTypography.sizeText
                     ),
                     decoration: InputDecoration(
                       hintText: "0.00",
@@ -460,6 +466,97 @@ class CashierWidgets {
   // ─────────────────────────────────────────────
   // INPUT FIELD ROW
   // ─────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+// CASH RECEIVED ROW (styled like splitSummaryRow)
+// ─────────────────────────────────────────────
+  static Widget cashReceivedRow(
+      TextEditingController ctrl,
+      Function(String) onChg,
+      RxDouble receivedAmount,
+      double totalToPay,
+      dynamic colors, {
+        bool readOnly = false,
+      }) {
+    return Obx(() {
+      final bool sufficient = receivedAmount.value >= totalToPay;
+      final double change = (receivedAmount.value - totalToPay).clamp(0, double.infinity);
+
+      return Container(
+        padding: EdgeInsets.symmetric(horizontal: 6.w),
+        decoration: BoxDecoration(
+          color: sufficient
+              ? AppTheme.primaryGreen.withOpacity(0.1)
+              : Colors.red.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8.r),
+          border: Border.all(
+            color: sufficient ? AppTheme.primaryGreen : Colors.red,
+          ),
+        ),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "Cash Received",
+                  style: AppTypography.cardSubtitle.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colors.text,
+                    fontSize: AppTypography.sizeText
+                  ),
+                ),
+                SizedBox(
+                  width: 120.w,
+                  height: 28.h,
+                  child: TextField(
+                    controller: ctrl,
+                    readOnly: readOnly,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: readOnly ? null : onChg,
+                    textAlign: TextAlign.right,
+                    style: AppTypography.cardSubtitle.copyWith(
+                      color: sufficient ? AppTheme.primaryGreen : Colors.red,
+                      fontWeight: FontWeight.bold,fontSize: AppTypography.sizeText
+                    ),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      contentPadding: EdgeInsets.zero,
+                      border: InputBorder.none,
+                      hintText: "0.00",
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (change > 0) ...[
+              Divider(height: 1, color: colors.border.withOpacity(0.3)),
+              SizedBox(height: 4.h),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    "Change",
+                    style: AppTypography.cardSubtitle.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primaryGreen,fontSize: AppTypography.sizeText
+                    ),
+                  ),
+                  Text(
+                    change.toStringAsFixed(2),
+                    style: AppTypography.cardSubtitle.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primaryGreen,fontSize: AppTypography.sizeText
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      );
+    });
+  }
+
   static Widget inputFieldRow(
       String label,
       TextEditingController ctrl,
@@ -468,54 +565,54 @@ class CashierWidgets {
         bool isNumber = false,
         bool readOnly = false,
       }) {
-    return Row(
-      children: [
-        Expanded(
-          flex: 4,
-          child: Text(
-            label,
-            style: AppTypography.cardSubtitle.copyWith(
-              color: readOnly ? colors.subtext : colors.text,
-              fontWeight: FontWeight.w600,
+    return SizedBox(
+      height: 40.h,
+      child: TextField(
+        controller: ctrl,
+        readOnly: readOnly,
+        keyboardType: TextInputType.numberWithOptions(
+          decimal: !isNumber,
+        ),
+        onChanged: readOnly ? null : onChg,
+        textAlign: TextAlign.right,
+        style: AppTypography.cardTitle.copyWith(
+          color: readOnly ? colors.subtext : colors.text,
+        ),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: AppTypography.cardSubtitle.copyWith(
+            color: readOnly ? colors.subtext : colors.text,
+          ),
+          floatingLabelStyle: TextStyle(
+            color: readOnly
+                ? colors.subtext
+                : AppTheme.primaryGreen,
+          ),
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: 12.w,
+          ),
+          filled: true,
+          fillColor: colors.card,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8.r),
+            borderSide: BorderSide(
+              color: colors.border,
+            ),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8.r),
+            borderSide: BorderSide(
+              color: colors.border,
+            ),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8.r),
+            borderSide: const BorderSide(
+              color: AppTheme.primaryGreen,
             ),
           ),
         ),
-        Expanded(
-          flex: 6,
-          child: SizedBox(
-            height: 40.h,
-            child: TextField(
-              controller: ctrl,
-              readOnly: readOnly,
-              keyboardType: TextInputType.numberWithOptions(decimal: !isNumber),
-              onChanged: readOnly ? null : onChg,
-              textAlign: TextAlign.right,
-              style: AppTypography.cardTitle.copyWith(
-                color: readOnly ? colors.subtext : colors.text,
-              ),
-              decoration: InputDecoration(
-                contentPadding: EdgeInsets.symmetric(horizontal: 12.w),
-                filled: true,
-                fillColor: colors.card,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8.r),
-                  borderSide: BorderSide(color: colors.border),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8.r),
-                  borderSide: BorderSide(color: colors.border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8.r),
-                  borderSide: BorderSide(
-                    color: readOnly ? colors.border : AppTheme.primaryGreen,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -536,7 +633,7 @@ class CashierWidgets {
           label,
           style: AppTypography.cardSubtitle.copyWith(
             color: colors.subtext,
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w500,fontSize: AppTypography.sizeText
           ),
         ),
         SizedBox(height: 6.h),
@@ -567,7 +664,7 @@ class CashierWidgets {
                   acc['ledger_name'] ?? "",
                   style: AppTypography.cardSubtitle.copyWith(
                     color: colors.text,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w500,fontSize: AppTypography.sizeText
                   ),
                 ),
               ))
@@ -599,7 +696,7 @@ class CashierWidgets {
             label,
             style: AppTypography.cardSubtitle.copyWith(
               color: readOnly ? colors.subtext : colors.text,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w600,fontSize: AppTypography.sizeText
             ),
           ),
         ),
@@ -615,7 +712,7 @@ class CashierWidgets {
               textAlign: TextAlign.right,
               style: AppTypography.cardSubtitle.copyWith(
                 color: readOnly ? colors.subtext : highlightColor,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.bold,fontSize: AppTypography.sizeText
               ),
               decoration: InputDecoration(
                 hintText: "0.00",
@@ -690,7 +787,7 @@ class CashierWidgets {
               isValid ? "Change" : "Remaining",
               style: AppTypography.cardSubtitle.copyWith(
                 color: isValid ? AppTheme.primaryGreen : Colors.orange.shade800,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w600,fontSize: AppTypography.sizeText
               ),
             ),
             Text(
@@ -699,7 +796,7 @@ class CashierWidgets {
                   : remaining.toStringAsFixed(2),
               style: AppTypography.cardSubtitle.copyWith(
                 color: isValid ? AppTheme.primaryGreen : Colors.orange.shade800,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.bold,fontSize: AppTypography.sizeText
               ),
             ),
           ],
@@ -711,59 +808,53 @@ class CashierWidgets {
   // ─────────────────────────────────────────────
   // SPLIT AMOUNT EDIT ROW
   // ─────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+// SPLIT AMOUNT EDIT ROW (aligned to match inputFieldRow / Grand Total)
+// ─────────────────────────────────────────────
   static Widget splitAmountEditRow(
       int index,
       TextEditingController ctrl,
       Function(String) onChg,
       dynamic colors,
       ) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 8.h),
-      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
-      decoration: BoxDecoration(
-        color: colors.card,
-        borderRadius: BorderRadius.circular(8.r),
-        border: Border.all(color: colors.border.withOpacity(0.5)),
-      ),
+    return Padding(
+      padding: EdgeInsets.only(bottom: 8.h),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Expanded(
-            flex: 4,
-            child: Text(
-              "Person ${index + 1}",
-              style: AppTypography.cardSubtitle.copyWith(color: colors.text),
-            ),
+          Text(
+            "Person ${index + 1}",
+            style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
           ),
-          Expanded(
-            flex: 6,
-            child: SizedBox(
-              height: 36.h,
-              child: TextField(
-                controller: ctrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                onChanged: onChg,
-                textAlign: TextAlign.right,
-                style: AppTypography.cardTitle.copyWith(
-                  color: AppTheme.primaryGreen,
-                  fontWeight: FontWeight.bold,
-                  fontSize: AppTypography.smallText,
+          SizedBox(
+            width: 120.w,
+            height: 32.h,
+            child: TextField(
+              controller: ctrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              onChanged: onChg,
+              textAlign: TextAlign.right,
+              style: AppTypography.cardSubtitle.copyWith(
+                color: AppTheme.primaryGreen,
+                fontWeight: FontWeight.bold,
+              ),
+              decoration: InputDecoration(
+                hintText: "0.00",
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 6.h),
+                filled: true,
+                fillColor: colors.bg,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6.r),
+                  borderSide: BorderSide(color: colors.border),
                 ),
-                decoration: InputDecoration(
-                  contentPadding: EdgeInsets.symmetric(horizontal: 10.w),
-                  filled: true,
-                  fillColor: colors.bg,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6.r),
-                    borderSide: BorderSide(color: colors.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6.r),
-                    borderSide: BorderSide(color: colors.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6.r),
-                    borderSide: const BorderSide(color: AppTheme.primaryGreen),
-                  ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6.r),
+                  borderSide: BorderSide(color: colors.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6.r),
+                  borderSide: const BorderSide(color: AppTheme.primaryGreen),
                 ),
               ),
             ),
@@ -772,7 +863,6 @@ class CashierWidgets {
       ),
     );
   }
-
   // ─────────────────────────────────────────────
   // SPLIT SUMMARY ROW
   // ─────────────────────────────────────────────
@@ -803,10 +893,10 @@ class CashierWidgets {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(diff > 0 ? "Under by" : "Over by", 
-                  style: AppTypography.cardInfo.copyWith(color: Colors.red, fontWeight: FontWeight.bold)),
-                Text(diff.abs().toStringAsFixed(2), 
-                  style: AppTypography.cardInfo.copyWith(color: Colors.red, fontWeight: FontWeight.bold)),
+                Text(diff > 0 ? "Under by" : "Over by",
+                    style: AppTypography.cardInfo.copyWith(color: Colors.red, fontWeight: FontWeight.bold)),
+                Text(diff.abs().toStringAsFixed(2),
+                    style: AppTypography.cardInfo.copyWith(color: Colors.red, fontWeight: FontWeight.bold)),
               ],
             ),
           ]

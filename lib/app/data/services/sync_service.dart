@@ -8,6 +8,7 @@ import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_rx/src/rx_types/rx_types.dart';
 import 'package:get/get_state_manager/src/rx_flutter/rx_disposable.dart';
+import 'package:get_storage/get_storage.dart';
 
 import '../../modules/cart/controller/cart_controller.dart';
 import '../utils/AppState.dart';
@@ -234,6 +235,10 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         _apiService.post('mobileapp/sales/get_all_captains', data: {
           "usr_id": userId,
         }).catchError((e) { log("SyncService: Error in mobileapp/sales/get_all_captains: $e"); throw e; }),
+
+        _apiService.post('mobileapp/general_settings/get_upi_enable_status_and_upi_id', data: {
+          "usr_id" : userId,
+        }).catchError((e) { log("SyncService: Error in UPI settings: $e"); throw e; }),
       ]);
 
       masterSyncProgress.value = 0.1;
@@ -245,6 +250,33 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       final cashAccResponse   = apiResults[4];
       final bankAccResponse   = apiResults[5];
       final captainsResponse  = apiResults[6];
+      final upiResponse       = apiResults[7];
+
+      // Save UPI Settings
+      if (upiResponse.statusCode == 200) {
+        var upiData = upiResponse.data['data'];
+        if (upiData is List && upiData.isNotEmpty) {
+          upiData = upiData.first;
+        }
+        if (upiData != null && upiData is Map) {
+          final storage = GetStorage();
+          int upiEnable = 0;
+          if (upiData['as_upi_enable'] is int) {
+            upiEnable = upiData['as_upi_enable'];
+          } else if (upiData['as_upi_enable'] != null) {
+            upiEnable = int.tryParse(upiData['as_upi_enable'].toString()) ?? 0;
+          }
+          final upiId = upiData['as_upi_id']?.toString() ?? '';
+
+          storage.write('as_upi_enable', upiEnable);
+          storage.write('as_upi_id', upiId);
+          
+          await _dbHelper.saveSetting('as_upi_enable', upiEnable.toString());
+          await _dbHelper.saveSetting('as_upi_id', upiId);
+          
+          log("SyncService: Saved UPI Settings: Enable=$upiEnable, ID=$upiId");
+        }
+      }
 
       // Save VAT type
       if (vatResponse.statusCode == 200) {
@@ -519,6 +551,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           'unit_display':   (json['unit_display']     ?? '').toString(),
           'tax_cat_id':     (json['prd_tax_cat_id']   as num? ?? 0).toInt(),
           'tax_per':        (json['tax_per']           as num? ?? 0.0).toDouble(),
+          'is_veg':         int.tryParse(json['prd_is_veg']?.toString() ?? "0") ?? 0,
           'sort_order':     i,
         });
 
@@ -596,7 +629,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           return;
         }
       }
-      log("SyncService: About to POST ${payload?.length ?? 'null'} items to $endpoint");
+      log("SyncService: About to POST ${payload.length} items to $endpoint");
       log("SyncService: Full payload sale_items: ${jsonEncode(payload['sale_items'])}");
       final response = await _apiService.post(endpoint, data: payload);
 
@@ -628,6 +661,10 @@ class SyncService extends GetxService with WidgetsBindingObserver {
                   preview?['sales_odr_inv_no']?.toString() ??
                   data['inv_no']?.toString() ??
                   data['sales_odr_inv_no']?.toString();
+                  
+          final String? branchInv =
+              preview?['sales_odr_branch_inv']?.toString() ??
+                  data['sales_odr_branch_inv']?.toString(); // ✅ Added
 
           if (serverId.isNotEmpty && serverId != '0') {
             await _dbHelper.updateOrderStatusByUuid(
@@ -636,8 +673,9 @@ class SyncService extends GetxService with WidgetsBindingObserver {
               isSynced: 1,
               serverId: serverId,
               invNo: invNo,
+              branchInv: branchInv, // ✅ Added
             );
-            log("SyncService: ✅ Synced $uuid → serverId: $serverId, invNo: $invNo");
+            log("SyncService: ✅ Synced $uuid → serverId: $serverId, invNo: $invNo, branchInv: $branchInv");
           } else {
             log("SyncService: ⚠️ Server returned 200 but no serverId for $uuid — will retry");
             log("SyncService: Response keys were: ${data.keys.toList()}");
@@ -730,6 +768,8 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       }
 
       log("SyncService: Sending settlement for order $serverId...");
+      print("🚀 Settlement API URL: ${_apiService.baseUrl}mobileapp/pos/settle_sales_order");
+
       final response = await _apiService.post("mobileapp/pos/settle_sales_order", data: body);
 
       if (response.statusCode == 200) {
@@ -740,6 +780,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       log("SyncService: ❌ Payment sync failed: $e");
     }
   }
+
   int _payloadUserId(Map<String, dynamic> order) {
     try {
       if (order['payload'] != null) {

@@ -7,12 +7,14 @@ import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_navigation/src/extension_navigation.dart';
 import 'package:get/get_rx/src/rx_types/rx_types.dart';
 import 'package:get/get_state_manager/src/simple/get_controllers.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:intl/intl.dart';
 import '../../../data/services/api_services.dart';
 import '../../../data/services/database_helper.dart';
 import '../../../data/utils/AppState.dart';
 import '../../../routes/app_pages.dart';
 import '../../cart/controller/cart_controller.dart';
+import '../../../../helper/screen_type.dart';
 
 class SyncController extends GetxController {
   final ApiService _apiService = Get.find<ApiService>();
@@ -175,6 +177,9 @@ class SyncController extends GetxController {
         _apiService.post('mobileapp/sales/get_all_captains', data: {
           "usr_id": userId,
         }),
+        _apiService.post('mobileapp/general_settings/get_upi_enable_status_and_upi_id', data: {
+          "usr_id" : userId,
+        }),
       ]);
 
       progress.value = 0.10;
@@ -189,6 +194,37 @@ class SyncController extends GetxController {
       final soldOrdersResponse = apiResults[6];
       final customerResponse = apiResults[7];
       final captainsResponse = apiResults[8];
+      final upiResponse      = apiResults[9];
+
+      // Save UPI Settings
+      log("SyncController: UPI API Response: ${upiResponse.data}");
+      if (upiResponse.statusCode == 200) {
+        var upiData = upiResponse.data['data'];
+        if (upiData is List && upiData.isNotEmpty) {
+          upiData = upiData.first;
+        }
+        if (upiData != null && upiData is Map) {
+          final storage = GetStorage();
+          int upiEnable = 0;
+          if (upiData['as_upi_enable'] is int) {
+            upiEnable = upiData['as_upi_enable'];
+          } else if (upiData['as_upi_enable'] != null) {
+            upiEnable = int.tryParse(upiData['as_upi_enable'].toString()) ?? 0;
+          }
+          final upiId = upiData['as_upi_id']?.toString() ?? '';
+
+          storage.write('as_upi_enable', upiEnable);
+          storage.write('as_upi_id', upiId);
+
+          // Also save to Database for redundancy
+          await _dbHelper.saveSetting('as_upi_enable', upiEnable.toString());
+          await _dbHelper.saveSetting('as_upi_id', upiId);
+
+          log("SyncController: Saved UPI Settings: Enable=$upiEnable, ID=$upiId");
+        } else {
+          log("SyncController: UPI Data was null or not a Map/List.");
+        }
+      }
 
       // Save Customers
       if (customerResponse.statusCode == 200) {
@@ -331,7 +367,7 @@ class SyncController extends GetxController {
       statusMessage.value = "Sync complete!";
       AppState.isSyncInProgress = false;
       await Future.delayed(const Duration(milliseconds: 500));
-      Get.offAllNamed(Routes.ORDER_TYPE);
+      Get.offAllNamed(ScreenType.isMobile() ? Routes.ORDER_TYPE : Routes.HOME);
 
     } catch (e) {
       log("Sync Error: $e");
@@ -485,6 +521,7 @@ class SyncController extends GetxController {
           'unit_display':   (json['unit_display']     ?? '').toString(),
           'tax_cat_id':     (json['prd_tax_cat_id']   as num? ?? 0).toInt(),
           'tax_per':        (json['tax_per']           as num? ?? 0.0).toDouble(),
+          'is_veg':         int.tryParse(json['prd_is_veg']?.toString() ?? "0") ?? 0,
           'sort_order':     i,
         });
 
