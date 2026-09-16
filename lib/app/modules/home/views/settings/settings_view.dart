@@ -21,55 +21,55 @@ class SettingsView extends GetView<SettingsController> {
       backgroundColor: colors.bg,
       appBar: AppBar(title: Text('settings'.tr),backgroundColor: colors.isDark?Colors.black:Colors.white,),
       body: ListView(
-        padding: EdgeInsets.all(16.w),
+        padding: EdgeInsets.all(8.w),
         children: [
           // ============================================================
           // OPERATION MODE
           // ============================================================
-          Text(
-            "Operation Mode",
-            style: AppTypography.cardTitle.copyWith(
-              fontWeight: FontWeight.bold,
-              color: colors.text,
-            ),
-          ),
-
-          SizedBox(height: 12.h),
-
-          _buildOperationModeCard(context),
+          // Text(
+          //   "Operation Mode",
+          //   style: AppTypography.cardTitle.copyWith(
+          //     fontWeight: FontWeight.bold,
+          //     color: colors.text,
+          //   ),
+          // ),
+          //
+          // SizedBox(height: 12.h),
+          //
+          // _buildOperationModeCard(context),
 
           // ============================================================
           // LOCAL HUB
           // ============================================================
-          Obx(() {
-            if (!controller.isLocalMode) {
-              return const SizedBox.shrink();
-            }
-
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(height: 24.h),
-
-                Text(
-                  "Local Hub",
-                  style: AppTypography.cardTitle.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colors.text,
-                  ),
-                ),
-
-                SizedBox(height: 12.h),
-
-                _buildLocalHubCard(context),
-              ],
-            );
-          }),
+          // Obx(() {
+          //   if (!controller.isLocalMode) {
+          //     return const SizedBox.shrink();
+          //   }
+          //
+          //   return Column(
+          //     crossAxisAlignment: CrossAxisAlignment.start,
+          //     children: [
+          //       SizedBox(height: 24.h),
+          //
+          //       Text(
+          //         "Local Hub",
+          //         style: AppTypography.cardTitle.copyWith(
+          //           fontWeight: FontWeight.bold,
+          //           color: colors.text,
+          //         ),
+          //       ),
+          //
+          //       SizedBox(height: 12.h),
+          //
+          //       _buildLocalHubCard(context),
+          //     ],
+          //   );
+          // }),
 
           // ============================================================
           // SYNC PREFERENCES
           // ============================================================
-          SizedBox(height: 24.h),
+          // SizedBox(height: 24.h),
 
           Text(
             "Sync Preferences",
@@ -589,7 +589,7 @@ class SettingsView extends GetView<SettingsController> {
             children: [
               _roleOption(
                 context,
-                DeviceRole.host,
+                DeviceRole.server,
                 "Main Cashier / Host",
                 "Runs the local server and controls the restaurant network.",
                 Icons.dns_outlined,
@@ -601,13 +601,13 @@ class SettingsView extends GetView<SettingsController> {
                 "Connects to the Main Cashier over the local network.",
                 Icons.tablet_android_outlined,
               ),
-              _roleOption(
-                context,
-                DeviceRole.solo,
-                "Standalone",
-                "Works independently using the normal online flow.",
-                Icons.phone_android_outlined,
-              ),
+              // _roleOption(
+              //   context,
+              //   DeviceRole.solo,
+              //   "Standalone",
+              //   "Works independently using the normal online flow.",
+              //   Icons.phone_android_outlined,
+              // ),
             ],
           ),
         ),

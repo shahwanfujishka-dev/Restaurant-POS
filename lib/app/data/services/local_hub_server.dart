@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:shelf/shelf.dart';
@@ -28,6 +29,26 @@ class LocalHubServer {
 
   /// Returns the actual LAN IP.
   String? get hostAddress => lanIp;
+  final Map<String, String> _deviceTokens = {};
+
+  bool _isAuthorized(Request request) {
+    final authorization =
+    request.headers['authorization'];
+
+    if (authorization == null ||
+        !authorization.startsWith('Bearer ')) {
+      return false;
+    }
+
+    final token =
+    authorization.substring(7).trim();
+
+    if (token.isEmpty) {
+      return false;
+    }
+
+    return _deviceTokens.containsValue(token);
+  }
 
   /// Returns:
   /// http://192.168.x.x:8080
@@ -39,6 +60,17 @@ class LocalHubServer {
     }
 
     return 'http://$ip:$port';
+  }
+
+  String _generateAuthToken() {
+    final random = Random.secure();
+
+    final bytes = List<int>.generate(
+      32,
+          (_) => random.nextInt(256),
+    );
+
+    return base64UrlEncode(bytes);
   }
 
   Future<void> start() async {
@@ -91,27 +123,113 @@ class LocalHubServer {
       // DEVICE REGISTRATION
       // ------------------------------------------------------------
 
+
+
       router.post('/device/register', (Request request) async {
         try {
           final body = await _readJson(request);
 
-          debugPrint(
-            'LOCAL HUB: Device registration request',
-          );
-
+          debugPrint('======================================');
+          debugPrint('LOCAL HUB: DEVICE REGISTRATION REQUEST');
           debugPrint(
             const JsonEncoder.withIndent('  ').convert(body),
           );
+          debugPrint('======================================');
+
+          final deviceId =
+              body['deviceId']?.toString().trim() ?? '';
+
+          final deviceName =
+              body['deviceName']?.toString().trim() ?? '';
+
+          final role =
+              body['role']?.toString().trim() ?? '';
+
+          final userId =
+          body['userId']?.toString();
+
+          final userName =
+          body['userName']?.toString();
+
+          // ------------------------------------------------------------
+          // VALIDATION
+          // ------------------------------------------------------------
+
+          if (deviceId.isEmpty) {
+            return _errorResponse(
+              'Device ID is required',
+              statusCode: 400,
+            );
+          }
+
+          if (role.isEmpty) {
+            return _errorResponse(
+              'Device role is required',
+              statusCode: 400,
+            );
+          }
+
+          // Only CLIENT devices should register with the Local Hub.
+          if (role != 'client') {
+            return _errorResponse(
+              'Only client devices can register with the Local Hub.',
+              statusCode: 400,
+            );
+          }
+
+          // ------------------------------------------------------------
+          // GENERATE AUTH TOKEN
+          // ------------------------------------------------------------
+
+          final authToken = _generateAuthToken();
+
+          // ------------------------------------------------------------
+          // SAVE TOKEN
+          // ------------------------------------------------------------
+
+          _deviceTokens[deviceId] = authToken;
+
+          debugPrint('======================================');
+          debugPrint('LOCAL HUB: DEVICE REGISTERED');
+          debugPrint('Device ID   : $deviceId');
+          debugPrint('Device Name : $deviceName');
+          debugPrint('Role        : $role');
+          debugPrint('User ID     : $userId');
+          debugPrint('User Name   : $userName');
+          debugPrint('Token       : SAVED');
+          debugPrint(
+            'Registered Devices : ${_deviceTokens.length}',
+          );
+          debugPrint('======================================');
+
+          // ------------------------------------------------------------
+          // RESPONSE
+          // ------------------------------------------------------------
 
           return _jsonResponse({
             'success': true,
             'message': 'Device registered successfully',
             'data': {
+              'deviceId': deviceId,
+              'deviceName': deviceName,
+              'role': role,
+              'userId': userId,
+              'userName': userName,
+              'authToken': authToken,
               'hostIp': lanIp,
               'port': port,
+              'hubUrl': serverUrl,
             },
           });
-        } catch (e) {
+        } catch (e, stackTrace) {
+          debugPrint(
+            'LOCAL HUB: Device registration error: $e',
+          );
+
+          debugPrint(
+            stackTrace.toString(),
+          );
+
           return _errorResponse(
             'Invalid device registration request',
             statusCode: 400,
@@ -124,6 +242,21 @@ class LocalHubServer {
       // ------------------------------------------------------------
 
       router.post('/orders/create', (Request request) async {
+        // ------------------------------------------------------------
+        // AUTHENTICATION
+        // ------------------------------------------------------------
+
+        if (!_isAuthorized(request)) {
+          debugPrint(
+            'LOCAL HUB: Unauthorized order request',
+          );
+
+          return _errorResponse(
+            'Unauthorized device',
+            statusCode: 401,
+          );
+        }
+
         try {
           final body = await _readJson(request);
 
@@ -155,7 +288,6 @@ class LocalHubServer {
           );
         }
       });
-
       // ------------------------------------------------------------
       // UPDATE ORDER
       // ------------------------------------------------------------

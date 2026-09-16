@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
+import 'package:uuid/uuid.dart';
 import '../../../data/Device_Roles/device_roles.dart';
 import '../../../data/services/local_hub_client.dart';
 import '../../../data/services/local_hub_server.dart';
@@ -49,18 +50,15 @@ class SettingsController extends GetxController {
 
   bool get isLocalMode => operationMode.value == OperationMode.local;
   bool get isOnlineMode => operationMode.value == OperationMode.online;
-  bool get isHost => deviceRole.value == DeviceRole.host;
+  bool get isHost => deviceRole.value == DeviceRole.server;
   bool get isClient => deviceRole.value == DeviceRole.client;
-  bool get isSolo => deviceRole.value == DeviceRole.solo;
 
   String get deviceRoleLabel {
     switch (deviceRole.value) {
-      case DeviceRole.host:
+      case DeviceRole.server:
         return 'Main Cashier / Host';
       case DeviceRole.client:
         return 'Client Device';
-      case DeviceRole.solo:
-        return 'Standalone';
     }
   }
 
@@ -114,7 +112,7 @@ class SettingsController extends GetxController {
           mainAxisSize: MainAxisSize.min,
           children: [
             _deviceRoleOption(
-              role: DeviceRole.host,
+              role: DeviceRole.server,
               title: 'Main Cashier / Host',
               subtitle: 'Runs the local server for other devices.',
               icon: Icons.dns_outlined,
@@ -195,15 +193,15 @@ class SettingsController extends GetxController {
         ? OperationMode.local
         : OperationMode.online;
 
-    if (newMode == OperationMode.local &&
-        deviceRole.value == DeviceRole.solo) {
-      await selectDeviceRole();
-
-      // User may have closed the dialog without selecting.
-      if (deviceRole.value == DeviceRole.solo) {
-        return;
-      }
-    }
+    // if (newMode == OperationMode.local &&
+    //     deviceRole.value == DeviceRole.solo) {
+    //   await selectDeviceRole();
+    //
+    //   // User may have closed the dialog without selecting.
+    //   if (deviceRole.value == DeviceRole.solo) {
+    //     return;
+    //   }
+    // }
 
     operationMode.value = newMode;
 
@@ -218,17 +216,16 @@ class SettingsController extends GetxController {
   // ---------------------------------------------------------------------------
 
   Future<void> changeDeviceRole(DeviceRole role) async {
-    deviceRole.value = role;
+    try {
+      // ============================================================
+      // SWITCH TO SERVER
+      // ============================================================
 
-    await DeviceConfig.setRole(role);
-
-    // ------------------------------------------------------------
-    // HOST
-    // ------------------------------------------------------------
-
-    if (role == DeviceRole.host) {
-      try {
-        await LocalHubServer.instance.start();
+      if (role == DeviceRole.server) {
+        // Stop existing server first if necessary.
+        if (!LocalHubServer.instance.isRunning) {
+          await LocalHubServer.instance.start();
+        }
 
         isHubServerRunning.value =
             LocalHubServer.instance.isRunning;
@@ -241,75 +238,59 @@ class SettingsController extends GetxController {
           await DeviceConfig.setHostIp(ip);
         }
 
-        debugPrint('======================================');
-        debugPrint('DEVICE CONFIGURED AS HOST');
-        debugPrint('Host IP : $ip');
-        debugPrint(
-          'Hub URL : ${LocalHubServer.instance.serverUrl}',
-        );
-        debugPrint('======================================');
-      } catch (e) {
-        isHubServerRunning.value = false;
+        await DeviceConfig.setRole(DeviceRole.server);
 
-        Get.snackbar(
-          'Local Hub Error',
-          'Could not start the local server: $e',
-          backgroundColor: Colors.red,
-          colorText: Colors.white,
-          snackPosition: SnackPosition.BOTTOM,
+        deviceRole.value = DeviceRole.server;
+
+        debugPrint('======================================');
+        debugPrint('DEVICE ROLE CHANGED');
+        debugPrint('Role   : SERVER');
+        debugPrint('Host IP: $ip');
+        debugPrint(
+          'Port   : ${DeviceConfig.hostPort}',
         );
+        debugPrint('======================================');
 
         return;
       }
-    }
 
-    // ------------------------------------------------------------
-    // CLIENT
-    // ------------------------------------------------------------
+      // ============================================================
+      // SWITCH TO CLIENT
+      // ============================================================
 
-    if (role == DeviceRole.client) {
-      // A client must not run the server.
-      isHubServerRunning.value = false;
+      if (role == DeviceRole.client) {
+        // Client must never run the Local Hub server.
+        if (LocalHubServer.instance.isRunning) {
+          await LocalHubServer.instance.stop();
+        }
 
-      debugPrint(
-        'DEVICE CONFIGURED AS CLIENT',
-      );
-    }
+        isHubServerRunning.value = false;
 
-    // ------------------------------------------------------------
-    // SOLO
-    // ------------------------------------------------------------
+        await DeviceConfig.setRole(DeviceRole.client);
 
-    if (role == DeviceRole.solo) {
-      if (LocalHubServer.instance.isRunning) {
-        await LocalHubServer.instance.stop();
+        deviceRole.value = DeviceRole.client;
+
+        debugPrint('======================================');
+        debugPrint('DEVICE ROLE CHANGED');
+        debugPrint('Role: CLIENT');
+        debugPrint('======================================');
+
+        return;
       }
-
-      isHubServerRunning.value = false;
-
-      hostIp.value = null;
-
-      await DeviceConfig.setHostIp(null);
-
+    } catch (e) {
       debugPrint(
-        'DEVICE CONFIGURED AS SOLO',
+        '❌ Failed to change device role: $e',
       );
-    }
 
-    // ------------------------------------------------------------
-    // LOCAL MODE
-    // ------------------------------------------------------------
-
-    if (role == DeviceRole.solo &&
-        operationMode.value == OperationMode.local) {
-      operationMode.value = OperationMode.online;
-
-      await DeviceConfig.setOperationMode(
-        OperationMode.online,
+      Get.snackbar(
+        'Device Role Error',
+        'Could not change device role.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
       );
     }
   }
-
   // ---------------------------------------------------------------------------
   // HOST IP
   // ---------------------------------------------------------------------------
@@ -380,11 +361,10 @@ class SettingsController extends GetxController {
   // HUB CONNECTION TEST
   // ---------------------------------------------------------------------------
 
-
   Future<void> testHubConnection() async {
-    final ip = hostIp.value!.trim();
+    final ip = hostIp.value?.trim();
 
-    if (ip.isEmpty) {
+    if (ip == null || ip.isEmpty) {
       Get.snackbar(
         'Host Address Required',
         'Enter the Main Cashier IP address first.',
@@ -399,24 +379,66 @@ class SettingsController extends GetxController {
       isTestingHubConnection.value = true;
       hubStatus.value = 'Connecting...';
 
-      final result =
-      await LocalHubClient.instance.testConnection(
+      // ------------------------------------------------------------
+      // 1. TEST HUB
+      // ------------------------------------------------------------
+
+      final result = await LocalHubClient.instance.testConnection(
         hostIp: ip,
-        port: hubPort.value,
+        port: hostPort.value,
       );
 
       debugPrint('======================================');
       debugPrint('LOCAL HUB CONNECTION SUCCESS');
       debugPrint('Host IP: ${result['hostIp']}');
       debugPrint('Port: ${result['port']}');
-      debugPrint('Hub URL: ${result['hubUrl']}');
+      debugPrint('======================================');
+
+      // ------------------------------------------------------------
+      // 2. REGISTER THIS CLIENT
+      // ------------------------------------------------------------
+
+      final registration =
+      await LocalHubClient.instance.registerDevice(
+        hostIp: ip,
+        port: hostPort.value,
+        deviceName: 'Client Device',
+        role: 'client',
+        deviceId: DeviceConfig.deviceId,
+        userId: AppState.userId?.toString(),
+        userName: AppState.username,
+      );
+
+      final registrationData =
+      registration['data'] as Map<String, dynamic>;
+
+      final token =
+          registrationData['authToken']?.toString() ?? '';
+
+      if (token.isEmpty) {
+        throw Exception(
+          'Local Hub did not return an authentication token.',
+        );
+      }
+
+      // ------------------------------------------------------------
+      // 3. SAVE TOKEN
+      // ------------------------------------------------------------
+
+      await DeviceConfig.setAuthToken(token);
+
+      debugPrint('======================================');
+      debugPrint('LOCAL HUB CLIENT REGISTERED');
+      debugPrint('Device ID : ${DeviceConfig.deviceId}');
+      debugPrint('Token     : SAVED');
       debugPrint('======================================');
 
       hubStatus.value = 'Connected';
+      isHubConnected.value = true;
 
       Get.snackbar(
         'Connected',
-        'Successfully connected to Main Cashier.',
+        'Successfully connected and registered with Main Cashier.',
         backgroundColor: Colors.green,
         colorText: Colors.white,
         snackPosition: SnackPosition.BOTTOM,
@@ -425,11 +447,11 @@ class SettingsController extends GetxController {
       debugPrint('LOCAL HUB CONNECTION FAILED: $e');
 
       hubStatus.value = 'Connection Failed';
+      isHubConnected.value = false;
 
       Get.snackbar(
         'Connection Failed',
-        'Could not connect to Main Cashier.\n'
-            'Check the IP address and Wi-Fi connection.',
+        e.toString(),
         backgroundColor: Colors.red,
         colorText: Colors.white,
         snackPosition: SnackPosition.BOTTOM,
@@ -488,6 +510,99 @@ class SettingsController extends GetxController {
     } catch (e) {
       debugPrint('LOCAL HUB CLIENT ERROR: $e');
       rethrow;
+    }
+  }
+
+  Future<String> _getOrCreateDeviceId() async {
+    var id = DeviceConfig.deviceId.trim();
+
+    if (id.isEmpty) {
+      id = const Uuid().v4();
+
+      await DeviceConfig.setDeviceId(id);
+
+      deviceId.value = id;
+
+      debugPrint('======================================');
+      debugPrint('LOCAL HUB: GENERATED DEVICE ID');
+      debugPrint('Device ID: $id');
+      debugPrint('======================================');
+    }
+
+    return id;
+  }
+
+  Future<void> registerWithLocalHub({
+    required String deviceName,
+  }) async {
+    final ip = hostIp.value?.trim() ?? '';
+    final currentDeviceId = await _getOrCreateDeviceId();
+
+    if (ip.isEmpty) {
+      Get.snackbar(
+        'Host Required',
+        'Enter the Main Cashier IP address first.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    try {
+      hubStatus.value = 'Registering...';
+
+      final result = await LocalHubClient.instance.registerDevice(
+        hostIp: ip,
+        port: hostPort.value,
+        deviceName: deviceName,
+        role: 'client',
+        deviceId: currentDeviceId,
+        userId: AppState.userId,
+        userName: AppState.username,
+      );
+
+      debugPrint('======================================');
+      debugPrint('LOCAL HUB REGISTRATION SUCCESS');
+      debugPrint('Response: $result');
+      debugPrint('======================================');
+
+      final token = result['token'];
+
+      if (token == null || token.toString().isEmpty) {
+        throw Exception(
+          'Hub registration succeeded but no authentication token was returned.',
+        );
+      }
+
+      await DeviceConfig.setAuthToken(
+        token.toString(),
+      );
+
+      hubStatus.value = 'Connected';
+
+      debugPrint(
+        '✅ Local Hub auth token saved.',
+      );
+
+      Get.snackbar(
+        'Device Registered',
+        'This device is now registered with Main Cashier.',
+        backgroundColor: Colors.green,
+        colorText: Colors.white,
+      );
+    } catch (e) {
+      hubStatus.value = 'Registration Failed';
+
+      debugPrint(
+        '❌ LOCAL HUB REGISTRATION FAILED: $e',
+      );
+
+      Get.snackbar(
+        'Registration Failed',
+        e.toString(),
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
     }
   }
   // ---------------------------------------------------------------------------

@@ -19,7 +19,7 @@ import 'app/theme/theme_controller.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await GetStorage.init();
-  await LocalHubServer.instance.start();
+  // await LocalHubServer.instance.start();
   final apiService = Get.put(ApiService(), permanent: true);
   Get.put(SyncService(), permanent: true);
 

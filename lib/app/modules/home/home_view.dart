@@ -251,7 +251,9 @@ class HomeView extends GetView<HomeController> {
                     userName: AppState.username, // or from your auth state
                     onLogout: controller.logout,
                     onSettings: () => Get.toNamed(Routes.SETTINGS),
-                    onChangeOrderType: () {}, // Removed Order Type navigation
+                    onChangeOrderType: () {
+                      Get.toNamed(Routes.ORDER_TYPE);
+                    }, // Removed Order Type navigation
                     onToggleLanguage: _toggleLanguage,
                     isArabic: Get.locale?.languageCode == 'ar',
                   )

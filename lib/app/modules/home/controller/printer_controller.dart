@@ -512,7 +512,8 @@ class PrinterController extends GetxController {
     String? paymentMethod,
     double? discount,
     double? roundOff,
-  }) async {
+        bool? isSale,
+      }) async {
     debugPrint("--- START ${isBill ? 'BILL' : 'RECEIPT'} PRINTING ---");
     final String finalCustomerName =
         customerName ?? order.customerName ?? order.tableName;
@@ -531,6 +532,8 @@ class PrinterController extends GetxController {
 
     final profile = await CapabilityProfile.load();
     final invoiceLabel = await _resolveInvoiceLabel(order);
+    final bool resolvedIsSale = isSale ?? (order.status.value == OrderStatus.paid);
+
     if (type == 'wifi') {
       await _printWifiReceipt(
         address,
@@ -540,6 +543,7 @@ class PrinterController extends GetxController {
         change,
         profile,
         isBill: isBill,
+        isSale: resolvedIsSale,
         customerName: finalCustomerName,
         paymentMethod: paymentMethod,
         discount: finalDiscount,
@@ -559,6 +563,7 @@ class PrinterController extends GetxController {
         profile,
         invoiceLabel: invoiceLabel,
         isBill: isBill,
+        isSale: resolvedIsSale,
         customerName: finalCustomerName,
         paymentMethod: paymentMethod,
         discount: finalDiscount,
@@ -733,15 +738,17 @@ class PrinterController extends GetxController {
         ),
       );
       bytes += generator.text('-' * 48);
-
-      bytes += generator.row([
-        PosColumn(text: "Customer:", width: 5),
-        PosColumn(
-          text: customerName ?? order.customerName ?? "Cash Customer",
-          width: 7,
-          styles: const PosStyles(align: PosAlign.right),
-        ),
-      ]);
+      final String? effectiveCustomerName = customerName ?? order.customerName ?? "Cash Customer";
+      if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
+  bytes += generator.row([
+    PosColumn(text: "Customer:", width: 5),
+    PosColumn(
+      text: effectiveCustomerName,
+      width: 7,
+      styles: const PosStyles(align: PosAlign.right),
+    ),
+  ]);
+}
       bytes += generator.row([
         PosColumn(text: "Order No:", width: 6),
         PosColumn(
@@ -960,16 +967,17 @@ class PrinterController extends GetxController {
       ),
     );
     printer.hr();
-
-    printer.row([
-      PosColumn(text: "Customer:", width: 5),
-      PosColumn(
-        text: customerName ?? order.customerName ?? "Cash Customer",
-        width: 7,
-        styles: const PosStyles(align: PosAlign.right),
-      ),
-    ]);
-
+    final String? effectiveCustomerName = customerName ?? order.customerName ?? "Cash Customer";
+if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
+  printer.row([
+    PosColumn(text: "Customer:", width: 5),
+    PosColumn(
+      text: effectiveCustomerName,
+      width: 7,
+      styles: const PosStyles(align: PosAlign.right),
+    ),
+  ]);
+}
     printer.row([
       PosColumn(text: "Order No:", width: 6),
       PosColumn(
@@ -1126,6 +1134,7 @@ class PrinterController extends GetxController {
     double change,
     CapabilityProfile profile, {
     bool isBill = false,
+        bool isSale = false,
     String? customerName,
     String? paymentMethod,
     String? invoiceLabel,
@@ -1141,6 +1150,7 @@ class PrinterController extends GetxController {
           order,
           received,
           change,
+          isSale: isSale,
           isBill: isBill,
           customerName: customerName,
           paymentMethod: paymentMethod,
@@ -1162,6 +1172,7 @@ class PrinterController extends GetxController {
     double change,
     CapabilityProfile profile, {
     bool isBill = false,
+        bool isSale = false,
     String? customerName,
     String? invoiceLabel,
     String? paymentMethod,
@@ -1226,17 +1237,21 @@ class PrinterController extends GetxController {
         );
       }
       bytes += generator.text("-" * 48);
+      final String? effectiveCustomerName = customerName ?? order.customerName ?? "Cash Customer";
+      if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
+        bytes += generator.row([
+          PosColumn(text: "Customer:", width: 5),
+          PosColumn(
+            text: effectiveCustomerName,
+            width: 7,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
+      final bool isInvoiced = order.status.value == OrderStatus.paid;
 
       bytes += generator.row([
-        PosColumn(text: "Customer:", width: 5),
-        PosColumn(
-          text: customerName ?? order.customerName ?? "Cash Customer",
-          width: 7,
-          styles: const PosStyles(align: PosAlign.right),
-        ),
-      ]);
-      bytes += generator.row([
-        PosColumn(text: "Inv No:", width: 5),
+        PosColumn(text: isSale ? "Inv No:" : "Order No:", width: 5),
         PosColumn(
           text: invoiceLabel.toString(),
           width: 7,
@@ -1610,6 +1625,7 @@ class PrinterController extends GetxController {
     double received,
     double change, {
     bool isBill = false,
+        bool isSale = false,
     String? customerName,
     String? paymentMethod,
     double discount = 0,
@@ -1629,17 +1645,21 @@ class PrinterController extends GetxController {
     );
     printer.text("-" * 48);
     printer.hr();
-
+    final String? effectiveCustomerName = customerName ?? order.customerName?? "Cash Customer";
+if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
     printer.row([
       PosColumn(text: "Customer:", width: 5),
       PosColumn(
-        text: customerName ?? order.customerName ?? "Cash Customer",
+        text: effectiveCustomerName,
         width: 7,
         styles: const PosStyles(align: PosAlign.right),
       ),
-    ]);
+    ]);}
+
+    final bool isInvoiced = order.status.value == OrderStatus.paid;
+
     printer.row([
-      PosColumn(text: "Inv No:", width: 5),
+      PosColumn(text: isSale ? "Inv No:" : "Order No:", width: 5),
       PosColumn(
         text: order.branchInv.toString(),
         width: 7,

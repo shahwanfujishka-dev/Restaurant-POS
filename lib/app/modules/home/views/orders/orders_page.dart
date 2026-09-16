@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:restaurant_pos/app/data/utils/AppState.dart';
 import 'package:restaurant_pos/app/modules/home/views/orders/widgets/AnimatedTabBar.dart';
 
+import '../../../../../helper/KeepAliveWrapper.dart';
 import '../../../../../helper/screen_type.dart';
 import '../../../../data/models/order_model.dart';
 import '../../../../data/services/database_helper.dart';
@@ -48,35 +49,29 @@ class OrdersPage extends GetView<OrdersController> {
                 ),
               ),
             ),
-            body: Obx(() {
-              if (controller.isLoading.value) {
-                return const Center(child: FoodItemShimmer());
-              }
-              return TabBarView(
-                controller: tabController,
-                children: [
-                  _buildOrderList(
-                    context,
-                    controller.dineInOrders,
-                    dashboardController,
-                  ),
-                  _buildOrderList(
-                    context,
-                    controller.deliveryOrders,
-                    dashboardController,
-                  ),
-                  _buildOrderList(
-                    context,
-                    controller.pickupOrders,
-                    dashboardController,
-                  ),
-                  _buildPaidOrderList(
-                    context,
-                    dashboardController,
-                  ),
-                ],
-              );
-            }),
+            body: TabBarView(
+              controller: tabController,
+              children: [
+                KeepAliveWrapper(
+                  child: Obx(() => controller.isLoading.value && controller.orders.isEmpty
+                      ? const Center(child: FoodItemShimmer())
+                      : _buildOrderList(context, controller.dineInOrders, dashboardController)),
+                ),
+                KeepAliveWrapper(
+                  child: Obx(() => controller.isLoading.value && controller.orders.isEmpty
+                      ? const Center(child: FoodItemShimmer())
+                      : _buildOrderList(context, controller.deliveryOrders, dashboardController)),
+                ),
+                KeepAliveWrapper(
+                  child: Obx(() => controller.isLoading.value && controller.orders.isEmpty
+                      ? const Center(child: FoodItemShimmer())
+                      : _buildOrderList(context, controller.pickupOrders, dashboardController)),
+                ),
+                KeepAliveWrapper(
+                  child: _buildPaidOrderList(context, dashboardController),
+                ),
+              ],
+            ),
           );
         },
       ),
@@ -263,6 +258,7 @@ class OrdersPage extends GetView<OrdersController> {
           final order = orders[index];
           return _OrderTicket(
             order: order,
+            key: ValueKey(order.id),
             index: index,
             onEdit: () => controller.editOrder(order),
             onDelete: () => controller.cancelOrder(order),
@@ -773,6 +769,7 @@ class _OrderTicket extends StatelessWidget {
   final VoidCallback onTap;
 
   const _OrderTicket({
+    super.key,               // ← accept the key passed from itemBuilder
     required this.order,
     required this.index,
     required this.onEdit,
@@ -790,7 +787,7 @@ class _OrderTicket extends StatelessWidget {
     final totalAmt = order.finalTotal;
     return TweenAnimationBuilder(
       tween: Tween<double>(begin: 0, end: 1),
-      duration: Duration(milliseconds: 300 + (index * 100)),
+      duration: Duration(milliseconds: 300 + (index.clamp(0, 5) * 80)), // ← capped stagger
       builder: (context, double value, child) {
         return Opacity(
           opacity: value,
@@ -849,7 +846,6 @@ class _OrderTicket extends StatelessWidget {
                               color: displayColor,
                             ),
                           ),
-                        // SizedBox(width: 2.w),
                         if (order.status.value != OrderStatus.paid &&
                             order.status.value != OrderStatus.cancelled)
                           IconButton(
@@ -887,29 +883,27 @@ class _OrderTicket extends StatelessWidget {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            if(order.status.value != OrderStatus.paid)
-                            Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: 4.w,
-                                vertical: 2.h,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(4.r),
-                              ),
-                              child: Obx(
-                                () => Text(
-                                  controller.getElapsedTime(
-                                    order.createdAt,
-                                  ),
-                                  style: TextStyle(
-                                    color: Colors.orange.shade700,
-                                    fontSize: AppTypography.smallText,
-                                    fontWeight: FontWeight.bold,
+                            if (order.status.value != OrderStatus.paid)
+                              Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 4.w,
+                                  vertical: 2.h,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(4.r),
+                                ),
+                                child: Obx(
+                                      () => Text(
+                                    controller.getElapsedTime(order.createdAt),
+                                    style: TextStyle(
+                                      color: Colors.orange.shade700,
+                                      fontSize: AppTypography.smallText,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
                           ],
                         ),
                         Text(
@@ -1384,16 +1378,16 @@ String _getOrderTypeName(int type) {
 }
 
 String _formatInvNo(OrderModel order) {
-  if (order.offlineSeq != null) {
-    final branch = AppState.branchDisName.isNotEmpty
-        ? AppState.branchDisName
-        : AppState.branchName;
-    return "$branch ${order.offlineSeq.toString().padLeft(3, '0')}";
-  }
-  if (order.invNo.isNotEmpty &&
-      order.invNo != "LOCAL" &&
-      order.invNo != "OFFLINE") {
-    return order.branchInv.toString();
-  }
+  // if (order.offlineSeq != null) {
+  //   final branch = AppState.branchDisName.isNotEmpty
+  //       ? AppState.branchDisName
+  //       : AppState.branchName;
+  //   return "$branch ${order.offlineSeq.toString().padLeft(3, '0')}";
+  // }
+  // if (order.invNo.isNotEmpty &&
+  //     order.invNo != "LOCAL" &&
+  //     order.invNo != "OFFLINE") {
+  //   return order.branchInv.toString();
+  // }
   return order.branchInv.toString();
 }

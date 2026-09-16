@@ -10,8 +10,6 @@ import 'package:restaurant_pos/helper/snackbar_helper.dart';
 import '../../../data/models/order_model.dart';
 import '../../../data/services/api_services.dart';
 import '../../../data/services/database_helper.dart';
-import '../../../data/services/api_services.dart';
-import '../../../data/services/database_helper.dart';
 import '../../../data/utils/AppState.dart';
 import '../../cart/controller/cart_controller.dart';
 import 'dashboard_controller.dart';
@@ -491,6 +489,8 @@ class CashierController extends GetxController {
         splitAmounts: isSplit.value ? splitAmounts.toList() : [],
       );
 
+      log("settleOrder result: $result");
+
       if (result != null && result['no_change'] != true) {
         final bool isOffline = result['offline'] == true;
         if (isOffline) {
@@ -520,9 +520,14 @@ class CashierController extends GetxController {
         cartController.stopEditing();
         Get.find<OrdersController>().fetchOrders();
         Get.offAllNamed(ScreenType.isMobile() ? Routes.ORDER_TYPE : Routes.HOME);
+        
+        final String? branchInv = preview?['sales_odr_sales_branch_inv']?.toString() ?? preview?['sales_branch_inv']?.toString() ?? preview?['sales_odr_branch_inv']?.toString();
+
         showSafeSnackbar(
           "Success",
-          isComp ? "Order complimented successfully." : "Order settled successfully.",
+          isComp 
+              ? "Order complimented successfully." 
+              : "Order settled successfully.${branchInv != null ? ' (Inv: $branchInv)' : ''}",
         );
       } else if (result != null && result['no_change'] == true) {
         showSafeSnackbar("No Changes", "No changes detected in the order.");
@@ -679,6 +684,7 @@ class CashierController extends GetxController {
           paymentMethod: isComp ? "Compliment" : paymentMethod.value,
           discount: printDiscount,
           roundOff: printRoundOff,
+          isSale: true,
         );
       }
     } catch (e) {

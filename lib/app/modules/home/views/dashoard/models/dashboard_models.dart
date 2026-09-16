@@ -152,18 +152,12 @@ class ProductUnit {
   }
 
   factory ProductUnit.fromJson(Map<String, dynamic> json) {
-    // Extensive fallback for unit name fields commonly used in APIs and Local DB
-    String name = (json['unit_name'] ??
-                  json['prd_unit_name'] ??
-                  json['unit_display'] ??
-                  json['prd_unit_display'] ??
-                  '').toString();
+    // Robust fallback for unit names
+    String name = (json['unit_name'] ?? json['prd_unit_name'])?.toString() ?? 
+                  (json['unit_display'] ?? json['prd_unit_display'])?.toString() ?? '';
 
-    String display = (json['unit_display'] ??
-                     json['prd_unit_display'] ??
-                     json['unit_name'] ??
-                     json['prd_unit_name'] ??
-                     '').toString();
+    String display = (json['unit_display'] ?? json['prd_unit_display'])?.toString() ?? 
+                     (json['unit_name'] ?? json['prd_unit_name'])?.toString() ?? '';
 
     // Handle nested addons which could be a List or a JSON String (from Local DB)
     dynamic rawExistAddons = json['existAddOn'] ?? json['exist_addons'] ?? [];
@@ -206,8 +200,8 @@ class AddonModel {
   final double unitBaseQty;
   final int initialQty;
   final int? isDefault;
-  final int freeQty; // Threshold for free items
-  final int flags; // 0 = unchanged, 1 = new/modified (from sales_ord_sub_flags)
+  final int freeQty;
+  final int flags;
   RxInt quantity = 0.obs;
 
   AddonModel({

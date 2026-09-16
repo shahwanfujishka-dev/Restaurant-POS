@@ -181,7 +181,7 @@ class CartController extends GetxController {
   final selectedCaptainName = "".obs;
   final captainsList = <Map<String, dynamic>>[].obs;
   bool get isLocalHubClient => DeviceConfig.operationMode == OperationMode.local && DeviceConfig.role == DeviceRole.client;
-  bool get isLocalHubHost => DeviceConfig.operationMode == OperationMode.local && DeviceConfig.role == DeviceRole.host;
+  bool get isLocalHubHost => DeviceConfig.operationMode == OperationMode.local && DeviceConfig.role == DeviceRole.server;
 
   String _generateUuid() {
     final random = math.Random();
@@ -773,7 +773,7 @@ class CartController extends GetxController {
           "addon_parent_prd_id": null,
           "addon_parent_unit_id": null,
           "cat_token_printer": item.product.tokenPrinterId,
-          "Item_descp": item.note.value,
+          "item_desc": item.note.value,
         });
 
         localItems.add({
@@ -859,7 +859,7 @@ class CartController extends GetxController {
               "addon_parent_prd_id": int.tryParse(item.product.id),
               "addon_parent_unit_id": item.unit.unitId,
               "is_default": 1,
-              "Item_descp": "",
+              "item_desc": "",
             });
 
             localItems.add({
@@ -908,7 +908,7 @@ class CartController extends GetxController {
               "is_addon": 0,
               "addon_parent_prd_id": int.tryParse(item.product.id),
               "addon_parent_unit_id": item.unit.unitId,
-              "Item_descp": "",
+              "item_desc": "",
             });
 
             localItems.add({
@@ -1043,104 +1043,309 @@ class CartController extends GetxController {
       // );
       // _clearDashboardSearch();
       // return syntheticResponse;
-      if (DeviceConfig.operationMode == OperationMode.local &&
-          DeviceConfig.role == DeviceRole.client) {
+      // ============================================================
+      // ORDER ROUTING
+      // ============================================================
 
-        final hostIp = DeviceConfig.hostIp;
+      final operationMode = DeviceConfig.operationMode;
+      final deviceRole = DeviceConfig.role;
 
-        if (hostIp == null || hostIp.trim().isEmpty) {
-          showSafeSnackbar(
-            "Local Hub Error",
-            "Main Cashier is not configured.",
-          );
-          return null;
-        }
+      // ============================================================
+// ORDER ROUTING
+// ============================================================
+
+      // ============================================================
+// ORDER ROUTING
+// ============================================================
+
+      debugPrint('======================================');
+      debugPrint('ORDER ROUTING');
+      debugPrint('Operation Mode : ${DeviceConfig.operationMode}');
+      debugPrint('Device Role    : ${DeviceConfig.role}');
+      debugPrint('Order UUID     : $orderUuid');
+      debugPrint('======================================');
+
+
+// ============================================================
+// LOCAL MODE
+// ============================================================
+
+      // if (DeviceConfig.operationMode == OperationMode.local) {
+      //
+      //   // ------------------------------------------------------------
+      //   // SERVER
+      //   // ------------------------------------------------------------
+      //
+      //   if (DeviceConfig.role == DeviceRole.server) {
+      //
+      //     debugPrint('======================================');
+      //     debugPrint('LOCAL SERVER ORDER');
+      //     debugPrint('Role       : SERVER');
+      //     debugPrint('Order UUID : $orderUuid');
+      //     debugPrint('======================================');
+      //
+      //     try {
+      //       // Save the order directly into local database.
+      //       await _dbHelper.insertOrder(
+      //         {
+      //           "uuid": orderUuid,
+      //           "order_type_id": AppState.orderType.id,
+      //           "table_id": int.tryParse(
+      //             selectedTableId.value,
+      //           ),
+      //           "customer_name":
+      //           customerData?['name'] ??
+      //               customerName ??
+      //               "Cash Customer",
+      //           "total_amount": totalWithTax,
+      //           "total_tax": totalTax,
+      //           "status": isDraft
+      //               ? 'draft'
+      //               : 'pending',
+      //           "is_synced": 0,
+      //           "payload": jsonEncode(body),
+      //           "created_at": now.toIso8601String(),
+      //           "inv_no": null,
+      //         },
+      //         localItems,
+      //       );
+      //
+      //       await _dbHelper.assignOfflineSeqForOrder(
+      //         orderUuid,
+      //       );
+      //
+      //       debugPrint(
+      //         '✅ LOCAL SERVER ORDER SAVED: $orderUuid',
+      //       );
+      //
+      //       // Optional background sync.
+      //       //
+      //       // IMPORTANT:
+      //       // This should only sync when your sync service
+      //       // is intentionally configured to sync to cloud.
+      //       //
+      //       // It does NOT affect order routing.
+      //       //
+      //       // Get.find<SyncService>().syncPendingOrders();
+      //
+      //       _clearDashboardSearch();
+      //
+      //       final syntheticResponse = _buildOfflineResponse(
+      //         orderUuid: orderUuid,
+      //         body: body,
+      //         totalWithTax: totalWithTax,
+      //         totalTax: totalTax,
+      //         saleItems: saleItems,
+      //         isDraft: isDraft,
+      //         now: now,
+      //         isCompliment: isCompliment,
+      //         isSplit: isSplit,
+      //         splitCount: splitCount,
+      //         splitAmounts: splitAmounts,
+      //       );
+      //
+      //       return syntheticResponse;
+      //
+      //     } catch (e) {
+      //
+      //       log(
+      //         "❌ LOCAL SERVER ORDER ERROR: $e",
+      //       );
+      //
+      //       showSafeSnackbar(
+      //         "Order Failed",
+      //         "Could not save order locally.",
+      //       );
+      //
+      //       return null;
+      //     }
+      //   }
+      //
+      //
+      //   // ------------------------------------------------------------
+      //   // CLIENT
+      //   // ------------------------------------------------------------
+      //
+      //   if (DeviceConfig.role == DeviceRole.client) {
+      //
+      //     final hostIp = DeviceConfig.hostIp;
+      //
+      //     if (hostIp == null || hostIp.trim().isEmpty) {
+      //
+      //       showSafeSnackbar(
+      //         "Local Hub Error",
+      //         "Main Cashier IP is not configured.",
+      //       );
+      //
+      //       return null;
+      //     }
+      //
+      //     debugPrint('======================================');
+      //     debugPrint('LOCAL CLIENT ORDER');
+      //     debugPrint('Role       : CLIENT');
+      //     debugPrint('Host IP    : $hostIp');
+      //     debugPrint('Port       : ${DeviceConfig.hostPort}');
+      //     debugPrint('Order UUID : $orderUuid');
+      //     debugPrint('======================================');
+      //
+      //     try {
+      //
+      //       // ----------------------------------------------------------
+      //       // IMPORTANT:
+      //       // Make sure this device has been registered.
+      //       // ----------------------------------------------------------
+      //
+      //       if (!DeviceConfig.hasAuthToken) {
+      //
+      //         showSafeSnackbar(
+      //           "Device Not Registered",
+      //           "Please register this device with the Main Cashier.",
+      //         );
+      //
+      //         debugPrint(
+      //           '❌ Client has no Local Hub authentication token.',
+      //         );
+      //
+      //         return null;
+      //       }
+      //
+      //       final hubPayload = {
+      //         ...body,
+      //
+      //         "uuid": orderUuid,
+      //
+      //         "source_device_role": "client",
+      //         "source_user_id": AppState.userId,
+      //         "source_user_name": AppState.username,
+      //       };
+      //
+      //       final hubResponse =
+      //       await LocalHubClient.instance.createOrder(
+      //         order: hubPayload,
+      //         hostIp: hostIp,
+      //         port: DeviceConfig.hostPort,
+      //       );
+      //
+      //       debugPrint('======================================');
+      //       debugPrint('LOCAL CLIENT ORDER SUCCESS');
+      //       debugPrint('Response: $hubResponse');
+      //       debugPrint('======================================');
+      //
+      //       _clearDashboardSearch();
+      //
+      //       return hubResponse;
+      //
+      //     } catch (e) {
+      //
+      //       log(
+      //         "❌ LOCAL CLIENT ORDER FAILED: $e",
+      //       );
+      //
+      //       showSafeSnackbar(
+      //         "Order Failed",
+      //         "Could not send order to Main Cashier.",
+      //       );
+      //
+      //       return null;
+      //     }
+      //   }
+      //
+      //   // Safety fallback.
+      //   showSafeSnackbar(
+      //     "Configuration Error",
+      //     "Invalid device role configuration.",
+      //   );
+      //
+      //   return null;
+      // }
+
+
+// ============================================================
+// ONLINE MODE
+// ============================================================
+
+      // if (DeviceConfig.operationMode == OperationMode.online) {
+
+        debugPrint('======================================');
+        debugPrint('ONLINE ORDER');
+        debugPrint('Cloud API');
+        debugPrint('Order UUID : $orderUuid');
+        debugPrint('======================================');
 
         try {
-          debugPrint('======================================');
-          debugPrint('LOCAL HUB ORDER');
-          debugPrint('Role       : CLIENT');
-          debugPrint('Host       : $hostIp');
-          debugPrint('Order UUID : $orderUuid');
-          debugPrint('======================================');
 
-          final hubPayload = {
-            ...body,
-            "uuid": orderUuid,
-            "source_device_role": "client",
-            "source_user_id": AppState.userId,
-            "source_user_name": AppState.username,
-          };
-
-          final hubResponse =
-          await LocalHubClient.instance.createOrder(
-            order: hubPayload,
-            hostIp: hostIp,
-            port: DeviceConfig.hostPort,
+          final response = await _apiService.post(
+            "mobileapp/pos/add_sales_order",
+            data: body,
           );
+          void debugPrintLong(String text, {int chunkSize = 800}) {
+            for (int i = 0; i < text.length; i += chunkSize) {
+              final end = (i + chunkSize < text.length)
+                  ? i + chunkSize
+                  : text.length;
 
-          debugPrint('======================================');
-          debugPrint('LOCAL HUB ORDER SUCCESS');
-          debugPrint('Response: $hubResponse');
-          debugPrint('======================================');
+              debugPrint(text.substring(i, end));
+            }
+          }
+          if (response.statusCode == 200) {
+            debugPrint('======================================');
+            debugPrint('✅ ORDER API SUCCESS');
+            debugPrint('Order UUID : $orderUuid');
+            debugPrint('Status Code: ${response.statusCode}');
 
-          _clearDashboardSearch();
+            final Map<String, dynamic> responseData =
+            response.data is Map
+                ? Map<String, dynamic>.from(response.data)
+                : jsonDecode(response.data);
 
-          return hubResponse;
+            debugPrint('========== FULL RESPONSE ==========');
+
+            final String fullResponse = const JsonEncoder.withIndent('  ')
+                .convert(responseData);
+
+            debugPrintLong(fullResponse);
+
+            debugPrint('======== END FULL RESPONSE ========');
+            debugPrint('======================================');
+
+            _clearDashboardSearch();
+
+            return responseData;
+          } else {
+
+            showSafeSnackbar(
+              "Error",
+              "Failed to place order. Please try again.",
+            );
+
+            return null;
+          }
+
         } catch (e) {
+
           log(
-            "❌ Local Hub order failed: $e",
+            "❌ Error placing order online: $e",
           );
 
-          showSafeSnackbar(
-            "Order Failed",
-            "Could not send order to Main Cashier.",
-          );
-
-          return null;
-        }
-      }
-
-// ============================================================
-// EXISTING ONLINE MODE
-// ============================================================
-
-      try {
-        final response = await _apiService.post(
-          "mobileapp/pos/add_sales_order",
-          data: body,
-        );
-
-        if (response.statusCode == 200) {
-          debugPrint(
-            "✅ Order placed online: $orderUuid",
-          );
-
-          _clearDashboardSearch();
-
-          return response.data is Map
-              ? Map<String, dynamic>.from(response.data)
-              : jsonDecode(response.data);
-        } else {
           showSafeSnackbar(
             "Error",
-            "Failed to place order. Please try again.",
+            "No internet connection or server error.",
           );
 
           return null;
         }
-      } catch (e) {
-        log(
-          "❌ Error placing order online: $e",
-        );
+      // }
+      debugPrint(
+        '❌ UNKNOWN OPERATION MODE: $operationMode',
+      );
 
-        showSafeSnackbar(
-          "Error",
-          "No internet connection or server error.",
-        );
+      showSafeSnackbar(
+        "Order Error",
+        "Invalid operation mode.",
+      );
 
-        return null;
-      }
+      return null;
+
     } catch (e) {
       log("Error in placeOrder: $e");
       if (Get.isDialogOpen == true) Get.back();
@@ -1280,7 +1485,7 @@ class CartController extends GetxController {
             "addon_parent_unit_id": item.addonuntId,
             "is_edited": false,
             "oldqty": item.initialQty,
-            "Item_descp": "",
+            "item_desc": "",
             "is_deleted": 1,
           });
 
@@ -1333,7 +1538,7 @@ class CartController extends GetxController {
                 "addon_parent_unit_id": item.originalUnitId ?? 1,
                 "is_edited": false,
                 "oldqty": addonQty,
-                "Item_descp": "",
+                "item_desc": "",
                 "is_deleted": 1,
               });
             }
@@ -1420,7 +1625,7 @@ class CartController extends GetxController {
           "addon_parent_unit_id": parentUnitId,
           "is_edited": item.subId != null && (unitChanged || newQty != oldQty || changeReason == "NOTE_CHANGED"),
           "oldqty": oldQty,
-          "Item_descp": item.note.value,
+          "item_desc": item.note.value,
           "is_deleted": 0,
           "cat_token_printer": item.product.tokenPrinterId,
         });
@@ -1610,7 +1815,7 @@ class CartController extends GetxController {
                 "is_edited":
                     addonSubId.isNotEmpty && currentFreePart != oldFreePart,
                 "oldqty": oldFreePart,
-                "Item_descp": "",
+                "item_desc": "",
                 "is_deleted": 0,
               });
             } else if (currentFreePart == 0 &&
@@ -1650,7 +1855,7 @@ class CartController extends GetxController {
                 "is_default": 1,
                 "is_edited": false,
                 "oldqty": oldFreePart,
-                "Item_descp": "",
+                "item_desc": "",
                 "is_deleted": 1,
               });
             } else if (!freeChanged && !parentChanged) {
@@ -1727,7 +1932,7 @@ class CartController extends GetxController {
                 "is_edited":
                     paidSubId.isNotEmpty && currentPaidPart != oldPaidPart,
                 "oldqty": oldPaidPart,
-                "Item_descp": "",
+                "item_desc": "",
                 "is_deleted": 0,
               });
               totalTax += addonTaxPerUnit * currentPaidPart;
@@ -1769,7 +1974,7 @@ class CartController extends GetxController {
                 "is_default": 0,
                 "is_edited": false,
                 "oldqty": oldPaidPart,
-                "Item_descp": "",
+                "item_desc": "",
                 "is_deleted": 1,
               });
             } else if (!paidChanged && !parentChanged) {
@@ -1820,7 +2025,7 @@ class CartController extends GetxController {
                 "is_default": wasFree ? 1 : 0,
                 "is_edited": false,
                 "oldqty": oa.initialQty,
-                "Item_descp": "",
+                "item_desc": "",
                 "is_deleted": 1,
               });
             }
@@ -2089,7 +2294,7 @@ class CartController extends GetxController {
         "is_split": isSplit,
         "split_count": splitCount,
         "split_amnt": splitAmounts,
-        "Item_descp": item["Item_descp"],
+        "item_desc": item["item_desc"],
       });
     }
 
@@ -2210,8 +2415,7 @@ class CartController extends GetxController {
         "sales_ord_sub_amnt": si['salesub_amnt'],
         "salesub_qty": qty,
         "salesub_unit_id": si['salesub_unit_id'],
-        "Item_descp": si['Item_descp'],
-
+        "item_desc": si['item_desc'],
       });
     }
 

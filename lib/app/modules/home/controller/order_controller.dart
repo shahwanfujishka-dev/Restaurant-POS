@@ -86,6 +86,15 @@ class OrdersController extends GetxController {
       isLoading.value = false;
     }
   }
+  /// Like ?? but also skips empty strings, not just null.
+  String _firstNonEmptyValue(List<dynamic> values) {
+    for (final v in values) {
+      if (v != null && v.toString().isNotEmpty && v.toString() != 'null') {
+        return v.toString();
+      }
+    }
+    return '';
+  }
 
   Future<void> _fetchActiveOrders() async {
     try {
@@ -122,9 +131,13 @@ class OrdersController extends GetxController {
                   id: (processing['sales_odr_id'] ?? '').toString(),
                   tableId: (processing['sales_odr_table_id'] ?? table.id).toString(),
                   invNo: (processing['sales_odr_inv_no'] ?? '').toString(),
-                  branchInv: (processing['sales_odr_branch_inv'] ?? '').toString(), // ✅ Added
+                  branchInv: _firstNonEmptyValue([
+                    processing['sales_odr_sales_branch_inv'],
+                    processing['sales_odr_branch_inv'],
+                    processing['sales_branch_inv'],
+                  ]),
                   tableName: _resolveName(processing, orderType, table.name),
-                  customerName: (processing['sq_cust_name'] ?? processing['customer_name'] ?? processing['cust_name'] ?? processing['ledger_name'])?.toString(),
+                  customerName: (processing['sq_cust_name'] ?? processing['customer_name'] ?? processing['cust_name'] ??'')?.toString(),
                   chairNumber: (processing['sales_odr_no_seats'] as num? ?? 0).toInt(),
                   sales_odr_pos_status: posStatus,
                   items: [],
@@ -180,9 +193,14 @@ class OrdersController extends GetxController {
               id: (json['sales_odr_id'] ?? '').toString(),
               tableId: (json['sales_odr_table_id'] ?? processingOrder?.tableId ?? '').toString(),
               invNo: (json['sales_odr_inv_no'] ?? '').toString(),
-              branchInv: (json['sales_odr_branch_inv'] ?? processingOrder?.branchInv ?? '').toString(), // ✅ Added
+              branchInv: _firstNonEmptyValue([
+                json['sales_odr_sales_branch_inv'],
+                json['sales_odr_branch_inv'],
+                json['sales_branch_inv'],
+                processingOrder?.branchInv,
+              ]),
               tableName: _resolveName(json, orderType, processingOrder?.tableName ?? 'Unknown Table'),
-              customerName: (json['sq_cust_name'] ?? json['customer_name'] ?? json['cust_name'] ?? json['ledger_name'] ?? processingOrder?.customerName)?.toString(),
+              customerName: (json['sq_cust_name'] ?? json['customer_name'] ?? json['cust_name'] ?? processingOrder?.customerName)?.toString(),
               chairNumber: (json['sales_odr_no_seats'] as num? ??
                   processingOrder?.chairNumber ?? 0).toInt(),
               captainName: (json['usr_name'] ?? json['captain_name'] ?? json['ledger_name'])?.toString(),
@@ -224,8 +242,8 @@ class OrdersController extends GetxController {
           final localOrder = finalOrders[existingIndex];
           if (localOrder.items.isNotEmpty && serverOrder.items.isEmpty) {
           } else if (serverOrder.items.isNotEmpty) {
-             localOrder.items.clear();
-             localOrder.items.addAll(serverOrder.items);
+            localOrder.items.clear();
+            localOrder.items.addAll(serverOrder.items);
           }
           localOrder.discount = serverOrder.discount;
           localOrder.roundOff = serverOrder.roundOff;
@@ -299,10 +317,10 @@ class OrdersController extends GetxController {
             return OrderModel(
               id: (json['sales_odr_id'] ?? '').toString(),
               invNo: (json['sales_odr_inv_no'] ?? '').toString(),
-              branchInv: (json['sales_odr_branch_inv'] ?? '').toString(), // ✅ Added
+              branchInv: (json['sales_odr_branch_inv'] ?? json['sales_branch_inv']?? json['sales_odr_sales_branch_inv'] ?? '').toString(), // ✅ Updated
               tableId: (json['sales_odr_table_id'] ?? '').toString(),
               tableName: _resolveName(json, type, 'Walk-in Customer'),
-              customerName: (json['sq_cust_name'] ?? json['customer_name'] ?? json['cust_name'] ?? json['ledger_name'])?.toString(),
+              customerName: (json['sq_cust_name'] ?? json['customer_name'] ?? json['cust_name']??'')?.toString(),
               chairNumber: 0,
               sales_odr_pos_status: (json['sales_odr_pos_status'] as num? ?? 3).toInt(),
               items: [],
@@ -423,6 +441,11 @@ class OrdersController extends GetxController {
         final dynamic decoded = jsonDecode(payloadStr);
         if (decoded is Map<String, dynamic>) {
           final Map<String, dynamic> payload = decoded;
+          final resolvedBranchInv = _firstNonEmptyValue([
+            payload['sales_odr_sales_branch_inv'],
+            payload['sales_odr_branch_inv'],
+            payload['sales_branch_inv'],
+          ]);
           chairNumber = (payload['no_seats'] ?? payload['sales_odr_no_seats'] as num? ?? 0).toInt();
           orderType = (payload['pos_odr_type'] ?? payload['sales_odr_order_type'] as num? ?? orderType).toInt();
           discount = (payload['tot_disc'] ?? payload['discount'] ?? discount).toDouble();
@@ -433,16 +456,16 @@ class OrdersController extends GetxController {
           totalCgst = (payload['tot_cgst_tax'] ?? totalCgst).toDouble();
           totalSgst = (payload['tot_sgst_tax'] ?? totalSgst).toDouble();
           qrLink = (payload['qr_link'] ?? payload['zatca_qr'])?.toString();
-          customerName = (payload['sq_cust_name'] ?? payload['customer_name'] ?? payload['cust_name'] ?? payload['ledger_name'])?.toString();
+          customerName = (payload['sq_cust_name'] ?? payload['customer_name'] ?? payload['cust_name'] ??'')?.toString();
           captainName = (payload['agent_name'] ?? payload['sale_agent_name'] ?? payload['captain_name'])?.toString();
           tableName = _resolveName(payload, orderType, tableName);
 
           if (payload['sq_inv_no'] != null && payload['sq_inv_no'].toString() != '0') {
             invNo = payload['sq_inv_no'].toString();
           }
-          
-          if (payload['sales_odr_branch_inv'] != null) {
-            branchInv = payload['sales_odr_branch_inv'].toString();
+
+          if (resolvedBranchInv.isNotEmpty) {
+            branchInv = resolvedBranchInv;
           }
 
           final dynamic rawResTable = payload['res_table'];
@@ -567,7 +590,7 @@ class OrdersController extends GetxController {
               subId: subId == 0 ? null : subId,
               tokenPrinterId: tokenPrinterId,
               isRemoved: isDeleted,
-              notes: si['Item_descp']?.toString() ?? si['notes']?.toString() ?? '',
+              notes: si['item_desc']?.toString() ?? si['sales_ord_sub_notes'] ?? '',
               product: FoodItemModel(
                 id: prdId,
                 name: si['prd_name']?.toString() ?? '',
@@ -899,14 +922,18 @@ class OrdersController extends GetxController {
           payload: jsonEncode(preview),
           isSynced: 1,
           invNo: order.invNo,
-          branchInv: (preview['sales_odr_branch_inv'] ?? '').toString(), // ✅ Added
+          branchInv: _firstNonEmptyValue([
+            preview['sales_odr_sales_branch_inv'],
+            preview['sales_odr_branch_inv'],
+            preview['sales_branch_inv'],
+          ]),
           serverId: order.id,
           total: authoritativeTotal,
           tax: authoritativeTax,
         );
 
         final String imageBaseUrl = preview['image_url']?.toString() ??
-                                  data['image_url']?.toString() ?? "";
+            data['image_url']?.toString() ?? "";
         final List<dynamic> subItems = preview['sales_order_sub'] ?? [];
         List<OrderItem> items = [];
 
@@ -970,7 +997,7 @@ class OrdersController extends GetxController {
             tokenPrinterId: (productJson['cat_token_printer'] as num?)?.toInt(),
             isRemoved: productJson['sales_ord_sub_flags'] == 0,
             isKotModified: productJson['sales_ord_sub_flags'] == 1,
-            notes: productJson['Item_descp']?.toString() ?? productJson['notes']?.toString() ?? '',
+            notes: productJson['item_desc']?.toString() ?? productJson['sales_ord_sub_notes'] ?? '',
             product: FoodItemModel(
               id: prdId,
               name: productJson['prd_name']?.toString() ?? '',
@@ -1010,7 +1037,7 @@ class OrdersController extends GetxController {
 
           orders[activeIndex] = current.copyWith(
             tableName: resolvedTableName,
-            customerName: (preview['sq_cust_name'] ?? preview['customer_name'] ?? preview['cust_name'] ?? preview['ledger_name'])?.toString(),
+            customerName: (preview['sq_cust_name'] ?? preview['customer_name'] ?? preview['cust_name'] ??'')?.toString(),
             sales_odr_pos_status: posStatus,
             items: items,
             status: updatedStatus,
@@ -1026,7 +1053,11 @@ class OrdersController extends GetxController {
                 data['agent']?['ledger_name'])?.toString(),
             isUnsynced: false,
             qrLink: (preview['qr_link'] ?? preview['zatca_qr'] ?? data['qr_link'] ?? data['zatca_qr'] ?? current.qrLink).toString(),
-            branchInv: (preview['sales_odr_branch_inv'] ?? '').toString(), // ✅ Added
+            branchInv: _firstNonEmptyValue([
+              preview['sales_odr_sales_branch_inv'],
+              preview['sales_odr_branch_inv'],
+              preview['sales_branch_inv'],
+            ]),
           );
           orders.refresh();
         } else {
@@ -1039,7 +1070,7 @@ class OrdersController extends GetxController {
 
             soldOrders[soldIndex] = current.copyWith(
               tableName: resolvedTableName,
-              customerName: (preview['sq_cust_name'] ?? preview['customer_name'] ?? preview['cust_name'] ?? preview['ledger_name'])?.toString(),
+              customerName: (preview['sq_cust_name'] ?? preview['customer_name'] ?? preview['cust_name'] ?? '')?.toString(),
               sales_odr_pos_status: posStatus,
               items: items,
               status: current.status.value,
@@ -1055,7 +1086,11 @@ class OrdersController extends GetxController {
               sales_odr_order_type: type,
               isUnsynced: false,
               qrLink: (preview['qr_link'] ?? preview['zatca_qr'] ?? data['qr_link'] ?? data['zatca_qr'] ?? current.qrLink).toString(),
-              branchInv: (preview['sales_odr_branch_inv'] ?? '').toString(), // ✅ Added
+              branchInv: _firstNonEmptyValue([
+                preview['sales_odr_sales_branch_inv'],
+                preview['sales_odr_branch_inv'],
+                preview['sales_branch_inv'],
+              ]),
             );
             soldOrders.refresh();
           }
@@ -1085,7 +1120,7 @@ class OrdersController extends GetxController {
       final mappedOrder = _mapJsonToOrderModel(row);
 
       if (mappedOrder.items.isNotEmpty) {
-         // Update both lists if found
+        // Update both lists if found
         var activeIndex = orders.indexWhere((o) => o.id == order.id);
         if (activeIndex != -1) {
           orders[activeIndex] = mappedOrder;
@@ -1227,7 +1262,7 @@ class OrdersController extends GetxController {
         isRemoved: isRemoved,
         cgstRate: cgstRate,
         sgstRate: sgstRate,
-        notes: sub['Item_descp']?.toString() ?? sub['notes']?.toString() ?? '',
+        notes: sub['item_desc']?.toString() ?? sub['sales_ord_sub_notes'] ?? '',
         product: FoodItemModel(
           id: prdId,
           name: sub['prd_name']?.toString() ?? cartItem?.product.name ?? 'Unknown',
@@ -1264,25 +1299,29 @@ class OrdersController extends GetxController {
 
     final String orderId = (preview['sales_odr_id'] ?? '').toString();
     final String invNo = (preview['sales_odr_inv_no'] ?? preview['sq_inv_no'] ?? '').toString();
-    final String branchInv = (preview['sales_odr_branch_inv'] ?? '').toString(); // ✅ Added
+    final String branchInv = _firstNonEmptyValue([
+      preview['sales_odr_sales_branch_inv'],
+      preview['sales_odr_branch_inv'],
+      preview['sales_branch_inv'],
+    ]);
     final String localUuid = (preview['local_uuid'] ?? '').toString();
 
     final int orderType = (preview['sales_odr_order_type'] as num? ?? 0).toInt();
     final int posStatus = (preview['sales_odr_pos_status'] as num? ?? 0).toInt();
-  final String cartTableFallback = fallbackTableName.isNotEmpty
-      ? fallbackTableName
-      : cartController.selectedTableName.value;
-  final String tableName = _resolveName(preview, orderType, cartTableFallback);
-  final String? customerName = (preview['sq_cust_name'] ?? preview['customer_name'] ?? preview['cust_name'] ?? preview['ledger_name'])?.toString();
+    final String cartTableFallback = fallbackTableName.isNotEmpty
+        ? fallbackTableName
+        : cartController.selectedTableName.value;
+    final String tableName = _resolveName(preview, orderType, cartTableFallback);
+    final String? customerName = (preview['sq_cust_name'] ?? preview['customer_name'] ?? preview['cust_name'] ?? '')?.toString();
     final String? captainName = (preview['agent_name'] ?? preview['usr_name'])?.toString(); // ✅ ADD
 
-  final int cartChairFallback = fallbackChairCount > 0
-      ? fallbackChairCount
-      : cartController.selectedChairCount.value;
-  final int chairNumber = (preview['sales_odr_no_seats'] as num? ??
-      preview['no_seats'] as num? ??
-      preview['res_table']?['rt_seat_count'] as num? ??
-      cartChairFallback).toInt();
+    final int cartChairFallback = fallbackChairCount > 0
+        ? fallbackChairCount
+        : cartController.selectedChairCount.value;
+    final int chairNumber = (preview['sales_odr_no_seats'] as num? ??
+        preview['no_seats'] as num? ??
+        preview['res_table']?['rt_seat_count'] as num? ??
+        cartChairFallback).toInt();
 
     return OrderModel(
       id: orderId.isEmpty ? localUuid : orderId,
@@ -1424,7 +1463,7 @@ class OrdersController extends GetxController {
           await _loadOrderDetailsFromLocal(order);
         }
         final updatedOrder = (orders + soldOrders).firstWhere(
-          (o) => o.id == order.id,
+              (o) => o.id == order.id,
           orElse: () => order,
         );
 
@@ -1511,7 +1550,7 @@ class OrdersController extends GetxController {
   List<OrderModel> get paidOrders {
     final dateStr = DateFormat('yyyy-MM-dd').format(selectedSoldDate.value);
     return soldOrders.where((o) =>
-      DateFormat('yyyy-MM-dd').format(o.createdAt) == dateStr
+    DateFormat('yyyy-MM-dd').format(o.createdAt) == dateStr
     ).toList();
   }
 

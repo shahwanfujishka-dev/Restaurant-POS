@@ -657,7 +657,7 @@ class DatabaseHelper {
       for (var json in serverOrders) {
         final serverId = (json['sales_odr_id'] ?? '').toString();
         final invNo = (json['sales_odr_inv_no'] ?? '').toString();
-        final branchInv = (json['sales_odr_branch_inv'] ?? '').toString();
+        final branchInv = (json['sales_odr_branch_inv'] ?? json['sales_branch_inv'] ?? '').toString();
 
         // Check if we have an unsynced local version first
         final List<Map<String, dynamic>> existing = await txn.query(
@@ -1199,7 +1199,7 @@ class DatabaseHelper {
             'uuid': serverId,
             'server_id': serverId,
             'inv_no': (order['sales_odr_inv_no'] ?? '').toString(),
-            'branch_inv': (order['sales_odr_branch_inv'] ?? '').toString(),
+            'branch_inv': (order['sales_odr_branch_inv'] ?? order['sales_branch_inv'] ?? '').toString(), // ✅ Updated to check both
             'customer_name': order['ledger_name']?.toString() ?? 'Walk-in Customer',
             'total_amount': _toDouble(order['sales_odr_total'] ?? order['tot_amount'] ?? order['total_amount']),
             'total_tax': _toDouble(order['sales_odr_tax'] ?? order['tot_tax'] ?? order['total_tax']),

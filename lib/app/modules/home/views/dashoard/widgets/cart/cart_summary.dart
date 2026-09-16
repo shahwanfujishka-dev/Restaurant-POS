@@ -1,10 +1,7 @@
 import 'dart:developer';
-
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart' hide ScreenType;
-
 import '../../../../../../../helper/snackbar_helper.dart';
 import '../../../../../../data/models/order_model.dart';
 import '../../../../../../routes/app_pages.dart';
@@ -13,7 +10,6 @@ import '../../../../../../theme/app_typography.dart';
 import '../../../../../../widgets/reusable_button.dart';
 import '../../../../../cart/controller/cart_controller.dart';
 import '../../../../controller/dashboard_controller.dart';
-import '../../../../controller/home_controller.dart';
 import '../../../../controller/order_controller.dart';
 import '../../../../controller/printer_controller.dart';
 import '../../../../../../data/utils/AppState.dart';
@@ -23,7 +19,33 @@ class CartSummary extends StatelessWidget {
   final CartController controller;
 
   const CartSummary({super.key, required this.controller});
+  Future<bool> _validatePrinterReady() async {
+    final printerController = Get.find<PrinterController>();
 
+    // 1. Bluetooth permission check (no-op/true on non-Android platforms)
+    final hasPermission = await printerController.checkPermissions();
+    if (!hasPermission) {
+      showSafeSnackbar(
+        "Bluetooth Permission Required",
+        "Please grant Bluetooth permissions before printing the KOT.",
+      );
+      await printerController.requestBluetoothPermissions();
+      return false;
+    }
+
+    // 2. At least one printer must actually be assigned to a token
+    final hasAssignedPrinter = printerController.tokenPrinterAssignments
+        .any((a) => a.printerAddress.value.isNotEmpty);
+    if (!hasAssignedPrinter) {
+      showSafeSnackbar(
+        "No Printer Assigned",
+        "Please assign a printer to at least one token before printing.",
+      );
+      return false;
+    }
+
+    return true;
+  }
   void _handlePlaceOrUpdateOrder({
     bool isDraft = false,
     int? payType,
@@ -375,10 +397,12 @@ class CartSummary extends StatelessWidget {
                     flex: 2,
                     child: PrimaryButton(
                       isLoading: controller.isProcessing.value,
-                      onPressed: () =>
-                          _handlePlaceOrUpdateOrder(isDraft: false),
-                      text: controller.isEditing ? "Update KOT" : 'place_order'
-                          .tr,
+                      onPressed: () async {
+                        final ready = await _validatePrinterReady();
+                        if (!ready) return;
+                        _handlePlaceOrUpdateOrder(isDraft: false);
+                      },
+                      text: controller.isEditing ? "Update KOT" : 'place_order'.tr,
                     ),
                   ),
                 ],
@@ -390,7 +414,11 @@ class CartSummary extends StatelessWidget {
                     child: PrimaryButton(
                       isLoading: controller.isProcessing.value,
                       height: 48.h,
-                      onPressed: () => _handlePlaceOrUpdateOrder(isDraft: false, shouldPrintReceipt: true),
+                      onPressed: () async {
+                        final ready = await _validatePrinterReady();
+                        if (!ready) return;
+                        _handlePlaceOrUpdateOrder(isDraft: false, shouldPrintReceipt: true);
+                      },
                       color: Colors.blueGrey,
                       text: "KOT & Print",
                     ),
