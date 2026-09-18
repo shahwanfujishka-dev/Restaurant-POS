@@ -14,8 +14,10 @@ import 'package:get/get_state_manager/src/simple/get_view.dart';
 import 'package:get/get_utils/src/extensions/internacionalization.dart';
 
 import '../../../../helper/snackbar_helper.dart';
+import '../../../data/Device_Roles/device_roles.dart';
 import '../../../data/services/api_services.dart';
 import '../../../data/services/database_helper.dart';
+import '../../../data/services/local_hub_client.dart';
 import '../../../data/utils/AppState.dart';
 import '../../../theme/app_theme.dart';
 import '../../../theme/app_typography.dart';
@@ -112,20 +114,46 @@ class TablesController extends GetxController {
       await _loadFromLocalDB();
       if (areas.isEmpty) isLoading.value = true;
 
-      final Map<String, dynamic> requestBody = {
-        "usr_id": int.tryParse(AppState.userId) ?? 0,
-      };
+      List<dynamic> dataList = [];
 
-      final response = await _apiService.post('mobileapp/pos/get_pos_table', data: requestBody);
-
-      if (response.statusCode == 200) {
-        List<dynamic> dataList = [];
-        if (response.data is Map && response.data['data'] is List) {
-          dataList = response.data['data'];
-        } else if (response.data is List) {
-          dataList = response.data;
+      if (DeviceConfig.operationMode == OperationMode.local && DeviceConfig.role == DeviceRole.client) {
+        // LOCAL HUB MODE (Client)
+        final hostIp = DeviceConfig.hostIp;
+        if (hostIp != null && hostIp.isNotEmpty && DeviceConfig.hasAuthToken) {
+          try {
+            final hubResult = await LocalHubClient.instance.fetchMasterTables(
+              hostIp: hostIp,
+              port: DeviceConfig.hostPort,
+            );
+            if (hubResult['success'] == true) {
+              dataList = hubResult['data'] ?? [];
+            }
+          } catch (e) {
+            debugPrint("fetchTables: Local Hub failed: $e");
+          }
         }
+      } else {
+        // CLOUD MODE (or Local Hub Host)
+        final Map<String, dynamic> requestBody = {
+          "usr_id": int.tryParse(AppState.userId) ?? 0,
+        };
+        try {
+          final response = await _apiService.post('mobileapp/pos/get_pos_table', data: requestBody);
+          if (response.statusCode == 200) {
+            if (response.data is Map && response.data['data'] is List) {
+              dataList = response.data['data'];
+            } else if (response.data is List) {
+              dataList = response.data;
+            }
+          }
+        } catch (e) {
+          debugPrint("fetchTables: Cloud API failed, using local cache: $e");
+          // If offline and not in local hub client mode, we just stick with what's in local DB
+          return;
+        }
+      }
 
+      if (dataList.isNotEmpty) {
         // Update Cache
         await _dbHelper.insertAreas(dataList.cast<Map<String, dynamic>>());
 
@@ -350,74 +378,38 @@ class ChairSelectionDialog extends GetView<TablesController> {
                   ? Colors.white
                   : colors.text;
 
-              return GestureDetector(
-                onTap: isOccupied
-                    ? null
-                    : () {
+              return InkWell(
+                onTap: isOccupied ? null : () {
                   controller.selectedChairCount.value = chairNum - occupiedCount;
                 },
                 child: Container(
-                  width: AppTypography.iconXL,
-                  height: AppTypography.iconXL,
-                  alignment: Alignment.center,
+                  width: 45.w,
+                  height: 45.w,
                   decoration: BoxDecoration(
                     color: bgColor,
-                    borderRadius: BorderRadius.circular(12.r),
-                    border: Border.all(
-                      color: borderColor,
-                      width: 1.5,
-                    ),
-                    boxShadow: isSelected ? [
-                      BoxShadow(
-                        color: AppTheme.primaryGreen.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      )
-                    ] : null,
+                    border: Border.all(color: borderColor, width: 1.5),
+                    borderRadius: BorderRadius.circular(8.r),
                   ),
-                  child: Text(
-                    '$chairNum',
-                    style: TextStyle(
-                      color: textColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: AppTypography.sizeText,
-                      decoration: isOccupied
-                          ? TextDecoration.lineThrough
-                          : null,
+                  child: Center(
+                    child: Text(
+                      chairNum.toString(),
+                      style: AppTypography.cardTitle.copyWith(
+                        color: textColor,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
               );
             }),
           )),
-          if (occupiedCount > 0) ...[
-            SizedBox(height: 16.h),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 12.r,
-                  height: 12.r,
-                  decoration: BoxDecoration(
-                    color: colors.isDark ? colors.bg : Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(4.r),
-                    border: Border.all(color: colors.isDark ? colors.border : Colors.grey.shade300),
-                  ),
-                ),
-                SizedBox(width: 8.w),
-                Text('occupied'.tr, style: AppTypography.cardInfo.copyWith(color: colors.subtext)),
-              ],
-            ),
-          ],
+          SizedBox(height: 20.h),
+          PrimaryButton(
+            text: 'confirm'.tr,
+            onPressed: () => controller.confirmSelection(table),
+          ),
         ],
       ),
-      actions: [
-        TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr, style: TextStyle(color: colors.subtext))),
-        PrimaryButton(
-          onPressed: () => controller.confirmSelection(table),
-          text: 'confirm'.tr,
-        ),
-      ],
     );
   }
 }

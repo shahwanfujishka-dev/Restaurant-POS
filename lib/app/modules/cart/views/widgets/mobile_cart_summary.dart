@@ -7,6 +7,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
 
 import '../../../../../helper/snackbar_helper.dart';
+import '../../../../data/Device_Roles/device_roles.dart';
 import '../../../../data/models/order_model.dart';
 import '../../../../data/utils/AppState.dart';
 import '../../../../routes/app_pages.dart';
@@ -105,6 +106,16 @@ class MobileCartSummary extends StatelessWidget {
 
       // ✅ Log Success Response to Console
       log("Order Success Response: ${jsonEncode(responseData)}");
+      // Local Hub mode: client won't get this order back from a cloud fetch,
+// so insert it into this device's own order list directly.
+      if (DeviceConfig.operationMode == OperationMode.local) {
+        debugPrint("🟢 LOCAL MODE: adding order to client's own list");
+        final localOrdersController = Get.find<OrdersController>();
+        final parsedOrder = localOrdersController.parseOrderResponse(responseData);
+        debugPrint("🟢 Parsed order → invNo: ${parsedOrder.invNo}, items: ${parsedOrder.items.length}");
+        localOrdersController.addOrder(parsedOrder);
+        debugPrint("🟢 orders.length now = ${localOrdersController.orders.length}");
+      }
 
       // ✅ CHECK FOR ERROR STATUS IN RESPONSE
       bool hasError = false;
@@ -281,7 +292,9 @@ class MobileCartSummary extends StatelessWidget {
     }
 
     try {
-      await ordersController.fetchOrders();
+      if (DeviceConfig.operationMode != OperationMode.local) {
+        await ordersController.fetchOrdersSafely();
+      }
     } catch (e) {
       debugPrint("Background Fetch Orders failed: $e");
     }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart' hide ScreenType;
 import '../../../../../../../helper/snackbar_helper.dart';
+import '../../../../../../data/Device_Roles/device_roles.dart';
 import '../../../../../../data/models/order_model.dart';
 import '../../../../../../routes/app_pages.dart';
 import '../../../../../../theme/app_theme.dart';
@@ -104,6 +105,14 @@ class CartSummary extends StatelessWidget {
       }
 
       log("Order Success Response: $responseData");
+      if (DeviceConfig.operationMode == OperationMode.local) {
+        debugPrint("🟢 LOCAL MODE: adding order to client's own list");
+        final localOrdersController = Get.find<OrdersController>();
+        final parsedOrder = localOrdersController.parseOrderResponse(responseData);
+        debugPrint("🟢 Parsed order → invNo: ${parsedOrder.invNo}, items: ${parsedOrder.items.length}");
+        localOrdersController.addOrder(parsedOrder);
+        debugPrint("🟢 orders.length now = ${localOrdersController.orders.length}");
+      }
       // log(message)
 
       // ✅ CHECK FOR ERROR STATUS IN RESPONSE
@@ -145,7 +154,6 @@ class CartSummary extends StatelessWidget {
       final bool wasDraftVal = controller.wasDraft.value;
       final List<OrderItem> originalItemsCopy = List<OrderItem>.from(controller.originalItems);
 
-// ✅ Capture BEFORE stopEditing/clearTable wipes these values
       final String snapshotTableName = controller.selectedTableName.value;
       final int snapshotChairCount = controller.selectedChairCount.value;
 
@@ -208,12 +216,8 @@ class CartSummary extends StatelessWidget {
 
     final dashboardController = Get.find<DashboardController>();
     final bool showTax = dashboardController.vatType.value == 0;
-
-    // Use current totals from cart
     final double totalTax = showTax ? controller.totalTaxAmount : 0.0;
     final double totalWithTax = showTax ? controller.grandTotal : controller.totalAmount;
-
-    // Map cart items to order items to pass to cashier view
     final items = controller.cartItems
         .where((ci) => !ci.isDeleted.value && ci.quantity.value > 0)
         .map((ci) => OrderItem(
@@ -230,7 +234,6 @@ class CartSummary extends StatelessWidget {
             ))
         .toList();
 
-    // Construct a temporary OrderModel to pass to CashierView
     final tempOrder = OrderModel(
       id: controller.editingOrderId.value.isEmpty ? "PENDING" : controller.editingOrderId.value,
       invNo: controller.editingInvNo.value.isEmpty ? "NEW" : controller.editingInvNo.value,
@@ -291,7 +294,9 @@ class CartSummary extends StatelessWidget {
     }
 
     try {
-      await ordersController.fetchOrders();
+      if (DeviceConfig.operationMode != OperationMode.local) {
+        await ordersController.fetchOrdersSafely();
+      }
     } catch (e) {
       debugPrint("Background Fetch Orders failed: $e");
     }

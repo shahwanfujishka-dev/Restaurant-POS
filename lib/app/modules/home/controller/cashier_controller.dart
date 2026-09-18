@@ -518,7 +518,7 @@ class CashierController extends GetxController {
         }
         await _printReceipt(result: result, isComp: isComp);
         cartController.stopEditing();
-        Get.find<OrdersController>().fetchOrders();
+        Get.find<OrdersController>().fetchOrdersSafely();
         Get.offAllNamed(ScreenType.isMobile() ? Routes.ORDER_TYPE : Routes.HOME);
         
         final String? branchInv = preview?['sales_odr_sales_branch_inv']?.toString() ?? preview?['sales_branch_inv']?.toString() ?? preview?['sales_odr_branch_inv']?.toString();
@@ -607,7 +607,7 @@ class CashierController extends GetxController {
       if (Get.isRegistered<OrdersController>()) {
         final ordersController = Get.find<OrdersController>();
         ordersController.markOrderAsPaidLocally(orderIdForDb);
-        ordersController.fetchOrders();
+        ordersController.fetchOrdersSafely();
       }
       Get.offAllNamed(ScreenType.isMobile() ? Routes.ORDER_TYPE : Routes.HOME);
       showSafeSnackbar(

@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:get_storage/get_storage.dart';
 
 enum DeviceRole {
@@ -13,7 +15,6 @@ enum OperationMode {
 class DeviceConfig {
   static final GetStorage _storage = GetStorage();
 
-  static const String _roleKey = 'device_role';
   static const String _hostIpKey = 'host_ip';
   static const String _hostPortKey = 'host_port';
   static const String _deviceIdKey = 'device_id';
@@ -21,20 +22,28 @@ class DeviceConfig {
   static const String _authTokenKey = 'hub_auth_token';
 
   // ============================================================
-  // ROLE
+  // PLATFORM HELPERS
+  // ============================================================
+
+  static bool get isDesktop {
+    if (kIsWeb) return false;
+    return Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+  }
+
+  static bool get isMobile {
+    if (kIsWeb) return false;
+    return Platform.isAndroid || Platform.isIOS;
+  }
+
+  // ============================================================
+  // ROLE (Automatically determined by Platform)
   // ============================================================
 
   static DeviceRole get role {
-    final value = _storage.read<String>(_roleKey);
-
-    return DeviceRole.values.firstWhere(
-          (role) => role.name == value,
-      orElse: () => DeviceRole.client,
-    );
-  }
-
-  static Future<void> setRole(DeviceRole value) async {
-    await _storage.write(_roleKey, value.name);
+    if (isDesktop) {
+      return DeviceRole.server;
+    }
+    return DeviceRole.client;
   }
 
   static bool get isServer => role == DeviceRole.server;
@@ -181,7 +190,6 @@ class DeviceConfig {
   // ============================================================
 
   static Future<void> clearDeviceConfig() async {
-    await _storage.remove(_roleKey);
     await _storage.remove(_hostIpKey);
     await _storage.remove(_hostPortKey);
     await _storage.remove(_deviceIdKey);

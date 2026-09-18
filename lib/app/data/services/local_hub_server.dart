@@ -16,84 +16,35 @@ class LocalHubServer {
   LocalHubServer._internal();
 
   HttpServer? _server;
-
-  /// Actual LAN IP of this device.
   static String? lanIp;
-
-  /// Server port.
   static const int defaultPort = 8080;
 
   int get port => _server?.port ?? defaultPort;
-
   bool get isRunning => _server != null;
-
-  /// Returns the actual LAN IP.
   String? get hostAddress => lanIp;
   final Map<String, String> _deviceTokens = {};
 
   bool _isAuthorized(Request request) {
-    final authorization =
-    request.headers['authorization'];
-
-    if (authorization == null ||
-        !authorization.startsWith('Bearer ')) {
-      return false;
-    }
-
-    final token =
-    authorization.substring(7).trim();
-
-    if (token.isEmpty) {
-      return false;
-    }
-
-    return _deviceTokens.containsValue(token);
+    final authorization = request.headers['authorization'];
+    if (authorization == null || !authorization.startsWith('Bearer ')) return false;
+    final token = authorization.substring(7).trim();
+    return token.isNotEmpty && _deviceTokens.containsValue(token);
   }
 
-  /// Returns:
-  /// http://192.168.x.x:8080
-  String? get serverUrl {
-    final ip = lanIp;
-
-    if (ip == null || ip.isEmpty) {
-      return null;
-    }
-
-    return 'http://$ip:$port';
-  }
+  String? get serverUrl => lanIp != null ? 'http://$lanIp:$port' : null;
 
   String _generateAuthToken() {
     final random = Random.secure();
-
-    final bytes = List<int>.generate(
-      32,
-          (_) => random.nextInt(256),
-    );
-
+    final bytes = List<int>.generate(32, (_) => random.nextInt(256));
     return base64UrlEncode(bytes);
   }
 
   Future<void> start() async {
-    if (_server != null) {
-      debugPrint('LOCAL HUB: Server already running');
-      return;
-    }
-
-    if (kIsWeb) {
-      debugPrint('LOCAL HUB: Web platform is not supported');
-      return;
-    }
+    if (_server != null) return;
+    if (kIsWeb) return;
 
     try {
-      // ------------------------------------------------------------
-      // ROUTER
-      // ------------------------------------------------------------
-
       final router = Router();
-
-      // ------------------------------------------------------------
-      // HUB STATUS
-      // ------------------------------------------------------------
 
       router.get('/hub/status', (Request request) {
         return _jsonResponse({
@@ -108,376 +59,195 @@ class LocalHubServer {
         });
       });
 
-      // ------------------------------------------------------------
-      // HEALTH CHECK
-      // ------------------------------------------------------------
-
-      router.get('/health', (Request request) {
-        return _jsonResponse({
-          'success': true,
-          'status': 'ok',
-        });
-      });
-
-      // ------------------------------------------------------------
-      // DEVICE REGISTRATION
-      // ------------------------------------------------------------
-
-
+      router.get('/health', (Request request) => _jsonResponse({'success': true, 'status': 'ok'}));
 
       router.post('/device/register', (Request request) async {
         try {
           final body = await _readJson(request);
+          final deviceId = body['deviceId']?.toString().trim() ?? '';
+          final role = body['role']?.toString().trim() ?? '';
 
-          debugPrint('======================================');
-          debugPrint('LOCAL HUB: DEVICE REGISTRATION REQUEST');
-          debugPrint(
-            const JsonEncoder.withIndent('  ').convert(body),
-          );
-          debugPrint('======================================');
-
-          final deviceId =
-              body['deviceId']?.toString().trim() ?? '';
-
-          final deviceName =
-              body['deviceName']?.toString().trim() ?? '';
-
-          final role =
-              body['role']?.toString().trim() ?? '';
-
-          final userId =
-          body['userId']?.toString();
-
-          final userName =
-          body['userName']?.toString();
-
-          // ------------------------------------------------------------
-          // VALIDATION
-          // ------------------------------------------------------------
-
-          if (deviceId.isEmpty) {
-            return _errorResponse(
-              'Device ID is required',
-              statusCode: 400,
-            );
-          }
-
-          if (role.isEmpty) {
-            return _errorResponse(
-              'Device role is required',
-              statusCode: 400,
-            );
-          }
-
-          // Only CLIENT devices should register with the Local Hub.
-          if (role != 'client') {
-            return _errorResponse(
-              'Only client devices can register with the Local Hub.',
-              statusCode: 400,
-            );
-          }
-
-          // ------------------------------------------------------------
-          // GENERATE AUTH TOKEN
-          // ------------------------------------------------------------
+          if (deviceId.isEmpty || role.isEmpty) return _errorResponse('Device ID and role required', statusCode: 400);
+          if (role != 'client') return _errorResponse('Only clients can register', statusCode: 400);
 
           final authToken = _generateAuthToken();
-
-          // ------------------------------------------------------------
-          // SAVE TOKEN
-          // ------------------------------------------------------------
-
           _deviceTokens[deviceId] = authToken;
-
-          debugPrint('======================================');
-          debugPrint('LOCAL HUB: DEVICE REGISTERED');
-          debugPrint('Device ID   : $deviceId');
-          debugPrint('Device Name : $deviceName');
-          debugPrint('Role        : $role');
-          debugPrint('User ID     : $userId');
-          debugPrint('User Name   : $userName');
-          debugPrint('Token       : SAVED');
-          debugPrint(
-            'Registered Devices : ${_deviceTokens.length}',
-          );
-          debugPrint('======================================');
-
-          // ------------------------------------------------------------
-          // RESPONSE
-          // ------------------------------------------------------------
 
           return _jsonResponse({
             'success': true,
             'message': 'Device registered successfully',
             'data': {
               'deviceId': deviceId,
-              'deviceName': deviceName,
-              'role': role,
-              'userId': userId,
-              'userName': userName,
               'authToken': authToken,
               'hostIp': lanIp,
               'port': port,
-              'hubUrl': serverUrl,
             },
           });
-        } catch (e, stackTrace) {
-          debugPrint(
-            'LOCAL HUB: Device registration error: $e',
-          );
-
-          debugPrint(
-            stackTrace.toString(),
-          );
-
-          return _errorResponse(
-            'Invalid device registration request',
-            statusCode: 400,
-          );
+        } catch (e) {
+          return _errorResponse('Invalid registration request', statusCode: 400);
         }
       });
 
       // ------------------------------------------------------------
-      // CREATE ORDER
+      // ORDERS API
       // ------------------------------------------------------------
 
       router.post('/orders/create', (Request request) async {
-        // ------------------------------------------------------------
-        // AUTHENTICATION
-        // ------------------------------------------------------------
-
-        if (!_isAuthorized(request)) {
-          debugPrint(
-            'LOCAL HUB: Unauthorized order request',
-          );
-
-          return _errorResponse(
-            'Unauthorized device',
-            statusCode: 401,
-          );
-        }
-
+        if (!_isAuthorized(request)) return _errorResponse('Unauthorized', statusCode: 401);
         try {
           final body = await _readJson(request);
-
-          debugPrint('======================================');
-          debugPrint('LOCAL HUB: CREATE ORDER');
-          debugPrint(
-            const JsonEncoder.withIndent('  ').convert(body),
-          );
-          debugPrint('======================================');
-
-          final result =
-          await LocalHubOrderService.instance.createOrder(
-            payload: body,
-          );
-
+          final result = await LocalHubOrderService.instance.createOrder(payload: body);
           return _jsonResponse(result);
-        } catch (e, stackTrace) {
-          debugPrint(
-            'LOCAL HUB: Create order error: $e',
-          );
-
-          debugPrint(
-            stackTrace.toString(),
-          );
-
-          return _errorResponse(
-            'Failed to create order: $e',
-            statusCode: 500,
-          );
+        } catch (e) {
+          return _errorResponse('Failed to create order: $e', statusCode: 500);
         }
       });
-      // ------------------------------------------------------------
-      // UPDATE ORDER
-      // ------------------------------------------------------------
 
       router.post('/orders/update', (Request request) async {
+        if (!_isAuthorized(request)) return _errorResponse('Unauthorized', statusCode: 401);
         try {
           final body = await _readJson(request);
-
-          debugPrint(
-            'LOCAL HUB: Update order request',
-          );
-
-          debugPrint(
-            const JsonEncoder.withIndent('  ').convert(body),
-          );
-
-          return _jsonResponse({
-            'success': true,
-            'message': 'Order update received by local hub',
-          });
+          final result = await LocalHubOrderService.instance.updateOrder(payload: body);
+          return _jsonResponse(result);
         } catch (e) {
-          debugPrint(
-            'LOCAL HUB: Update order error: $e',
-          );
+          return _errorResponse('Failed to update order: $e', statusCode: 500);
+        }
+      });
 
-          return _errorResponse(
-            'Invalid order update request',
-            statusCode: 400,
-          );
+      router.get('/orders/list', (Request request) async {
+        if (!_isAuthorized(request)) return _errorResponse('Unauthorized', statusCode: 401);
+        try {
+          final result = await LocalHubOrderService.instance.fetchOrders();
+          return _jsonResponse(result);
+        } catch (e) {
+          return _errorResponse('Failed to fetch orders: $e', statusCode: 500);
+        }
+      });
+
+      router.get('/orders/sold', (Request request) async {
+        if (!_isAuthorized(request)) return _errorResponse('Unauthorized', statusCode: 401);
+        try {
+          final date = request.url.queryParameters['date'];
+          final result = await LocalHubOrderService.instance.fetchOrders(status: 'paid', date: date);
+          return _jsonResponse(result);
+        } catch (e) {
+          return _errorResponse('Failed to fetch sold orders: $e', statusCode: 500);
+        }
+      });
+
+      router.get('/orders/details', (Request request) async {
+        if (!_isAuthorized(request)) return _errorResponse('Unauthorized', statusCode: 401);
+        try {
+          final id = request.url.queryParameters['id'];
+          if (id == null) return _errorResponse('Order ID required', statusCode: 400);
+          final result = await LocalHubOrderService.instance.getOrderDetails(id);
+          return _jsonResponse(result);
+        } catch (e) {
+          return _errorResponse('Failed to get order details: $e', statusCode: 500);
         }
       });
 
       // ------------------------------------------------------------
-      // KOT
+      // MASTER DATA API
       // ------------------------------------------------------------
+
+      router.get('/master/tables', (Request request) async {
+        if (!_isAuthorized(request)) return _errorResponse('Unauthorized', statusCode: 401);
+        try {
+          final result = await LocalHubOrderService.instance.fetchMasterTables();
+          return _jsonResponse(result);
+        } catch (e) {
+          return _errorResponse('Failed to fetch master tables: $e', statusCode: 500);
+        }
+      });
+
+      router.get('/master/categories', (Request request) async {
+        if (!_isAuthorized(request)) return _errorResponse('Unauthorized', statusCode: 401);
+        try {
+          final result = await LocalHubOrderService.instance.fetchMasterCategories();
+          return _jsonResponse(result);
+        } catch (e) {
+          return _errorResponse('Failed to fetch master categories: $e', statusCode: 500);
+        }
+      });
+
+      router.get('/master/captains', (Request request) async {
+        if (!_isAuthorized(request)) return _errorResponse('Unauthorized', statusCode: 401);
+        try {
+          final result = await LocalHubOrderService.instance.fetchMasterCaptains();
+          return _jsonResponse(result);
+        } catch (e) {
+          return _errorResponse('Failed to fetch master captains: $e', statusCode: 500);
+        }
+      });
+
+      router.get('/master/products', (Request request) async {
+        if (!_isAuthorized(request)) return _errorResponse('Unauthorized', statusCode: 401);
+        try {
+          final categoryId = request.url.queryParameters['category_id'];
+          final priceGroupId = int.tryParse(request.url.queryParameters['price_group_id'] ?? '0') ?? 0;
+          final result = await LocalHubOrderService.instance.fetchMasterProducts(
+            categoryId: categoryId,
+            priceGroupId: priceGroupId,
+          );
+          return _jsonResponse(result);
+        } catch (e) {
+          return _errorResponse('Failed to fetch master products: $e', statusCode: 500);
+        }
+      });
+
+      router.get('/master/product-units', (Request request) async {
+        if (!_isAuthorized(request)) return _errorResponse('Unauthorized', statusCode: 401);
+        try {
+          final productIdStr = request.url.queryParameters['product_id'];
+          final priceGroupId = int.tryParse(request.url.queryParameters['price_group_id'] ?? '0') ?? 0;
+          if (productIdStr == null) return _errorResponse('Product ID required', statusCode: 400);
+          final productId = int.tryParse(productIdStr) ?? 0;
+          final result = await LocalHubOrderService.instance.fetchMasterProductUnits(productId, priceGroupId);
+          return _jsonResponse(result);
+        } catch (e) {
+          return _errorResponse('Failed to fetch master product units: $e', statusCode: 500);
+        }
+      });
 
       router.post('/kot/create', (Request request) async {
-        try {
-          final body = await _readJson(request);
-
-          debugPrint(
-            'LOCAL HUB: KOT request',
-          );
-
-          debugPrint(
-            const JsonEncoder.withIndent('  ').convert(body),
-          );
-
-          return _jsonResponse({
-            'success': true,
-            'message': 'KOT received by local hub',
-          });
-        } catch (e) {
-          debugPrint(
-            'LOCAL HUB: KOT error: $e',
-          );
-
-          return _errorResponse(
-            'Invalid KOT request',
-            statusCode: 400,
-          );
-        }
+        return _jsonResponse({'success': true, 'message': 'KOT received'});
       });
 
-      // ------------------------------------------------------------
-      // MIDDLEWARE
-      // ------------------------------------------------------------
-
-      final handler = const Pipeline()
-          .addMiddleware(logRequests())
-          .addHandler(router.call);
-
-      // ------------------------------------------------------------
-      // START SERVER
-      // ------------------------------------------------------------
-
-      _server = await shelf_io.serve(
-        handler,
-        InternetAddress.anyIPv4,
-        defaultPort,
-        shared: true,
-      );
-
-      // ------------------------------------------------------------
-      // GET ACTUAL LAN IP
-      // ------------------------------------------------------------
-
+      final handler = const Pipeline().addMiddleware(logRequests()).addHandler(router.call);
+      _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, defaultPort, shared: true);
       lanIp = await LocalHubNetwork.getLocalIp();
 
-      // ------------------------------------------------------------
-      // LOG
-      // ------------------------------------------------------------
-
-      debugPrint('======================================');
-      debugPrint('LOCAL HUB SERVER STARTED');
-      debugPrint('Listen Address : ${_server!.address.address}');
-      debugPrint('Port           : ${_server!.port}');
-      debugPrint('LAN IP         : $lanIp');
-      debugPrint('Hub URL        : $serverUrl');
-      debugPrint('======================================');
+      debugPrint('LOCAL HUB SERVER STARTED ON $serverUrl');
     } catch (e) {
-      debugPrint(
-        'LOCAL HUB: Failed to start server: $e',
-      );
       _server = null;
       lanIp = null;
-
       rethrow;
     }
   }
 
-  // ------------------------------------------------------------
-  // STOP SERVER
-  // ------------------------------------------------------------
-
   Future<void> stop() async {
     final server = _server;
-
-    if (server == null) {
-      return;
-    }
-
+    if (server == null) return;
     try {
       await server.close(force: true);
     } finally {
       _server = null;
       lanIp = null;
     }
-
-    debugPrint('======================================');
-    debugPrint('LOCAL HUB SERVER STOPPED');
-    debugPrint('======================================');
   }
 
-  // ------------------------------------------------------------
-  // READ JSON
-  // ------------------------------------------------------------
-
-  Future<Map<String, dynamic>> _readJson(
-      Request request,
-      ) async {
+  Future<Map<String, dynamic>> _readJson(Request request) async {
     final body = await request.readAsString();
-
-    if (body.trim().isEmpty) {
-      return {};
-    }
-
-    final decoded = jsonDecode(body);
-
-    if (decoded is Map<String, dynamic>) {
-      return decoded;
-    }
-
-    throw const FormatException(
-      'Request body must be a JSON object',
-    );
+    if (body.trim().isEmpty) return {};
+    return jsonDecode(body) as Map<String, dynamic>;
   }
 
-  // ------------------------------------------------------------
-  // JSON RESPONSE
-  // ------------------------------------------------------------
-
-  Response _jsonResponse(
-      Map<String, dynamic> data, {
-        int statusCode = 200,
-      }) {
-    return Response(
-      statusCode,
-      body: jsonEncode(data),
-      headers: {
-        'content-type': 'application/json',
-        'access-control-allow-origin': '*',
-      },
-    );
+  Response _jsonResponse(Map<String, dynamic> data, {int statusCode = 200}) {
+    return Response(statusCode, body: jsonEncode(data), headers: {'content-type': 'application/json', 'access-control-allow-origin': '*'});
   }
 
-  // ------------------------------------------------------------
-  // ERROR RESPONSE
-  // ------------------------------------------------------------
-
-  Response _errorResponse(
-      String message, {
-        int statusCode = 500,
-      }) {
-    return _jsonResponse(
-      {
-        'success': false,
-        'message': message,
-      },
-      statusCode: statusCode,
-    );
+  Response _errorResponse(String message, {int statusCode = 500}) {
+    return _jsonResponse({'success': false, 'message': message}, statusCode: statusCode);
   }
 }

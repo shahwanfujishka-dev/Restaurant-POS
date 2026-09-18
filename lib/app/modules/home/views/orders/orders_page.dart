@@ -173,7 +173,7 @@ class OrdersPage extends GetView<OrdersController> {
 
     if (orders.isEmpty) {
       return RefreshIndicator(
-        onRefresh: controller.fetchOrders,
+        onRefresh: controller.fetchOrdersSafely,
         child: Stack(
           children: [
             ListView(
@@ -215,7 +215,7 @@ class OrdersPage extends GetView<OrdersController> {
 
     if (ScreenType.isMobile()) {
       return RefreshIndicator(
-        onRefresh: controller.fetchOrders,
+        onRefresh: controller.fetchOrdersSafely,
         child: ListView.builder(
           padding: EdgeInsets.all(12.w),
           physics: const AlwaysScrollableScrollPhysics(),
@@ -243,7 +243,7 @@ class OrdersPage extends GetView<OrdersController> {
     }
 
     return RefreshIndicator(
-      onRefresh: controller.fetchOrders,
+      onRefresh: controller.fetchOrdersSafely,
       child: GridView.builder(
         padding: EdgeInsets.all(8.w),
         physics: const AlwaysScrollableScrollPhysics(),
@@ -1378,16 +1378,11 @@ String _getOrderTypeName(int type) {
 }
 
 String _formatInvNo(OrderModel order) {
-  // if (order.offlineSeq != null) {
-  //   final branch = AppState.branchDisName.isNotEmpty
-  //       ? AppState.branchDisName
-  //       : AppState.branchName;
-  //   return "$branch ${order.offlineSeq.toString().padLeft(3, '0')}";
-  // }
-  // if (order.invNo.isNotEmpty &&
-  //     order.invNo != "LOCAL" &&
-  //     order.invNo != "OFFLINE") {
-  //   return order.branchInv.toString();
-  // }
+  if (order.offlineSeq != null) {
+    final String code = AppState.branchDisName.isNotEmpty
+        ? AppState.branchDisName
+        : AppState.branchName;
+    return "M$code${order.offlineSeq.toString().padLeft(4, '0')}";
+  }
   return order.branchInv.toString();
 }

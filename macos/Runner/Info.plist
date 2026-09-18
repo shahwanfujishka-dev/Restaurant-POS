@@ -30,5 +30,9 @@
 	<string>NSApplication</string>
 	<key>NSCameraUsageDescription</key>
 	<string>This app needs camera access to scan QR codes.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Bluetooth is required to connect to thermal printers.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Bluetooth is required to connect to thermal printers.</string>
 </dict>
 </plist>

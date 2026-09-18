@@ -12,10 +12,12 @@ import 'package:intl/intl.dart';
 import 'package:restaurant_pos/app/modules/home/controller/printer_controller.dart';
 import 'package:restaurant_pos/app/modules/home/controller/table_controller.dart';
 import '../../../../helper/snackbar_helper.dart';
+import '../../../data/Device_Roles/device_roles.dart';
 import '../../../data/models/order_model.dart';
 import '../../../data/models/order_type.dart';
 import '../../../data/services/api_services.dart';
 import '../../../data/services/database_helper.dart';
+import '../../../data/services/local_hub_client.dart';
 import '../../../data/services/sync_service.dart';
 import '../../../data/utils/AppState.dart';
 import '../../../routes/app_pages.dart';
@@ -85,6 +87,10 @@ class OrdersController extends GetxController {
     } finally {
       isLoading.value = false;
     }
+  }
+
+  Future<void> fetchOrdersSafely() async {
+    await fetchOrders();
   }
   /// Like ?? but also skips empty strings, not just null.
   String _firstNonEmptyValue(List<dynamic> values) {
@@ -164,68 +170,98 @@ class OrdersController extends GetxController {
         debugPrint("fetchOrders: Could not load tables (offline?): $e");
       }
 
+      // ── 2b. Active orders from the network — cloud API when online,
+      //         LOCAL HUB when in local mode ──────────────────────────────
       List<OrderModel> fetchedOrders = [];
-      try {
-        final response = await _apiService.post("mobileapp/pos/get_pos_order_list", data: {
-          "usr_id": int.tryParse(AppState.userId) ?? 18,
-        });
 
-        if (response.statusCode == 200) {
-          final List<dynamic> data = response.data['data'] ?? [];
-          fetchedOrders = data.map((json) {
-            final orderType = (json['sales_odr_order_type'] as num? ?? 0).toInt();
-            int posStatus = (json['sales_odr_pos_status'] as num? ?? 0).toInt();
-
-            OrderStatus status;
-            if (posStatus == 1) {
-              status = OrderStatus.pending;
-            } else if (posStatus == 2) {
-              status = OrderStatus.billed;
-            } else {
-              status = OrderStatus.draft;
+      if (DeviceConfig.operationMode == OperationMode.local) {
+        if (DeviceConfig.role == DeviceRole.client) {
+          final hostIp = DeviceConfig.hostIp;
+          if (hostIp != null && hostIp.trim().isNotEmpty && DeviceConfig.hasAuthToken) {
+            try {
+              final hubResult = await LocalHubClient.instance.fetchActiveOrders(
+                hostIp: hostIp,
+                port: DeviceConfig.hostPort,
+              );
+              final List<dynamic> rows = hubResult['data'] ?? [];
+              fetchedOrders = rows
+                  .whereType<Map>()
+                  .map((row) => _mapJsonToOrderModel(Map<String, dynamic>.from(row)))
+                  .toList();
+              debugPrint("🟢 LOCAL HUB: fetched ${fetchedOrders.length} active orders from host");
+            } catch (e) {
+              debugPrint("fetchOrders: Local Hub fetch failed (client): $e");
             }
-
-            final processingOrder = allProcessingOrders.firstWhereOrNull(
-                  (o) => o.invNo == (json['sales_odr_inv_no'] ?? '').toString(),
-            );
-
-            return OrderModel(
-              id: (json['sales_odr_id'] ?? '').toString(),
-              tableId: (json['sales_odr_table_id'] ?? processingOrder?.tableId ?? '').toString(),
-              invNo: (json['sales_odr_inv_no'] ?? '').toString(),
-              branchInv: _firstNonEmptyValue([
-                json['sales_odr_sales_branch_inv'],
-                json['sales_odr_branch_inv'],
-                json['sales_branch_inv'],
-                processingOrder?.branchInv,
-              ]),
-              tableName: _resolveName(json, orderType, processingOrder?.tableName ?? 'Unknown Table'),
-              customerName: (json['sq_cust_name'] ?? json['customer_name'] ?? json['cust_name'] ?? processingOrder?.customerName)?.toString(),
-              chairNumber: (json['sales_odr_no_seats'] as num? ??
-                  processingOrder?.chairNumber ?? 0).toInt(),
-              captainName: (json['usr_name'] ?? json['captain_name'] ?? json['ledger_name'])?.toString(),
-              sales_odr_pos_status: posStatus,
-              items: [],
-              status: status,
-              createdAt: DateTime.tryParse(json['sales_odr_datetime'] ?? '') ??
-                  processingOrder?.createdAt ?? DateTime.now(),
-              subTotal: (json['tot_rate'] as num? ?? json['sub_total'] as num? ?? processingOrder?.subTotal ?? 0.0).toDouble(),
-              totalAmount: (json['sales_odr_total'] ?? json['tot_amount'] ?? json['total_amount'] as num? ?? 0.0).toDouble(),
-              areaId: processingOrder?.areaId,
-              areaName: processingOrder?.areaName,
-              priceGroupId: processingOrder?.priceGroupId,
-              totalTax: (json['sales_odr_tax'] ?? json['tot_tax'] ?? json['total_tax'] as num? ?? 0.0).toDouble(),
-              totalCgst: (json['tot_cgst_tax'] as num? ?? processingOrder?.totalCgst ?? 0.0).toDouble(),
-              totalSgst: (json['tot_sgst_tax'] as num? ?? processingOrder?.totalSgst ?? 0.0).toDouble(),
-              sales_odr_order_type: orderType,
-              discount: (json['tot_disc'] ?? json['discount'] ?? processingOrder?.discount ?? 0.0).toDouble(),
-              roundOff: (json['sales_odr_roundoff'] ?? processingOrder?.roundOff ?? 0.0).toDouble(),
-              qrLink: (json['qr_link'] ?? json['zatca_qr'] ?? processingOrder?.qrLink ?? '').toString(),
-            );
-          }).toList();
+          } else {
+            debugPrint("fetchOrders: Local mode client but no host IP/auth token configured yet");
+          }
         }
-      } catch (e) {
-        debugPrint("fetchOrders: Could not load order list (offline?): $e");
+        // Host role: nothing more to do — its own orders are already in
+        // `finalOrders` via unsyncedData, since local orders never leave
+        // this device's DB with is_synced == 0.
+      } else {
+        try {
+          final response = await _apiService.post("mobileapp/pos/get_pos_order_list", data: {
+            "usr_id": int.tryParse(AppState.userId) ?? 18,
+          });
+
+          if (response.statusCode == 200) {
+            final List<dynamic> data = response.data['data'] ?? [];
+            fetchedOrders = data.map((json) {
+              final orderType = (json['sales_odr_order_type'] as num? ?? 0).toInt();
+              int posStatus = (json['sales_odr_pos_status'] as num? ?? 0).toInt();
+
+              OrderStatus status;
+              if (posStatus == 1) {
+                status = OrderStatus.pending;
+              } else if (posStatus == 2) {
+                status = OrderStatus.billed;
+              } else {
+                status = OrderStatus.draft;
+              }
+
+              final processingOrder = allProcessingOrders.firstWhereOrNull(
+                    (o) => o.invNo == (json['sales_odr_inv_no'] ?? '').toString(),
+              );
+
+              return OrderModel(
+                id: (json['sales_odr_id'] ?? '').toString(),
+                tableId: (json['sales_odr_table_id'] ?? processingOrder?.tableId ?? '').toString(),
+                invNo: (json['sales_odr_inv_no'] ?? '').toString(),
+                branchInv: _firstNonEmptyValue([
+                  json['sales_odr_sales_branch_inv'],
+                  json['sales_odr_branch_inv'],
+                  json['sales_branch_inv'],
+                  processingOrder?.branchInv,
+                ]),
+                tableName: _resolveName(json, orderType, processingOrder?.tableName ?? 'Unknown Table'),
+                customerName: (json['sq_cust_name'] ?? json['customer_name'] ?? json['cust_name'] ?? processingOrder?.customerName)?.toString(),
+                chairNumber: (json['sales_odr_no_seats'] as num? ??
+                    processingOrder?.chairNumber ?? 0).toInt(),
+                captainName: (json['usr_name'] ?? json['captain_name'] ?? json['ledger_name'])?.toString(),
+                sales_odr_pos_status: posStatus,
+                items: [],
+                status: status,
+                createdAt: DateTime.tryParse(json['sales_odr_datetime'] ?? '') ??
+                    processingOrder?.createdAt ?? DateTime.now(),
+                subTotal: (json['tot_rate'] as num? ?? json['sub_total'] as num? ?? processingOrder?.subTotal ?? 0.0).toDouble(),
+                totalAmount: (json['sales_odr_total'] ?? json['tot_amount'] ?? json['total_amount'] as num? ?? 0.0).toDouble(),
+                areaId: processingOrder?.areaId,
+                areaName: processingOrder?.areaName,
+                priceGroupId: processingOrder?.priceGroupId,
+                totalTax: (json['sales_odr_tax'] ?? json['tot_tax'] ?? json['total_tax'] as num? ?? 0.0).toDouble(),
+                totalCgst: (json['tot_cgst_tax'] as num? ?? processingOrder?.totalCgst ?? 0.0).toDouble(),
+                totalSgst: (json['tot_sgst_tax'] as num? ?? processingOrder?.totalSgst ?? 0.0).toDouble(),
+                sales_odr_order_type: orderType,
+                discount: (json['tot_disc'] ?? json['discount'] ?? processingOrder?.discount ?? 0.0).toDouble(),
+                roundOff: (json['sales_odr_roundoff'] ?? processingOrder?.roundOff ?? 0.0).toDouble(),
+                qrLink: (json['qr_link'] ?? json['zatca_qr'] ?? processingOrder?.qrLink ?? '').toString(),
+              );
+            }).toList();
+          }
+        } catch (e) {
+          debugPrint("fetchOrders: Could not load order list (offline?): $e");
+        }
       }
 
       // Reusable reconciliation function
@@ -270,7 +306,7 @@ class OrdersController extends GetxController {
       }
 
       // 3. Merge server sources into finalOrders with Priority
-      // Priority 2: Orders fetched from API
+      // Priority 2: Orders fetched from API / Local Hub
       for (var fOrder in fetchedOrders) {
         reconcileOrder(fOrder);
       }
@@ -297,6 +333,35 @@ class OrdersController extends GetxController {
 
       if (cachedSoldOrders.isNotEmpty) {
         soldOrders.assignAll(cachedSoldOrders);
+      }
+
+      if (DeviceConfig.operationMode == OperationMode.local) {
+        if (DeviceConfig.role == DeviceRole.client) {
+          final hostIp = DeviceConfig.hostIp;
+          if (hostIp != null && hostIp.trim().isNotEmpty && DeviceConfig.hasAuthToken) {
+            try {
+              final String dateStr = DateFormat('yyyy-MM-dd').format(selectedSoldDate.value);
+              final hubResult = await LocalHubClient.instance.fetchSoldOrders(
+                hostIp: hostIp,
+                port: DeviceConfig.hostPort,
+                date: dateStr,
+              );
+              final List<dynamic> rows = hubResult['data'] ?? [];
+              final hubSoldOrders = rows
+                  .whereType<Map>()
+                  .map((row) => _mapJsonToOrderModel(Map<String, dynamic>.from(row)))
+                  .toList();
+
+              final hubIds = hubSoldOrders.map((o) => o.id).toSet();
+              final mergedList = [...hubSoldOrders, ...cachedSoldOrders.where((c) => !hubIds.contains(c.id))];
+              mergedList.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+              soldOrders.assignAll(mergedList);
+            } catch (e) {
+              log("OrdersController: Local Hub sold fetch failed: $e");
+            }
+          }
+        }
+        return; // host already has these via cachedSoldOrders
       }
 
       try {
@@ -888,6 +953,27 @@ class OrdersController extends GetxController {
       await _loadOrderDetailsFromLocal(order);
       return;
     }
+
+    if (DeviceConfig.operationMode == OperationMode.local && DeviceConfig.role == DeviceRole.client) {
+      final hostIp = DeviceConfig.hostIp;
+      if (hostIp != null && hostIp.isNotEmpty && DeviceConfig.hasAuthToken) {
+        try {
+          final hubResult = await LocalHubClient.instance.fetchOrderDetails(
+            hostIp: hostIp,
+            port: DeviceConfig.hostPort,
+            orderId: order.id,
+          );
+          if (hubResult['success'] == true) {
+            final data = hubResult['data'];
+            updateExistingOrder(parseOrderResponse({'preview': data, 'offline': true}));
+            return;
+          }
+        } catch (e) {
+          debugPrint("fetchOrderDetails: Local Hub fetch failed (client): $e");
+        }
+      }
+    }
+
     try {
       final bool isPaid = order.status.value == OrderStatus.paid;
       final String endpoint = isPaid
@@ -1169,7 +1255,7 @@ class OrdersController extends GetxController {
       final String prdId = (sub['sales_ord_sub_prod_id'] ?? 0).toString();
       final int unitId = (sub['sales_ord_sub_unit_id'] ?? 0).toInt();
 
-      String unitDisplay = sub['salesub_unit_display']?.toString() ?? '';
+      String unitDisplay = sub['salesub_unit_display']?.toString() ?? sub['unit_display']?.toString() ?? '';
       double rawQty = (sub['sales_ord_sub_qty'] as num? ?? 1).toDouble();
       double rawRate = (sub['sales_ord_sub_rate'] as num? ?? sub['rate'] as num? ?? 0.0).toDouble();
       double baseQty = (sub['unit_base_qty'] as num? ?? 1.0).toDouble();
@@ -1245,7 +1331,7 @@ class OrdersController extends GetxController {
           prdaddon_flags: (addonJson['prdaddon_flags'] as num? ?? 1).toInt(),
           name: addonJson['prd_name']?.toString() ?? '',
           price: (addonJson['rate'] as num? ?? 0.0).toDouble(),
-          unitDisplay: addonJson['unit_display']?.toString() ?? '',
+          unitDisplay: (addonJson['unit_display'] ?? addonJson['salesub_unit_display'] ?? '').toString(),
           unitId: (addonJson['sales_ord_sub_unit_id'] as num? ?? 0).toInt(),
           initialQty: (addonJson['sales_ord_sub_qty'] as num? ?? 0).toInt(),
           taxPer: (addonJson['sales_ord_sub_tax_per'] as num? ?? 0.0).toDouble(),
@@ -1272,15 +1358,15 @@ class OrdersController extends GetxController {
               ?? cartItem?.product.prd_tax
               ?? 0.0,
           image: fullImgPath.isNotEmpty ? fullImgPath : (cartItem?.product.image ?? ''),
-          unitDisplay: sub['unit_display']?.toString() ?? cartItem?.product.unitDisplay ?? '',
+          unitDisplay: unitDisplay,
           taxPer: (sub['sales_ord_sub_tax_per'] as num? ?? cartItem?.product.taxPer ?? 0.0).toDouble(),
           taxCatId: (sub['sales_ord_sub_taxcat_id'] as num? ?? cartController.cartItems.firstWhereOrNull((i)=>i.product.id == prdId)?.product.taxCatId ?? 0).toInt(),
           tokenPrinterId: tokenPrinterId ?? cartItem?.product.tokenPrinterId,
         ),
         unit: cartItem?.unit ?? ProductUnit(
           unitId: unitId,
-          unitName: sub['unit_display']?.toString() ?? '',
-          unitDisplay: sub['unit_display']?.toString() ?? '',
+          unitName: unitDisplay,
+          unitDisplay: unitDisplay,
           rate: displayRate,
           unitBaseQty: cartItem?.unit.unitBaseQty ?? 1.0,
           existAddOns: [],
