@@ -156,8 +156,6 @@ class TablesController extends GetxController {
       if (dataList.isNotEmpty) {
         // Update Cache
         await _dbHelper.insertAreas(dataList.cast<Map<String, dynamic>>());
-
-        // Refresh UI from fresh data
         await _updateLocalOccupancy();
         await _loadFromLocalDB();
       }
@@ -178,18 +176,13 @@ class TablesController extends GetxController {
       for (var order in unsynced) {
         final tableId = (order['table_id'] as num?)?.toInt();
         if (tableId == null) continue;
-
-        // Skip if this is the order we are currently editing in the cart
         if (cartController.isEditing && order['uuid'] == cartController.editingOrderId.value) {
           continue;
         }
-
-        // Track server IDs that have local updates to avoid double counting
         final serverId = order['server_id']?.toString();
         if (serverId != null && serverId.isNotEmpty) {
           skipIds.add(serverId);
         }
-
         int seats = 0;
         final payloadStr = order['payload'] as String?;
         if (payloadStr != null && payloadStr.isNotEmpty) {

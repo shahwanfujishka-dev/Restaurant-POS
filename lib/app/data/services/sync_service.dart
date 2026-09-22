@@ -11,6 +11,7 @@ import 'package:get/get_state_manager/src/rx_flutter/rx_disposable.dart';
 import 'package:get_storage/get_storage.dart';
 
 import '../../modules/cart/controller/cart_controller.dart';
+import '../Device_Roles/device_roles.dart';
 import '../utils/AppState.dart';
 import 'api_services.dart';
 import 'database_helper.dart';
@@ -61,6 +62,11 @@ class SyncService extends GetxService with WidgetsBindingObserver {
   Future<void> syncPendingOrders() async {
     if (isSyncing.value) return;
 
+    if (DeviceConfig.isLocal) {
+      log("SyncService: Device is in Local Hub Mode. Skipping Live DB order sync.");
+      return;
+    }
+
     try {
       final unsyncedOrders = await _dbHelper.getUnsyncedOrders();
       if (unsyncedOrders.isNotEmpty) {
@@ -99,12 +105,9 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     int partNo = 0;
     bool isFirstPage = true;
     int totalFetched = 0;
-
     log("SyncService: Starting paginated addon fetch (limit: $pageLimit)...");
-
     while (true) {
       log("SyncService: Fetching addons page — part_no: $partNo");
-
       final response = await _apiService.post(
         "mobileapp/product_unit/get_prd_unit_and_addon",
         data: {

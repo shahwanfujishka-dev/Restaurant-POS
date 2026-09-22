@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get_core/src/get_main.dart';
@@ -78,7 +80,7 @@ class LoginTabletView extends GetView<AuthController> {
                                         size: 32.sp, color: AppTheme.primaryGreen),
                                   ),
                                 ),
-                                if (!controller.isVerified.value) ...[
+                                if (!controller.isVerified.value && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) ...[
                                   SizedBox(width: 5.w),
                                   SizedBox(
                                     width: 50.w,

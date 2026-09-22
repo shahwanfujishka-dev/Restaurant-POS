@@ -71,10 +71,10 @@ class DashboardController extends GetxController {
     searchController = TextEditingController();
     searchFocusNode = FocusNode();
     debounce(searchKeyword, (_) => fetchProducts(), time: const Duration(milliseconds: 350));
-    _initDashboard();
+    refreshDashboardData();
   }
 
-  Future<void> _initDashboard() async {
+  Future<void> refreshDashboardData() async {
     await fetchVatType();
     await fetchCategories();
     fetchFavorites();
@@ -220,30 +220,34 @@ class DashboardController extends GetxController {
     try {
       final pgId = cartController.selectedPriceGroupId.value;
 
-      List<Map<String, dynamic>> localProducts;
-      if (selectedFavoriteId.value != null) {
-        localProducts = await _dbHelper.getFavoriteProducts(selectedFavoriteId.value!, pgId);
-      } else if (searchKeyword.value.isNotEmpty) {
-        localProducts = await _dbHelper.searchProducts(searchKeyword.value, priceGroupId: pgId);
-      } else {
-        localProducts = await _dbHelper.getProducts(categoryId: selectedCategoryId.value, priceGroupId: pgId);
+      Future<void> loadLocalProducts() async {
+        List<Map<String, dynamic>> localProducts;
+        if (selectedFavoriteId.value != null) {
+          localProducts = await _dbHelper.getFavoriteProducts(selectedFavoriteId.value!, pgId);
+        } else if (searchKeyword.value.isNotEmpty) {
+          localProducts = await _dbHelper.searchProducts(searchKeyword.value, priceGroupId: pgId);
+        } else {
+          localProducts = await _dbHelper.getProducts(categoryId: selectedCategoryId.value, priceGroupId: pgId);
+        }
+
+        final mappedProducts = localProducts.map((json) => FoodItemModel.fromJson({
+          'prd_id': json['id']?.toString() ?? '',
+          'prd_name': json['name'] ?? '',
+          'prd_cat_id': json['category_id']?.toString() ?? '',
+          'sale_rate': double.tryParse(json['price']?.toString() ?? '0') ?? 0.0,
+          'prd_tax': json['prd_tax'] ?? 0,
+          'prd_img_url': json['image'] ?? '',
+          'unit_display': json['unit_display']?.toString() ?? '',
+          'prd_tax_cat_id': json['tax_cat_id'],
+          'tax_per': json['tax_per'],
+          'cat_token_printer': json['cat_token_printer'],
+          'prd_is_veg': json['is_veg'],
+        })).toList();
+        
+        filteredFoodItems.assignAll(mappedProducts);
       }
 
-      final mappedProducts = localProducts.map((json) => FoodItemModel.fromJson({
-        'prd_id': json['id']?.toString() ?? '',
-        'prd_name': json['name'] ?? '',
-        'prd_cat_id': json['category_id']?.toString() ?? '',
-        'sale_rate': double.tryParse(json['price']?.toString() ?? '0') ?? 0.0,
-        'prd_tax': json['prd_tax'] ?? 0,
-        'prd_img_url': json['image'] ?? '',
-        'unit_display': json['unit_display']?.toString() ?? '',
-        'prd_tax_cat_id': json['tax_cat_id'],
-        'tax_per': json['tax_per'],
-        'cat_token_printer': json['cat_token_printer'],
-        'prd_is_veg': json['is_veg'],
-      })).toList();
-      
-      filteredFoodItems.assignAll(mappedProducts);
+      await loadLocalProducts();
 
       if (DeviceConfig.operationMode == OperationMode.local && DeviceConfig.role == DeviceRole.client) {
         final hostIp = DeviceConfig.hostIp;
@@ -257,6 +261,7 @@ class DashboardController extends GetxController {
           if (hubResult['success'] == true) {
             final List<dynamic> data = hubResult['data'] ?? [];
             await _dbHelper.insertProducts(data.cast<Map<String, dynamic>>());
+            await loadLocalProducts();
           }
         }
       }
@@ -302,38 +307,6 @@ class DashboardController extends GetxController {
 
       final int productId = int.tryParse(product.id) ?? 0;
       final int pgId = cartController.selectedPriceGroupId.value;
-
-      if (DeviceConfig.operationMode == OperationMode.local && DeviceConfig.role == DeviceRole.client) {
-        final hostIp = DeviceConfig.hostIp;
-        if (hostIp != null && hostIp.isNotEmpty && DeviceConfig.hasAuthToken) {
-          final hubResult = await LocalHubClient.instance.fetchMasterProductUnits(
-            hostIp: hostIp,
-            port: DeviceConfig.hostPort,
-            productId: productId,
-            priceGroupId: pgId,
-          );
-          if (hubResult['success'] == true) {
-            final List<dynamic> data = hubResult['data'] ?? [];
-            final List<dynamic> common = hubResult['commonAddon'] ?? [];
-            
-            productUnits.clear();
-            for (var e in data) {
-              final unit = ProductUnit.fromJson(e);
-              productUnits.add(await _applyStockRateOverride(unit, productId, pgId));
-            }
-
-            commonAddons.assignAll(common.where((e) => (e['prdaddon_flags'] as num? ?? 1).toInt() != 0).map((e) {
-              e['commonAddon'] = true;
-              return AddonModel.fromJson(e);
-            }).toList());
-
-            if (productUnits.isNotEmpty) {
-              _showProductDetails(product, existingItem);
-              return;
-            }
-          }
-        }
-      }
 
       final List<Map<String, dynamic>> localBulkUnits = await _dbHelper.getBulkProductUnits(productId);
       if (localBulkUnits.isNotEmpty) {

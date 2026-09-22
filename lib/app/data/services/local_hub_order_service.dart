@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
+import '../utils/AppState.dart';
 import 'database_helper.dart';
 import '../../modules/home/controller/order_controller.dart';
 
@@ -16,8 +18,11 @@ class LocalHubOrderService {
     for (var item in saleItems) {
       if (item is Map) {
         final itemMap = Map<String, dynamic>.from(item);
+        final bool isDeletedItem = (itemMap['is_deleted'] == 1) || (itemMap['is_deleted'] == '1');
+        final num qtyNum = (itemMap['sales_ord_sub_qty'] ?? itemMap['salesub_qty'] ?? 0) as num;
+        if (isDeletedItem || qtyNum <= 0) continue;
         salesOrderSub.add({
-          'sales_ord_sub_id': itemMap['sales_ord_sub_id'] ?? itemMap['salesub_id'] ?? 0,
+          'sales_ord_sub_id': _toInt(itemMap['sales_ord_sub_id'] ?? itemMap['salesub_id'] ?? 0),
           'sales_ord_sub_prod_id': itemMap['sales_ord_sub_prod_id'] ?? itemMap['salesub_prd_id'] ?? 0,
           'sales_ord_sub_unit_id': itemMap['sales_ord_sub_unit_id'] ?? itemMap['salesub_unit_id'] ?? 0,
           'sales_ord_sub_qty': itemMap['sales_ord_sub_qty'] ?? itemMap['salesub_qty'] ?? 1,
@@ -40,12 +45,13 @@ class LocalHubOrderService {
       }
     }
 
-    int orderTypeId = payload['order_type_id'] ?? payload['pos_odr_type'] ?? 0;
-    String statusStr = payload['status'] ?? (payload['res_status'] == 0 ? 'draft' : (payload['res_status'] == 2 ? 'billed' : (payload['res_status'] == 3 ? 'paid' : 'pending')));
+    int orderTypeId = _toInt(payload['order_type_id'] ?? payload['pos_odr_type'] ?? 0);
+    int rawResStatus = _toInt(payload['res_status']);
+    String statusStr = payload['status'] ?? (rawResStatus == 0 ? 'draft' : (rawResStatus == 2 ? 'billed' : (rawResStatus == 3 ? 'paid' : 'pending')));
     int posStatus = 1;
-    if (statusStr == 'draft' || payload['res_status'] == 0) posStatus = 0;
-    if (statusStr == 'billed' || payload['res_status'] == 2) posStatus = 2;
-    if (statusStr == 'paid' || payload['res_status'] == 3) posStatus = 3;
+    if (statusStr == 'draft' || rawResStatus == 0) posStatus = 0;
+    if (statusStr == 'billed' || rawResStatus == 2) posStatus = 2;
+    if (statusStr == 'paid' || rawResStatus == 3) posStatus = 3;
 
     final now = DateTime.now();
     String dateStr = payload['date'] ?? payload['saleqt_date'] ?? "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
@@ -53,13 +59,17 @@ class LocalHubOrderService {
 
     return {
       'sales_odr_id': uuid,
-      'sales_odr_inv_no': payload['inv_no'] ?? payload['sq_inv_no']?.toString() ?? '',
+      'sales_odr_inv_no': payload['inv_no'] ??
+          ((payload['sq_inv_no'] != null && payload['sq_inv_no'] != 0)
+              ? payload['sq_inv_no'].toString()
+              : ''),
       'sales_odr_branch_inv': payload['branch_inv'] ?? '',
+      'created_by_device_id': payload['created_by_device_id'] ?? '',
       'sales_odr_order_type': orderTypeId,
       'sales_odr_pos_status': posStatus,
       'sales_odr_table_id': payload['table_id'] ?? (payload['res_table']?['rt_id']) ?? '',
       'sales_odr_table_name': payload['customer_name'] ?? payload['cust_name'] ?? payload['table_name'] ?? '',
-      'sales_odr_no_seats': payload['chair_number'] ?? payload['no_seats'] ?? (payload['res_table']?['rt_seat_count']) ?? 0,
+      'sales_odr_no_seats': _toInt(payload['chair_number'] ?? payload['no_seats'] ?? (payload['res_table']?['rt_seat_count']) ?? 0),
       'sales_odr_total': _toDouble(payload['total_amount'] ?? payload['sq_total']),
       'sales_odr_tax': _toDouble(payload['total_tax'] ?? payload['sq_tax']),
       'sales_odr_date': dateStr,
@@ -72,14 +82,18 @@ class LocalHubOrderService {
   }
 
   Future<Map<String, dynamic>> createOrder({required Map<String, dynamic> payload}) async {
+    debugPrint('[LocalHubOrderService] createOrder called with payload: ${jsonEncode(payload)}');
     final String uuid = (payload['uuid'] ?? '').toString().trim();
     if (uuid.isEmpty) throw Exception('Order UUID is required');
 
     final existingOrders = await _findOrder(uuid);
     if (existingOrders.isNotEmpty) {
+      debugPrint('[LocalHubOrderService] createOrder: order already exists for uuid: $uuid');
       return {'success': true, 'duplicate': true, 'message': 'Order already exists', 'order': existingOrders.first};
     }
 
+    final String branchInv = await _db.generateLocalInvoiceNumber(AppState.branchDisName);
+    payload = {...payload, 'branch_inv': branchInv};
     final List<dynamic> rawItems = payload['items'] is List ? payload['items'] as List : [];
     final List<Map<String, dynamic>> items = rawItems.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).map((item) => {...item, 'order_uuid': uuid}).toList();
 
@@ -89,13 +103,14 @@ class LocalHubOrderService {
       'server_id': payload['server_id'],
       'inv_no': payload['inv_no'],
       'branch_inv': payload['branch_inv'],
-      'order_type_id': payload['order_type_id'] ?? payload['pos_odr_type'] ?? 0,
+      'created_by_device_id': payload['created_by_device_id'],
+      'order_type_id': _toInt(payload['order_type_id'] ?? payload['pos_odr_type'] ?? 0),
       'table_id': payload['table_id'] ?? (payload['res_table']?['rt_id']) ?? 0,
       'customer_name': payload['customer_name'] ?? payload['cust_name'] ?? payload['table_name'],
       'customer_phone': payload['customer_phone'] ?? payload['phone_no'],
       'total_amount': _toDouble(payload['total_amount'] ?? payload['sq_total']),
       'total_tax': _toDouble(payload['total_tax'] ?? payload['sq_tax']),
-      'status': payload['status'] ?? (payload['res_status'] == 0 ? 'draft' : (payload['res_status'] == 2 ? 'billed' : (payload['res_status'] == 3 ? 'paid' : 'pending'))),
+      'status': payload['status'] ?? (_toInt(payload['res_status']) == 0 ? 'draft' : (_toInt(payload['res_status']) == 2 ? 'billed' : (_toInt(payload['res_status']) == 3 ? 'paid' : 'pending'))),
       'is_synced': 0,
       'payload': jsonEncode(payload),
       'created_at': payload['created_at'] ?? now,
@@ -110,6 +125,7 @@ class LocalHubOrderService {
       oc.updateExistingOrder(oc.parseOrderResponse({'preview': previewMap, 'offline': true}));
     }
 
+    debugPrint('[LocalHubOrderService] createOrder success for uuid: $uuid, sequence: $offlineSeq');
     return {
       'success': true,
       'duplicate': false,
@@ -119,30 +135,37 @@ class LocalHubOrderService {
   }
 
   Future<Map<String, dynamic>> updateOrder({required Map<String, dynamic> payload}) async {
+    debugPrint('[LocalHubOrderService] updateOrder called with payload: ${jsonEncode(payload)}');
     final String uuid = (payload['uuid'] ?? payload['local_uuid'] ?? '').toString().trim();
     if (uuid.isEmpty) throw Exception('Order UUID is required for update');
 
     final existing = await _findOrder(uuid);
     String? createdAt;
+    String? existingBranchInv;
     if (existing.isNotEmpty) {
       createdAt = existing.first['created_at'];
+      existingBranchInv = existing.first['branch_inv']?.toString();
     }
-
+    final String? resolvedBranchInv =
+    (existingBranchInv != null && existingBranchInv.isNotEmpty)
+        ? existingBranchInv
+        : payload['branch_inv'];
+    payload = {...payload, 'branch_inv': resolvedBranchInv};
     final List<dynamic> rawItems = payload['items'] is List ? payload['items'] as List : [];
     final List<Map<String, dynamic>> items = rawItems.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).map((item) => {...item, 'order_uuid': uuid}).toList();
 
     final Map<String, dynamic> orderRow = {
       'uuid': uuid,
-      'server_id': payload['server_id'] ?? payload['sq_inv_no']?.toString(),
+      'server_id': payload['server_id'],
       'inv_no': payload['inv_no'] ?? payload['sq_inv_no']?.toString(),
       'branch_inv': payload['branch_inv'],
-      'order_type_id': payload['order_type_id'] ?? payload['pos_odr_type'] ?? 0,
+      'order_type_id': _toInt(payload['order_type_id'] ?? payload['pos_odr_type'] ?? 0),
       'table_id': payload['table_id'] ?? (payload['res_table']?['rt_id']) ?? 0,
       'customer_name': payload['customer_name'] ?? payload['cust_name'] ?? payload['table_name'],
       'customer_phone': payload['customer_phone'] ?? payload['phone_no'],
       'total_amount': _toDouble(payload['total_amount'] ?? payload['sq_total']),
       'total_tax': _toDouble(payload['total_tax'] ?? payload['sq_tax']),
-      'status': payload['status'] ?? (payload['res_status'] == 0 ? 'draft' : (payload['res_status'] == 2 ? 'billed' : (payload['res_status'] == 3 ? 'paid' : 'pending'))),
+      'status': payload['status'] ?? (_toInt(payload['res_status']) == 0 ? 'draft' : (_toInt(payload['res_status']) == 2 ? 'billed' : (_toInt(payload['res_status']) == 3 ? 'paid' : 'pending'))),
       'is_synced': 0,
       'payload': jsonEncode(payload),
       if (createdAt != null) 'created_at': createdAt,
@@ -156,6 +179,7 @@ class LocalHubOrderService {
       oc.updateExistingOrder(oc.parseOrderResponse({'preview': previewMap, 'offline': true}));
     }
 
+    debugPrint('[LocalHubOrderService] updateOrder success for uuid: $uuid');
     return {
       'success': true,
       'message': 'Order updated successfully on local hub',
@@ -163,6 +187,7 @@ class LocalHubOrderService {
   }
 
   Future<Map<String, dynamic>> fetchOrders({String? status, String? date}) async {
+    debugPrint('[LocalHubOrderService] fetchOrders called with status: $status, date: $date');
     try {
       final db = await _db.database;
       String where = '1=1';
@@ -182,13 +207,16 @@ class LocalHubOrderService {
       }
 
       final List<Map<String, dynamic>> orders = await db.query('orders', where: where, whereArgs: whereArgs, orderBy: 'created_at DESC');
+      debugPrint('[LocalHubOrderService] fetchOrders success, found ${orders.length} orders');
       return {'success': true, 'data': orders};
     } catch (e) {
+      debugPrint('[LocalHubOrderService] fetchOrders error: $e');
       return {'success': false, 'message': 'Failed to fetch orders: $e'};
     }
   }
 
   Future<Map<String, dynamic>> getOrderDetails(String id) async {
+    debugPrint('[LocalHubOrderService] getOrderDetails called with id: $id');
     try {
       final db = await _db.database;
       final List<Map<String, dynamic>> orders = await db.query(
@@ -198,14 +226,19 @@ class LocalHubOrderService {
         limit: 1,
       );
 
-      if (orders.isEmpty) return {'success': false, 'message': 'Order not found'};
+      if (orders.isEmpty) {
+        debugPrint('[LocalHubOrderService] getOrderDetails: order not found for id: $id');
+        return {'success': false, 'message': 'Order not found'};
+      }
 
       final order = Map<String, dynamic>.from(orders.first);
       final List<Map<String, dynamic>> items = await _db.getOrderItemsByUuid(order['uuid']);
       order['order_items'] = items;
 
+      debugPrint('[LocalHubOrderService] getOrderDetails success for id: $id');
       return {'success': true, 'data': order};
     } catch (e) {
+      debugPrint('[LocalHubOrderService] getOrderDetails error: $e');
       return {'success': false, 'message': 'Error: $e'};
     }
   }
@@ -213,6 +246,7 @@ class LocalHubOrderService {
   // --- Master Data Methods ---
 
   Future<Map<String, dynamic>> fetchMasterTables() async {
+    debugPrint('[LocalHubOrderService] fetchMasterTables called');
     try {
       final areas = await _db.getAreas();
       List<Map<String, dynamic>> dataList = [];
@@ -233,44 +267,57 @@ class LocalHubOrderService {
           }).toList(),
         });
       }
+      debugPrint('[LocalHubOrderService] fetchMasterTables success, found ${dataList.length} areas');
       return {'success': true, 'data': dataList};
     } catch (e) {
+      debugPrint('[LocalHubOrderService] fetchMasterTables error: $e');
       return {'success': false, 'message': 'Failed to fetch tables: $e'};
     }
   }
 
   Future<Map<String, dynamic>> fetchMasterCategories() async {
+    debugPrint('[LocalHubOrderService] fetchMasterCategories called');
     try {
       final categories = await _db.getCategories();
+      debugPrint('[LocalHubOrderService] fetchMasterCategories success, found ${categories.length} categories');
       return {'success': true, 'data': categories};
     } catch (e) {
+      debugPrint('[LocalHubOrderService] fetchMasterCategories error: $e');
       return {'success': false, 'message': 'Failed to fetch categories: $e'};
     }
   }
 
   Future<Map<String, dynamic>> fetchMasterCaptains() async {
+    debugPrint('[LocalHubOrderService] fetchMasterCaptains called');
     try {
       final captains = await _db.getCaptains();
+      debugPrint('[LocalHubOrderService] fetchMasterCaptains success, found ${captains.length} captains');
       return {'success': true, 'data': captains};
     } catch (e) {
+      debugPrint('[LocalHubOrderService] fetchMasterCaptains error: $e');
       return {'success': false, 'message': 'Failed to fetch captains: $e'};
     }
   }
 
   Future<Map<String, dynamic>> fetchMasterProducts({String? categoryId, int priceGroupId = 0}) async {
+    debugPrint('[LocalHubOrderService] fetchMasterProducts called with categoryId: $categoryId, priceGroupId: $priceGroupId');
     try {
       final products = await _db.getProducts(categoryId: categoryId, priceGroupId: priceGroupId);
+      debugPrint('[LocalHubOrderService] fetchMasterProducts success, found ${products.length} products');
       return {'success': true, 'data': products};
     } catch (e) {
+      debugPrint('[LocalHubOrderService] fetchMasterProducts error: $e');
       return {'success': false, 'message': 'Failed to fetch products: $e'};
     }
   }
 
   Future<Map<String, dynamic>> fetchMasterProductUnits(int productId, int priceGroupId) async {
+    debugPrint('[LocalHubOrderService] fetchMasterProductUnits called with productId: $productId, priceGroupId: $priceGroupId');
     try {
       final List<Map<String, dynamic>> localBulkUnits = await _db.getBulkProductUnits(productId);
       
       if (localBulkUnits.isNotEmpty) {
+        debugPrint('[LocalHubOrderService] fetchMasterProductUnits success (bulk), found ${localBulkUnits.length} units');
         return {
           'success': true, 
           'data': localBulkUnits,
@@ -281,6 +328,7 @@ class LocalHubOrderService {
       final units = await _db.getProductUnits(productId.toString(), priceGroupId);
       final commonAddons = await _db.getCommonAddons();
 
+      debugPrint('[LocalHubOrderService] fetchMasterProductUnits success (standard), found ${units.length} units');
       return {
         'success': true,
         'data': units,
@@ -288,6 +336,7 @@ class LocalHubOrderService {
         'source': 'standard'
       };
     } catch (e) {
+      debugPrint('[LocalHubOrderService] fetchMasterProductUnits error: $e');
       return {'success': false, 'message': 'Failed to fetch product units: $e'};
     }
   }
@@ -301,5 +350,11 @@ class LocalHubOrderService {
     if (value == null) return 0;
     if (value is num) return value.toDouble();
     return double.tryParse(value.toString()) ?? 0;
+  }
+
+  int _toInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString()) ?? 0;
   }
 }

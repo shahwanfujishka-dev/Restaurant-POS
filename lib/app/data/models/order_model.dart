@@ -48,6 +48,7 @@ class OrderModel {
   final String id;
   final String invNo;
   final String? branchInv; // ✅ Added for branch specific invoice number
+  final String? createdByDeviceId;
   final String tableId;
   final String tableName;
   final String? customerName;
@@ -84,6 +85,7 @@ class OrderModel {
     required this.id,
     required this.invNo,
     this.branchInv,
+    this.createdByDeviceId,
     required this.tableId,
     required this.tableName,
     this.customerName,
@@ -129,6 +131,7 @@ class OrderModel {
     String? id,
     String? invNo,
     String? branchInv,
+    String? createdByDeviceId,
     String? tableId,
     String? tableName,
     String? customerName,
@@ -165,6 +168,7 @@ class OrderModel {
       id: id ?? this.id,
       invNo: invNo ?? this.invNo,
       branchInv: branchInv ?? this.branchInv,
+      createdByDeviceId: createdByDeviceId ?? this.createdByDeviceId,
       tableId: tableId ?? this.tableId,
       tableName: tableName ?? this.tableName,
       customerName: customerName ?? this.customerName,

@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 18, // bumped from 17 → 18 for branch_inv in orders
+      version: 20, // bumped from 18 → 19 for cat_token_printer in products
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -217,6 +217,16 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE orders ADD COLUMN branch_inv TEXT');
       } catch (e) {}
     }
+    if (oldVersion < 19) {
+      try {
+        await db.execute('ALTER TABLE products ADD COLUMN cat_token_printer INTEGER DEFAULT 0');
+      } catch (e) {}
+    }
+    if (oldVersion < 20) {
+      try {
+        await db.execute('ALTER TABLE orders ADD COLUMN created_by_device_id TEXT');
+      } catch (e) {}
+    }
   }
 
   Future _createDB(Database db, int version) async {
@@ -243,6 +253,7 @@ class DatabaseHelper {
         tax_cat_id INTEGER,
         tax_per REAL,
         is_veg INTEGER DEFAULT 0,
+        cat_token_printer INTEGER DEFAULT 0,
         sort_order INTEGER,
         PRIMARY KEY (id, price_group_id)
       )
@@ -356,6 +367,7 @@ class DatabaseHelper {
     server_id TEXT,
     inv_no TEXT,
     branch_inv TEXT,
+    created_by_device_id TEXT,
     order_type_id INTEGER,
     table_id INTEGER,
     customer_name TEXT,
@@ -795,6 +807,35 @@ class DatabaseHelper {
   Future<void> deleteTokenPrinterAssignment(int tokenPrinterId) async {
     final db = await instance.database;
     await db.delete('token_printer_assignments', where: 'token_printer_id = ?', whereArgs: [tokenPrinterId]);
+  }
+
+  Future<List<Map<String, dynamic>>> getActiveLocalOrders() async {
+    final db = await instance.database;
+    return await db.query(
+      'orders',
+      where: 'status NOT IN (?, ?)',
+      whereArgs: ['paid', 'cancelled'],
+      orderBy: 'created_at DESC',
+    );
+  }
+
+  Future<String> generateLocalInvoiceNumber(String branchCode) async {
+    final db = await instance.database;
+    return await db.transaction((txn) async {
+      final key = 'local_inv_seq_$branchCode';
+      final rows = await txn.query('app_settings', where: 'key = ?', whereArgs: [key]);
+      int current = 0;
+      if (rows.isNotEmpty) {
+        current = int.tryParse(rows.first['value'].toString()) ?? 0;
+      }
+      final next = current + 1;
+      await txn.insert(
+        'app_settings',
+        {'key': key, 'value': next.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      return 'M-$branchCode${next.toString().padLeft(4, '0')}';
+    });
   }
 
   // --- Master Data ---

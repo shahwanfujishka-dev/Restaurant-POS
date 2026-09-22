@@ -65,6 +65,31 @@ class SettingsView extends GetView<SettingsController> {
           }),
 
           // ============================================================
+          // ORDER VISIBILITY
+          // ============================================================
+          Obx(() {
+            if (!controller.isLocalMode) {
+              return const SizedBox.shrink();
+            }
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(height: 24.h),
+                Text(
+                  "Order Visibility",
+                  style: AppTypography.cardTitle.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colors.text,
+                  ),
+                ),
+                SizedBox(height: 12.h),
+                _buildOrderVisibilityCard(context),
+              ],
+            );
+          }),
+
+          // ============================================================
           // SYNC PREFERENCES
           // ============================================================
           SizedBox(height: 24.h),
@@ -180,6 +205,38 @@ class SettingsView extends GetView<SettingsController> {
     );
   }
 
+  Widget _buildConnectedDevicesTile(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Obx(() {
+      final devices = controller.connectedDevices;
+      return ExpansionTile(
+        leading: Icon(Icons.devices_other, color: colors.subtext),
+        title: Text("Connected Devices", style: TextStyle(color: colors.text)),
+        subtitle: Text(
+          devices.isEmpty ? "No clients connected" : "${devices.length} client(s) connected",
+          style: TextStyle(color: colors.subtext),
+        ),
+        children: devices.isEmpty
+            ? [
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+            child: Text("Waiting for client devices to connect...", style: TextStyle(color: colors.subtext)),
+          ),
+        ]
+            : devices.map((d) {
+          return ListTile(
+            dense: true,
+            leading: Icon(Icons.smartphone, color: colors.subtext, size: 20.sp),
+            title: Text(d['deviceName']?.toString() ?? 'Unnamed Device', style: TextStyle(color: colors.text)),
+            subtitle: (d['userName']?.toString().isNotEmpty ?? false)
+                ? Text(d['userName'].toString(), style: TextStyle(color: colors.subtext))
+                : null,
+          );
+        }).toList(),
+      );
+    });
+  }
+
   Widget _buildLocalHubCard(BuildContext context) {
     final colors = AppColors.of(context);
     return Container(
@@ -195,10 +252,60 @@ class SettingsView extends GetView<SettingsController> {
         ],
       ),
       child: Obx(
-        () => Column(
+            () => Column(
           children: [
             // ----------------------------------------------------------
-            // DEVICE ID
+            // ROLE PICKER — new
+            // ----------------------------------------------------------
+            ListTile(
+              onTap: controller.isChangingRole.value ? null : () => controller.becomeHost(),
+              leading: CircleAvatar(
+                backgroundColor: controller.isHost
+                    ? AppTheme.primaryGreen.withOpacity(0.1)
+                    : colors.textField,
+                child: Icon(
+                  Icons.dns_outlined,
+                  color: controller.isHost ? AppTheme.primaryGreen : colors.subtext,
+                ),
+              ),
+              title: Text("Host This Device", style: TextStyle(color: colors.text, fontWeight: FontWeight.w600)),
+              subtitle: Text("This device becomes the Main Cashier for the network.", style: TextStyle(color: colors.subtext)),
+              trailing: controller.isChangingRole.value
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  : Radio<bool>(
+                value: true,
+                groupValue: controller.isHost,
+                onChanged: (_) => controller.becomeHost(),
+                activeColor: AppTheme.primaryGreen,
+              ),
+            ),
+            Divider(height: 1, color: colors.border),
+            ListTile(
+              onTap: controller.isChangingRole.value ? null : () => controller.becomeClient(),
+              leading: CircleAvatar(
+                backgroundColor: controller.isClient
+                    ? AppTheme.primaryGreen.withOpacity(0.1)
+                    : colors.textField,
+                child: Icon(
+                  Icons.smartphone,
+                  color: controller.isClient ? AppTheme.primaryGreen : colors.subtext,
+                ),
+              ),
+              title: Text("Connect as Client", style: TextStyle(color: colors.text, fontWeight: FontWeight.w600)),
+              subtitle: Text("Connect to another device acting as Main Cashier.", style: TextStyle(color: colors.subtext)),
+              trailing: controller.isChangingRole.value
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  : Radio<bool>(
+                value: true,
+                groupValue: controller.isClient,
+                onChanged: (_) => controller.becomeClient(),
+                activeColor: AppTheme.primaryGreen,
+              ),
+            ),
+            Divider(height: 1, color: colors.border),
+
+            // ----------------------------------------------------------
+            // DEVICE ID — unchanged
             // ----------------------------------------------------------
             ListTile(
               leading: Icon(Icons.fingerprint, color: colors.subtext),
@@ -234,6 +341,8 @@ class SettingsView extends GetView<SettingsController> {
               ),
               Divider(height: 1, color: colors.border),
               _buildHubStatusTile(context, isHost: true),
+              Divider(height: 1, color: colors.border),
+              _buildConnectedDevicesTile(context),
             ],
 
             // ----------------------------------------------------------
@@ -296,6 +405,70 @@ class SettingsView extends GetView<SettingsController> {
                     ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                     : const Text('Connect'),
               )),
+    );
+  }
+
+  Widget _buildOrderVisibilityCard(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.card,
+        borderRadius: BorderRadius.circular(12.r),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(colors.isDark ? 0.2 : 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Obx(
+            () => Column(
+          children: [
+            ListTile(
+              onTap: () => controller.toggleOrderVisibility(false),
+              leading: CircleAvatar(
+                backgroundColor: !controller.showMyOrdersOnly.value
+                    ? AppTheme.primaryGreen.withOpacity(0.1)
+                    : colors.textField,
+                child: Icon(
+                  Icons.groups_outlined,
+                  color: !controller.showMyOrdersOnly.value ? AppTheme.primaryGreen : colors.subtext,
+                ),
+              ),
+              title: Text("All Orders", style: TextStyle(color: colors.text, fontWeight: FontWeight.w600)),
+              subtitle: Text("Show orders placed by every device.", style: TextStyle(color: colors.subtext)),
+              trailing: Radio<bool>(
+                value: false,
+                groupValue: controller.showMyOrdersOnly.value,
+                onChanged: (_) => controller.toggleOrderVisibility(false),
+                activeColor: AppTheme.primaryGreen,
+              ),
+            ),
+            Divider(height: 1, color: colors.border),
+            ListTile(
+              onTap: () => controller.toggleOrderVisibility(true),
+              leading: CircleAvatar(
+                backgroundColor: controller.showMyOrdersOnly.value
+                    ? AppTheme.primaryGreen.withOpacity(0.1)
+                    : colors.textField,
+                child: Icon(
+                  Icons.person_outline,
+                  color: controller.showMyOrdersOnly.value ? AppTheme.primaryGreen : colors.subtext,
+                ),
+              ),
+              title: Text("My Orders Only", style: TextStyle(color: colors.text, fontWeight: FontWeight.w600)),
+              subtitle: Text("Show only orders placed on this device.", style: TextStyle(color: colors.subtext)),
+              trailing: Radio<bool>(
+                value: true,
+                groupValue: controller.showMyOrdersOnly.value,
+                onChanged: (_) => controller.toggleOrderVisibility(true),
+                activeColor: AppTheme.primaryGreen,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

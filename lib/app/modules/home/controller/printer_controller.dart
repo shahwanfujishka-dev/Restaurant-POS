@@ -136,11 +136,9 @@ class PrinterController extends GetxController {
 
   Future<bool> checkPermissions() async {
     if (!Platform.isAndroid) return true;
-
     bool scan = await Permission.bluetoothScan.isGranted;
     bool connect = await Permission.bluetoothConnect.isGranted;
     bool location = await Permission.location.isGranted;
-
     isBluetoothPermissionGranted.value = scan && connect;
     return isBluetoothPermissionGranted.value;
   }

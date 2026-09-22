@@ -992,34 +992,24 @@ class CartController extends GetxController {
       final deviceRole = DeviceConfig.role;
 
       if (operationMode == OperationMode.local) {
+        final String localBranchInv = await _dbHelper.generateLocalInvoiceNumber(AppState.branchDisName); // ← adjust source
         final hubPayload = {
           ...body,
           "uuid": orderUuid,
+          "created_by_device_id": DeviceConfig.deviceId,
           "items": localItems,
           "created_at": now.toIso8601String(),
         };
 
+        String resolvedBranchInv = '';
         // Build the KOT-ready response up front — printing must not block on the LAN round trip.
-        final syntheticResponse = _buildOfflineResponse(
-          orderUuid: orderUuid,
-          body: body,
-          totalWithTax: totalWithTax,
-          totalTax: totalTax,
-          saleItems: saleItems,
-          isDraft: isDraft,
-          now: now,
-          isCompliment: isCompliment,
-          isSplit: isSplit,
-          splitCount: splitCount,
-          splitAmounts: splitAmounts,
-          isBill: isBill,
-        );
-
         try {
           if (deviceRole == DeviceRole.server) {
             // This device IS the hub — persist straight to the local DB.
             final result = await LocalHubOrderService.instance.createOrder(payload: hubPayload);
             debugPrint("✅ LOCAL HOST ORDER SAVED: $result");
+            final hostOrder = result['order'] as Map<String, dynamic>?;
+            resolvedBranchInv = hostOrder?['branch_inv']?.toString() ?? '';
           } else {
             final hostIp = DeviceConfig.hostIp;
             if (hostIp == null || hostIp.trim().isEmpty) {
@@ -1036,12 +1026,29 @@ class CartController extends GetxController {
               port: DeviceConfig.hostPort,
             );
             debugPrint("✅ LOCAL CLIENT ORDER SENT: $hubResponse");
+            final hostOrder = hubResponse['order'] as Map<String, dynamic>?;
+            resolvedBranchInv = hostOrder?['branch_inv']?.toString() ?? '';
           }
         } catch (e) {
           log("❌ LOCAL ORDER SAVE FAILED: $e");
           showSafeSnackbar("Order Failed", "Could not save/send order on the local network.");
           return null;
         }
+        final syntheticResponse = _buildOfflineResponse(
+          orderUuid: orderUuid,
+          branchInv: resolvedBranchInv,
+          body: body,
+          totalWithTax: totalWithTax,
+          totalTax: totalTax,
+          saleItems: saleItems,
+          isDraft: isDraft,
+          now: now,
+          isCompliment: isCompliment,
+          isSplit: isSplit,
+          splitCount: splitCount,
+          splitAmounts: splitAmounts,
+          isBill: isBill,
+        );
 
         _clearDashboardSearch();
         return syntheticResponse;
@@ -1156,6 +1163,12 @@ class CartController extends GetxController {
         showSafeSnackbar("Error", "Please select a table and chair first.");
         return null;
       }
+
+      if (isEditing && editingOrderId.value.trim().isEmpty) {
+        showSafeSnackbar("Error", "This order has an invalid ID and cannot be updated. Please remove it and recreate it.");
+        return null;
+      }
+
 
       final now = DateTime.now();
       final dateStr = DateFormat('yyyy-MM-dd').format(now);
@@ -1923,7 +1936,7 @@ class CartController extends GetxController {
         })
             .toList();
 
-        final hubPayload = {...body, "uuid": editingOrderId.value, "items": hubItems};
+        final hubPayload = {...body, "uuid": editingOrderId.value, "branch_inv": editingBranchInv.value, "items": hubItems};
 
         final syntheticResponse = _buildOfflineUpdateResponse(
           body: body,
@@ -2040,6 +2053,7 @@ class CartController extends GetxController {
     required List<Map<String, dynamic>> saleItems,
     required bool isDraft,
     required DateTime now,
+    required String branchInv,
     bool isSplit = false,
     int? splitCount,
     List<double> splitAmounts = const [],
@@ -2099,7 +2113,7 @@ class CartController extends GetxController {
       "preview": {
         "sales_odr_id": null, // filled after SyncService pushes it
         "sales_odr_inv_no": null,
-        "sales_odr_branch_inv": null, // ✅ Added
+        "sales_odr_branch_inv": branchInv,  // ✅ Added
         "sales_odr_date": dateStr,
         "agent_name": selectedCaptainName.value,
         "sales_odr_time": timeStr,

@@ -105,10 +105,18 @@ class OrdersController extends GetxController {
   Future<void> _fetchActiveOrders() async {
     try {
       // 1. Load local unsynced orders first — works fully offline
-      final unsyncedData = await _dbHelper.getUnsyncedOrders();
-      final List<OrderModel> finalOrders = unsyncedData
+      final bool isLocalHost = DeviceConfig.operationMode == OperationMode.local
+          && DeviceConfig.role == DeviceRole.server;
+      final bool isLocalClient = DeviceConfig.operationMode == OperationMode.local
+          && DeviceConfig.role == DeviceRole.client;
+
+      final ordersData = isLocalHost
+          ? await _dbHelper.getActiveLocalOrders()
+          : await _dbHelper.getUnsyncedOrders();
+
+      final List<OrderModel> finalOrders = ordersData
           .map((json) => _mapJsonToOrderModel(json))
-          .where((o) => o.status.value != OrderStatus.paid && o.status.value != OrderStatus.cancelled) // ✅ Filter out paid/cancelled from active list
+          .where((o) => o.status.value != OrderStatus.paid && o.status.value != OrderStatus.cancelled)
           .toList();
 
       // 2. Load server orders and processing tables
@@ -173,6 +181,7 @@ class OrdersController extends GetxController {
       // ── 2b. Active orders from the network — cloud API when online,
       //         LOCAL HUB when in local mode ──────────────────────────────
       List<OrderModel> fetchedOrders = [];
+      bool hubFetchFailed = false;
 
       if (DeviceConfig.operationMode == OperationMode.local) {
         if (DeviceConfig.role == DeviceRole.client) {
@@ -191,14 +200,15 @@ class OrdersController extends GetxController {
               debugPrint("🟢 LOCAL HUB: fetched ${fetchedOrders.length} active orders from host");
             } catch (e) {
               debugPrint("fetchOrders: Local Hub fetch failed (client): $e");
+              hubFetchFailed = true;
             }
           } else {
             debugPrint("fetchOrders: Local mode client but no host IP/auth token configured yet");
+            hubFetchFailed = true;
           }
         }
         // Host role: nothing more to do — its own orders are already in
-        // `finalOrders` via unsyncedData, since local orders never leave
-        // this device's DB with is_synced == 0.
+        // `finalOrders` via getActiveLocalOrders(), regardless of sync status.
       } else {
         try {
           final response = await _apiService.post("mobileapp/pos/get_pos_order_list", data: {
@@ -264,6 +274,14 @@ class OrdersController extends GetxController {
         }
       }
 
+      // ── Guard: on a local-mode client, a failed/unavailable hub fetch means
+      //    we have nothing new to reconcile — keep whatever's already on
+      //    screen instead of wiping it out with an incomplete `finalOrders`.
+      if (isLocalClient && hubFetchFailed) {
+        debugPrint("fetchOrders: Hub unreachable this cycle — keeping existing order list.");
+        return;
+      }
+
       // Reusable reconciliation function
       void reconcileOrder(OrderModel serverOrder) {
         final int existingIndex = finalOrders.indexWhere((o) {
@@ -296,7 +314,7 @@ class OrdersController extends GetxController {
             isSynced: 1,
             serverId: serverOrder.id,
             invNo: serverOrder.invNo,
-            branchInv: serverOrder.branchInv, // ✅ Added
+            branchInv: serverOrder.branchInv,
             total: serverOrder.totalAmount,
             tax: serverOrder.totalTax,
           );
@@ -487,6 +505,7 @@ class OrdersController extends GetxController {
     int orderType = (json['order_type_id'] as num? ?? 0).toInt();
     String invNo = json['inv_no']?.toString() ?? "LOCAL";
     String branchInv = json['branch_inv']?.toString() ?? ""; // ✅ Added
+    String? createdByDeviceId = json['created_by_device_id']?.toString(); // ← new
     String orderId = json['server_id']?.toString() ?? json['uuid']?.toString() ?? "";
     String tableId = json['table_id']?.toString() ?? "";
     double discount = (json['discount_amount'] as num? ?? 0.0).toDouble();
@@ -704,6 +723,7 @@ class OrdersController extends GetxController {
       id: orderId,
       invNo: invNo,
       branchInv: branchInv, // ✅ Added
+      createdByDeviceId: createdByDeviceId,
       tableId: tableId,
       tableName: tableName,
       customerName: customerName,
@@ -846,12 +866,15 @@ class OrdersController extends GetxController {
     return (fallback.isNotEmpty) ? fallback : "Unknown Customer";
   }
 
+  bool _isRealInvNo(String invNo) =>
+      invNo.isNotEmpty && invNo != "LOCAL" && invNo != "OFFLINE" && invNo != "0";
+
   /// Update an existing order without creating duplicates
   void updateExistingOrder(OrderModel updatedOrder) {
     // Check in active orders
     final activeIndex = orders.indexWhere((o) =>
     o.id == updatedOrder.id ||
-        (o.invNo.isNotEmpty && updatedOrder.invNo.isNotEmpty && o.invNo == updatedOrder.invNo)
+        (_isRealInvNo(o.invNo) && _isRealInvNo(updatedOrder.invNo) && o.invNo == updatedOrder.invNo)
     );
 
     if (activeIndex != -1) {
@@ -908,7 +931,7 @@ class OrdersController extends GetxController {
   void updateExistingOrderInList(RxList<OrderModel> list, OrderModel updatedOrder) {
     final index = list.indexWhere((o) =>
     o.id == updatedOrder.id ||
-        (o.invNo.isNotEmpty && updatedOrder.invNo.isNotEmpty && o.invNo == updatedOrder.invNo)
+        (_isRealInvNo(o.invNo) && _isRealInvNo(updatedOrder.invNo) && o.invNo == updatedOrder.invNo)
     );
 
     if (index != -1) {
@@ -1390,6 +1413,7 @@ class OrdersController extends GetxController {
       preview['sales_odr_branch_inv'],
       preview['sales_branch_inv'],
     ]);
+    final String? createdByDeviceId = preview['created_by_device_id']?.toString(); // ← new
     final String localUuid = (preview['local_uuid'] ?? '').toString();
 
     final int orderType = (preview['sales_odr_order_type'] as num? ?? 0).toInt();
@@ -1413,6 +1437,7 @@ class OrdersController extends GetxController {
       id: orderId.isEmpty ? localUuid : orderId,
       invNo: invNo.isEmpty ? "OFFLINE" : invNo,
       branchInv: branchInv, // ✅ Added
+      createdByDeviceId: createdByDeviceId,
       tableId: (preview['sales_odr_table_id'] ?? cartController.selectedTableId.value).toString(),
       tableName: tableName,
       customerName: customerName,

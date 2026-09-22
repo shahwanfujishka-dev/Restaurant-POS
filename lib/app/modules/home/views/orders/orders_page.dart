@@ -326,13 +326,32 @@ void _showOrderDetailsDialog(
                           color: colors.text,
                         ),
                       ),
+                      // RichText(
+                      //   text: TextSpan(
+                      //     style: AppTypography.cardSubtitle.copyWith(
+                      //       color: colors.subtext,
+                      //     ),
+                      //     children: [
+                      //       TextSpan(text: 'Inv: #${_formatInvNo(currentOrder)} • '),
+                      //       TextSpan(
+                      //         text: displayIdentifier,
+                      //         style: TextStyle(
+                      //           color: displayColor,
+                      //           fontWeight: FontWeight.bold,
+                      //         ),
+                      //       ),
+                      //       if (currentOrder.chairNumber > 0)
+                      //         TextSpan(text: " • ${currentOrder.chairNumber} chairs"),
+                      //     ],
+                      //   ),
+                      // ),
                       RichText(
                         text: TextSpan(
                           style: AppTypography.cardSubtitle.copyWith(
                             color: colors.subtext,
                           ),
                           children: [
-                            TextSpan(text: 'Inv: #${_formatInvNo(currentOrder)} • '),
+                            TextSpan(text: 'Inv: #${currentOrder.branchInv} • '),   // ← changed from order.branchInv
                             TextSpan(
                               text: displayIdentifier,
                               style: TextStyle(
@@ -340,8 +359,6 @@ void _showOrderDetailsDialog(
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                            if (currentOrder.chairNumber > 0)
-                              TextSpan(text: " • ${currentOrder.chairNumber} chairs"),
                           ],
                         ),
                       ),

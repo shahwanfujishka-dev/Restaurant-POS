@@ -110,7 +110,7 @@ class CartSummary extends StatelessWidget {
         final localOrdersController = Get.find<OrdersController>();
         final parsedOrder = localOrdersController.parseOrderResponse(responseData);
         debugPrint("🟢 Parsed order → invNo: ${parsedOrder.invNo}, items: ${parsedOrder.items.length}");
-        localOrdersController.addOrder(parsedOrder);
+        localOrdersController.updateExistingOrder(parsedOrder);
         debugPrint("🟢 orders.length now = ${localOrdersController.orders.length}");
       }
       // log(message)

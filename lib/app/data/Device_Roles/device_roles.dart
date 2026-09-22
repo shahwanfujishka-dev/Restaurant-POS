@@ -20,7 +20,8 @@ class DeviceConfig {
   static const String _deviceIdKey = 'device_id';
   static const String _operationModeKey = 'operation_mode';
   static const String _authTokenKey = 'hub_auth_token';
-
+  static const String _orderVisibilityKey = 'order_visibility_my_only';
+  static const String _deviceRoleKey = 'device_role_override';
   // ============================================================
   // PLATFORM HELPERS
   // ============================================================
@@ -39,11 +40,27 @@ class DeviceConfig {
   // ROLE (Automatically determined by Platform)
   // ============================================================
 
+
   static DeviceRole get role {
-    if (isDesktop) {
-      return DeviceRole.server;
+    final stored = _storage.read<String>(_deviceRoleKey);
+    if (stored != null) {
+      return DeviceRole.values.firstWhere(
+            (r) => r.name == stored,
+        orElse: () => _defaultRoleForPlatform,
+      );
     }
-    return DeviceRole.client;
+    return _defaultRoleForPlatform;
+  }
+
+  static DeviceRole get _defaultRoleForPlatform =>
+      isDesktop ? DeviceRole.server : DeviceRole.client;
+
+  static Future<void> setRole(DeviceRole value) async {
+    await _storage.write(_deviceRoleKey, value.name);
+  }
+
+  static Future<void> clearRoleOverride() async {
+    await _storage.remove(_deviceRoleKey);
   }
 
   static bool get isServer => role == DeviceRole.server;
@@ -146,6 +163,17 @@ class DeviceConfig {
   static Future<void> clearAuthToken() async {
     await _storage.remove(_authTokenKey);
   }
+  // ============================================================
+  // ORDER VISIBILITY (Local Hub Mode)
+  // ============================================================
+
+  static bool get showMyOrdersOnly {
+    return _storage.read<bool>(_orderVisibilityKey) ?? false;
+  }
+
+  static Future<void> setShowMyOrdersOnly(bool value) async {
+    await _storage.write(_orderVisibilityKey, value);
+  }
 
   // ============================================================
   // HUB URL
@@ -195,5 +223,7 @@ class DeviceConfig {
     await _storage.remove(_deviceIdKey);
     await _storage.remove(_operationModeKey);
     await _storage.remove(_authTokenKey);
+    await _storage.remove(_orderVisibilityKey);
+    await _storage.remove(_deviceRoleKey);
   }
 }

@@ -1,42 +1,36 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:restaurant_pos/app/modules/home/controller/dashboard_controller.dart';
+import 'package:restaurant_pos/app/modules/home/controller/table_controller.dart';
 import 'package:uuid/uuid.dart';
 import '../../../data/Device_Roles/device_roles.dart';
 import '../../../data/services/local_hub_client.dart';
+import '../../../data/services/local_hub_network.dart';
 import '../../../data/services/local_hub_server.dart';
 import '../../../data/services/sync_service.dart';
 import '../../../data/utils/AppState.dart';
 
 class SettingsController extends GetxController {
   final SyncService _syncService = Get.find<SyncService>();
-
-  // ---------------------------------------------------------------------------
-  // SYNC
-  // ---------------------------------------------------------------------------
   final isBackgroundSync = AppState.isBackgroundSyncEnabled.obs;
   RxBool get isMasterSyncing => _syncService.isMasterSyncing;
   RxDouble get masterSyncProgress => _syncService.masterSyncProgress;
-
-  // ---------------------------------------------------------------------------
-  // DEVICE CONFIGURATION
-  // ---------------------------------------------------------------------------
   final operationMode = DeviceConfig.operationMode.obs;
-  
-  // Role is now automatically determined by platform and cannot be changed manually.
-  DeviceRole get deviceRole => DeviceConfig.role;
-  
+  // DeviceRole get deviceRole => DeviceConfig.role;
+  final deviceRoleRx = DeviceConfig.role.obs; // ← new: replaces the old plain getter
+  final isChangingRole = false.obs;
   final hostIp = RxnString(DeviceConfig.hostIp);
   final hostPort = DeviceConfig.hostPort.obs;
   final deviceId = DeviceConfig.deviceId.obs;
-
-  // ---------------------------------------------------------------------------
-  // HUB STATUS
-  // ---------------------------------------------------------------------------
   final isHubConnected = false.obs;
   final isHubServerRunning = false.obs;
   final isTestingHubConnection = false.obs;
   final hubStatus = 'Not connected'.obs;
+  Timer? _deviceListTimer;
+  final connectedDevices = <Map<String, dynamic>>[].obs;   // ← new
+  final showMyOrdersOnly = DeviceConfig.showMyOrdersOnly.obs;
 
   @override
   void onInit() {
@@ -44,24 +38,45 @@ class SettingsController extends GetxController {
     _initializeHub();
   }
 
+  @override
+  void onClose() {
+    _deviceListTimer?.cancel();   // ← new
+    super.onClose();
+  }
+
   void _initializeHub() async {
-    // Sync current server status
     isHubServerRunning.value = LocalHubServer.instance.isRunning;
 
-    // Automatically start server if this is a Host (Desktop) in Local Mode
     if (isLocalMode && isHost && !isHubServerRunning.value) {
       await startLocalServer();
     }
+
+    if (isLocalMode && isHost) {                       // ← new
+      _startConnectedDevicesPolling();
+    }
   }
 
-  // ---------------------------------------------------------------------------
-  // GETTERS
-  // ---------------------------------------------------------------------------
+  void _startConnectedDevicesPolling() {                // ← new
+    _refreshConnectedDevices();
+    _deviceListTimer?.cancel();
+    _deviceListTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _refreshConnectedDevices();
+    });
+  }
+
+  void _refreshConnectedDevices() {                      // ← new
+    connectedDevices.assignAll(LocalHubServer.instance.connectedDevices);
+  }
+
+  void toggleOrderVisibility(bool value) {
+    showMyOrdersOnly.value = value;
+    DeviceConfig.setShowMyOrdersOnly(value);
+  }
+
   bool get isLocalMode => operationMode.value == OperationMode.local;
   bool get isOnlineMode => operationMode.value == OperationMode.online;
-  bool get isHost => deviceRole == DeviceRole.server;
-  bool get isClient => deviceRole == DeviceRole.client;
-
+  bool get isHost => deviceRoleRx.value == DeviceRole.server; // ← now reads the Rx
+  bool get isClient => deviceRoleRx.value == DeviceRole.client;
   String get deviceRoleLabel => DeviceConfig.roleName;
   String get operationModeLabel => DeviceConfig.operationModeName;
 
@@ -76,10 +91,6 @@ class SettingsController extends GetxController {
     if (ip == null || ip.isEmpty) return 'Not configured';
     return 'http://$ip:${hostPort.value}';
   }
-
-  // ---------------------------------------------------------------------------
-  // ACTIONS
-  // ---------------------------------------------------------------------------
 
   Future<void> changeOperationMode(bool local) async {
     final newMode = local ? OperationMode.local : OperationMode.online;
@@ -98,8 +109,93 @@ class SettingsController extends GetxController {
     }
   }
 
+  Future<void> becomeHost() async {
+    if (isChangingRole.value) return;
+    isChangingRole.value = true;
+    try {
+      final String myDeviceId = await _getOrCreateDeviceId();
+      final String? probeIp = await LocalHubNetwork.getLocalIp();
+
+      if (probeIp != null) {
+        try {
+          final status = await LocalHubClient.instance.testConnection(hostIp: probeIp, port: hostPort.value);
+          final String? respondingDeviceId = status['hostDeviceId']?.toString();
+
+          if (respondingDeviceId != null && respondingDeviceId.isNotEmpty && respondingDeviceId != myDeviceId) {
+            Get.snackbar(
+              'Host Already Running',
+              'Another device is already acting as the Main Cashier on this network ($probeIp). Only one host is allowed. Please connect as a client to it instead.',
+              snackPosition: SnackPosition.BOTTOM,
+              duration: const Duration(seconds: 6),
+            );
+            return;
+          }
+          // Same device id, or no id returned — safe to proceed.
+        } catch (_) {
+          // No response — nothing hosting at this address, safe to proceed.
+        }
+      }
+
+      await DeviceConfig.setRole(DeviceRole.server);
+      deviceRoleRx.value = DeviceRole.server;
+
+      if (isLocalMode) {
+        await startLocalServer();
+        _startConnectedDevicesPolling();
+      }
+
+      Get.snackbar('Host Mode Enabled', 'This device is now the Main Cashier.', snackPosition: SnackPosition.BOTTOM);
+    } finally {
+      isChangingRole.value = false;
+    }
+  }
+
+  Future<void> becomeClient() async {
+    if (isChangingRole.value) return;
+    isChangingRole.value = true;
+    try {
+      if (LocalHubServer.instance.isRunning) {
+        await LocalHubServer.instance.stop();
+        isHubServerRunning.value = false;
+      }
+      _deviceListTimer?.cancel();
+      connectedDevices.clear();
+
+      await DeviceConfig.setRole(DeviceRole.client);
+      deviceRoleRx.value = DeviceRole.client;
+
+      Get.snackbar('Client Mode Enabled', 'Enter the Main Cashier IP below to connect.', snackPosition: SnackPosition.BOTTOM);
+    } finally {
+      isChangingRole.value = false;
+    }
+  }
+
   Future<void> startLocalServer() async {
     try {
+      // Same conflict probe as becomeHost() — protects against the server
+      // auto-starting (e.g. app relaunch already in host role + local mode)
+      // onto a network where another host has since appeared.
+      final String myDeviceId = await _getOrCreateDeviceId();
+      final String? probeIp = await LocalHubNetwork.getLocalIp();
+      if (probeIp != null) {
+        try {
+          final status = await LocalHubClient.instance.testConnection(hostIp: probeIp, port: hostPort.value);
+          final String? respondingDeviceId = status['hostDeviceId']?.toString();
+
+          if (respondingDeviceId != null && respondingDeviceId.isNotEmpty && respondingDeviceId != myDeviceId) {
+            Get.snackbar(
+              'Host Already Running',
+              'Another device is already acting as the Main Cashier on this network ($probeIp). Only one host is allowed. Please switch this device to Client mode instead.',
+              snackPosition: SnackPosition.BOTTOM,
+              duration: const Duration(seconds: 6),
+            );
+            return;
+          }
+        } catch (_) {
+          // No response — safe to proceed.
+        }
+      }
+
       if (!LocalHubServer.instance.isRunning) {
         await LocalHubServer.instance.start();
       }
@@ -130,7 +226,11 @@ class SettingsController extends GetxController {
   Future<void> testHubConnection() async {
     final ip = hostIp.value?.trim();
     if (ip == null || ip.isEmpty) {
-      Get.snackbar('Host IP Required', 'Please enter the IP of the Main Cashier.', snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'Host IP Required',
+        'Please enter the IP of the Main Cashier.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
       return;
     }
 
@@ -138,7 +238,10 @@ class SettingsController extends GetxController {
       isTestingHubConnection.value = true;
 
       // 1. Test connection
-      await LocalHubClient.instance.testConnection(hostIp: ip, port: hostPort.value);
+      await LocalHubClient.instance.testConnection(
+        hostIp: ip,
+        port: hostPort.value,
+      );
 
       // 2. Register Device
       final currentDeviceId = await _getOrCreateDeviceId();
@@ -156,13 +259,37 @@ class SettingsController extends GetxController {
       if (token.isNotEmpty) {
         await DeviceConfig.setAuthToken(token);
         isHubConnected.value = true;
-        Get.snackbar('Success', 'Connected to Main Cashier', snackPosition: SnackPosition.BOTTOM);
+
+        // Refresh Master Data (Categories, Products, Tables, etc.)
+        _refreshControllers();
+
+        Get.snackbar(
+          'Success',
+          'Connected to Main Cashier',
+          snackPosition: SnackPosition.BOTTOM,
+        );
       }
     } catch (e) {
       isHubConnected.value = false;
-      Get.snackbar('Connection Failed', 'Could not reach Main Cashier.', snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'Connection Failed',
+        'Could not reach Main Cashier.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
     } finally {
       isTestingHubConnection.value = false;
+    }
+  }
+
+  void _refreshControllers() {
+    // Refresh Dashboard Data (Categories, Products, Favorites, VAT)
+    if (Get.isRegistered<DashboardController>()) {
+      Get.find<DashboardController>().refreshDashboardData();
+    }
+
+    // Refresh Tables and Areas
+    if (Get.isRegistered<TablesController>()) {
+      Get.find<TablesController>().fetchTables();
     }
   }
 
