@@ -193,6 +193,14 @@ class AuthController extends GetxController {
           "osRelease": macInfo.osRelease,
         };
         deviceToken = macInfo.systemGUID ?? "macos_device";
+      } else if (Platform.isWindows) {
+        final WindowsDeviceInfo windowsInfo = await deviceInfo.windowsInfo;
+        deviceData = {
+          "computerName": windowsInfo.computerName,
+          "numberOfCores": windowsInfo.numberOfCores,
+          "systemMemoryInMegabytes": windowsInfo.systemMemoryInMegabytes,
+        };
+        deviceToken = windowsInfo.deviceId;
       }
 
       storage.write('base_url', url);
@@ -205,10 +213,25 @@ class AuthController extends GetxController {
       });
 
       if (response.statusCode == 200 && response.data != null) {
-        final List<dynamic> dataList = response.data;
+        final dynamic responseData = response.data;
+        Map<String, dynamic>? branchData;
 
-        if (dataList.isNotEmpty) {
-          final branchData = dataList[0];
+        if (responseData is List && responseData.isNotEmpty) {
+          branchData = responseData[0];
+        } else if (responseData is Map<String, dynamic>) {
+          if (responseData.containsKey('data')) {
+            final dynamic dataField = responseData['data'];
+            if (dataField is List && dataField.isNotEmpty) {
+              branchData = dataField[0];
+            } else if (dataField is Map<String, dynamic>) {
+              branchData = dataField;
+            }
+          } else {
+            branchData = responseData;
+          }
+        }
+
+        if (branchData != null) {
           final String token = branchData['token'] ?? '';
           final String bName = branchData['branch_name'] ?? '';
           final String bDisName = branchData['branch_display_name'] ?? '';
@@ -285,6 +308,9 @@ class AuthController extends GetxController {
         final deviceName = macInfo.model;
 
         systemId = "$id - $deviceName";
+      } else if (Platform.isWindows) {
+        final WindowsDeviceInfo windowsInfo = await deviceInfo.windowsInfo;
+        systemId = "${windowsInfo.deviceId} - ${windowsInfo.computerName}";
       }
       final requestBody = {
         "company_code": companyCode.value,

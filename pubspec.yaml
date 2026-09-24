@@ -45,6 +45,7 @@ dependencies:
   esc_pos_utils_plus: ^2.0.0
   esc_pos_printer_plus: ^0.1.1
   sqflite: ^2.3.0
+  sqflite_common_ffi: ^2.3.0
   path: ^1.8.3
   shelf: ^1.4.1
   shelf_router: ^1.1.4
@@ -57,8 +58,8 @@ dependencies:
   device_info_plus: ^9.0.2
   permission_handler:
   google_nav_bar: ^5.0.7
-  firebase_messaging:
-  firebase_core: ^3.2.0
+#  firebase_messaging:
+#  firebase_core: ^3.2.0
 
 dev_dependencies:
   flutter_test:

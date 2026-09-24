@@ -2255,7 +2255,12 @@ class CartController extends GetxController {
         "agent_name": selectedCaptainName.value,
         "sales_odr_total": totalWithTax,
         "sales_odr_tax": totalTax,
-        "sales_odr_pos_status": isDraft ? 0 : isBill ? 2 : (isCompliment ? 3 : 1),
+        "sales_odr_pos_status":
+        isDraft
+            ? 0
+            : isBill
+            ? 2
+            : ((body['res_status'] as num?)?.toInt() ?? 1),
         "sales_odr_table_id": resTable["rt_id"],
         "sales_odr_table_name": body["table_name"],
         "sales_odr_no_seats": body["no_seats"],

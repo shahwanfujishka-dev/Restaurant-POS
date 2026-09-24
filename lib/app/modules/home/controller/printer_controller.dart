@@ -104,6 +104,7 @@ class PrinterController extends GetxController {
   }
 
   void _listenToBleScan() {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
     _scanSubscription = FlutterBluePlus.onScanResults.listen((results) {
       for (ScanResult r in results) {
         String name = r.device.platformName.isNotEmpty
@@ -349,26 +350,27 @@ class PrinterController extends GetxController {
   Future<void> scanBluetoothPrinters() async {
     if (scanningBluetooth.value) return;
 
-    bool hasPermission = await checkPermissions();
-    if (!hasPermission) {
-      await requestBluetoothPermissions();
-      return;
+    if (Platform.isAndroid || Platform.isIOS) {
+      bool hasPermission = await checkPermissions();
+      if (!hasPermission) {
+        await requestBluetoothPermissions();
+        return;
+      }
     }
 
     debugPrint("🔍 Starting Bluetooth scan...");
     scanningBluetooth.value = true;
 
     try {
-      if (await FlutterBluePlus.adapterState.first !=
-          BluetoothAdapterState.on) {
-        showSafeSnackbar(
-          "Bluetooth Off",
-          "Please enable Bluetooth",
-          // backgroundColor: Colors.orange,
-          // colorText: Colors.white,
-        );
-        scanningBluetooth.value = false;
-        return;
+      if (Platform.isAndroid || Platform.isIOS) {
+        if (await FlutterBluePlus.adapterState.first != BluetoothAdapterState.on) {
+          showSafeSnackbar(
+            "Bluetooth Off",
+            "Please enable Bluetooth",
+          );
+          scanningBluetooth.value = false;
+          return;
+        }
       }
 
       bluetoothPrinters.clear();
@@ -386,10 +388,12 @@ class PrinterController extends GetxController {
         );
       }
 
-      await FlutterBluePlus.startScan(
-        timeout: const Duration(seconds: 5),
-        androidUsesFineLocation: true,
-      );
+      if (Platform.isAndroid || Platform.isIOS) {
+        await FlutterBluePlus.startScan(
+          timeout: const Duration(seconds: 5),
+          androidUsesFineLocation: true,
+        );
+      }
     } catch (e) {
       debugPrint("❌ Bluetooth Scan Error: $e");
     } finally {
@@ -496,7 +500,9 @@ class PrinterController extends GetxController {
   }
 
   void stopScan() {
-    FlutterBluePlus.stopScan();
+    if (Platform.isAndroid || Platform.isIOS) {
+      FlutterBluePlus.stopScan();
+    }
     scanningBluetooth.value = false;
     scanningWifi.value = false;
   }
@@ -1530,7 +1536,6 @@ if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
       bool isOnlineOrPaid =
           !order.isUnsynced || order.status.value == OrderStatus.paid;
 
-      double finalTotal;
       double netTotal;
 
       if (isCompliment) {
@@ -1929,7 +1934,7 @@ if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
         netTotal = (finalSubTotal + finalVat - discount + roundOff).clamp(
           0,
           double.infinity,
-        );
+          );
       } else {
         // Tax-inclusive: order.totalAmount already has discount baked in for online/paid
         if (isOnlineOrPaid) {

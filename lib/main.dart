@@ -1,11 +1,11 @@
 import 'dart:developer';
-
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
-
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'app/data/services/api_services.dart';
 import 'app/data/services/database_helper.dart';
 import 'app/data/services/local_hub_server.dart';
@@ -18,6 +18,12 @@ import 'app/theme/theme_controller.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
+
   await GetStorage.init();
   await LocalHubServer.instance.start();
   final apiService = Get.put(ApiService(), permanent: true);

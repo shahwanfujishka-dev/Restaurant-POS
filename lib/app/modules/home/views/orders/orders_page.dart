@@ -9,15 +9,12 @@ import 'package:get/get_utils/src/extensions/internacionalization.dart';
 import 'package:intl/intl.dart';
 import 'package:restaurant_pos/app/data/utils/AppState.dart';
 import 'package:restaurant_pos/app/modules/home/views/orders/widgets/AnimatedTabBar.dart';
-
 import '../../../../../helper/KeepAliveWrapper.dart';
 import '../../../../../helper/screen_type.dart';
 import '../../../../data/models/order_model.dart';
 import '../../../../data/services/database_helper.dart';
-import '../../../../routes/app_pages.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/app_typography.dart';
-import '../../../cart/controller/cart_controller.dart';
 import '../../controller/dashboard_controller.dart';
 import '../../controller/order_controller.dart';
 import '../../controller/printer_controller.dart';
