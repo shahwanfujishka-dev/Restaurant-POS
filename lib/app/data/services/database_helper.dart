@@ -630,6 +630,18 @@ class DatabaseHelper {
     return await db.query('orders', where: 'is_synced = ?', whereArgs: [0]);
   }
 
+  Future<int> getUnsyncedOrdersCount() async {
+    final db = await instance.database;
+    final result = await db.rawQuery('SELECT COUNT(*) as count FROM orders WHERE is_synced = 0');
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  Future<int> getUnsyncedPaymentsCount() async {
+    final db = await instance.database;
+    final result = await db.rawQuery('SELECT COUNT(*) as count FROM payments WHERE is_synced = 0');
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
   Future<List<Map<String, dynamic>>> getAllLocalOrders() async {
     final db = await instance.database;
     return await db.query('orders', orderBy: 'created_at DESC');

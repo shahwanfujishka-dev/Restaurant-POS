@@ -59,6 +59,14 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     });
   }
 
+  Future<void> syncOrder(Map<String, dynamic> order) async {
+    await _syncOrder(order);
+  }
+
+  Future<void> syncPayment(Map<String, dynamic> payment) async {
+    await _syncPayment(payment);
+  }
+
   Future<void> syncPendingOrders() async {
     if (isSyncing.value) return;
 
@@ -97,6 +105,13 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     } finally {
       isSyncing.value = false;
     }
+  }
+
+  int _safeInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
   }
 
 
@@ -602,7 +617,26 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
     try {
       final Map<String, dynamic> payload = jsonDecode(payloadStr);
-      final bool isEdit = payload['is_pos_edit'] == true;
+
+      // Determine if this is truly an edit of a SERVER-SIDE order
+      final String? serverIdInDb = order['server_id'];
+      final bool isRealServerOrder = serverIdInDb != null && 
+                                     serverIdInDb.isNotEmpty && 
+                                     !serverIdInDb.startsWith('ORD-');
+                                     
+      bool isEdit = payload['is_pos_edit'] == true && isRealServerOrder;
+
+      // Fallback: If payload thinks it's an edit but we don't have a server ID, 
+      // treat it as a new order.
+      if (payload['is_pos_edit'] == true && !isRealServerOrder) {
+        log("SyncService: Order $uuid marked as edit but no server ID found. Falling back to add_sales_order.");
+        isEdit = false;
+        payload['is_pos_edit'] = false;
+        payload.remove('sq_id');
+        payload.remove('sq_inv_no');
+        payload.remove('sales_odr_id');
+        payload.remove('sales_odr_inv_no');
+      }
 
       final String endpoint = isEdit
           ? "mobileapp/pos/update_sales_order"
@@ -622,13 +656,12 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       }
 
       if (isEdit) {
-        final int sqInvNo = (payload['sq_inv_no'] as num? ?? 0).toInt();
+        final int sqInvNo = _safeInt(payload['sq_inv_no']);
         final List processingTable =
             (payload['res_table']?['processing_table'] as List?) ?? [];
 
         if (sqInvNo == 0 || processingTable.isEmpty) {
-          log("SyncService: ⚠️ Skipping edit $uuid — invalid payload.");
-          await _dbHelper.updateOrderStatusByUuid(uuid, order['status'], isSynced: 1);
+          log("SyncService: ⚠️ Skipping edit $uuid — invalid payload. NOT marking as synced.");
           return;
         }
       }
@@ -707,32 +740,33 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       }
 
       final order = orders.first;
-      final String? serverId = order['server_id'];
-      final String? invNo = order['inv_no'];
-
-      if (serverId == null || serverId.isEmpty || serverId.startsWith('ORD-')) {
-        log("SyncService: Order $orderUuid not yet synced, skipping payment.");
-        return;
-      }
 
       // ✅ KEY FIX: If the order payload already included payment (res_status=3 or
       // sale_pay_type != 0), _syncOrder already settled it in add_sales_order.
       // A separate settle call would double-process and corrupt the order.
+      // We check this BEFORE the serverId check so we can clear payments even if the order sync is pending.
       if (order['payload'] != null) {
         try {
           final orderPayload = jsonDecode(order['payload'] as String);
-          final int resStatus = (orderPayload['res_status'] as num? ?? 0).toInt();
-          final int payType = (orderPayload['sale_pay_type'] as num? ?? 0).toInt();
+          final int resStatus = _safeInt(orderPayload['res_status']);
+          final int payType = _toInt(orderPayload['sale_pay_type']);
 
           if (resStatus == 3 || payType != 0) {
-            log("SyncService: Skipping separate settlement for $orderUuid — "
-                "already paid via add_sales_order (res_status=$resStatus, payType=$payType).");
+            log("SyncService: Payment for $orderUuid is already carried in order payload (res_status: $resStatus). Marking payment sync done.");
             await _dbHelper.updatePaymentSyncStatus(localPaymentId, 1);
-            return;  // ← This is the key line
+            return;
           }
         } catch (e) {
-          log("SyncService: Could not check payload for $orderUuid: $e");
+          log("SyncService: Error checking payload for $orderUuid: $e");
         }
+      }
+
+      final String? serverId = order['server_id'];
+      final String? invNo = order['inv_no'];
+
+      if (serverId == null || serverId.isEmpty || serverId.startsWith('ORD-')) {
+        log("SyncService: Order $orderUuid not yet synced, skipping payment API call.");
+        return;
       }
 
       // Only reach here for orders that were initially placed as drafts/pending
@@ -782,6 +816,13 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     } catch (e) {
       log("SyncService: ❌ Payment sync failed: $e");
     }
+  }
+
+  int _toInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
   }
 
   int _payloadUserId(Map<String, dynamic> order) {

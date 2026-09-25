@@ -688,7 +688,7 @@ class CartController extends GetxController {
     if (validRow != null) {
       return (validRow['produnit_unit_id'] as num).toInt();
     }
-    return currentUnitId; // still 0 — nothing better available locally
+    return currentUnitId;
   }
 
   Future<Map<String, dynamic>?> placeOrder({

@@ -19,10 +19,10 @@ class SettingsView extends GetView<SettingsController> {
 
     return Scaffold(
       backgroundColor: colors.bg,
-      appBar: AppBar(
-        title: Text('settings'.tr),
-        backgroundColor: colors.isDark ? Colors.black : Colors.white,
-      ),
+      // appBar: AppBar(
+      //   title: Text('settings'.tr),
+      //   backgroundColor: colors.isDark ? Colors.black : Colors.white,
+      // ),
       body: ListView(
         padding: EdgeInsets.all(8.w),
         children: [
@@ -120,7 +120,7 @@ class SettingsView extends GetView<SettingsController> {
             context,
             Icons.business_outlined,
             "Branch",
-            AppState.branchDisName,
+            AppState.branchDisName.toUpperCase(),
           ),
 
           // ============================================================
@@ -496,6 +496,28 @@ class SettingsView extends GetView<SettingsController> {
               onChanged: controller.toggleBackgroundSync,
               activeColor: AppTheme.primaryGreen,
             ),
+          )),
+          Divider(height: 1, color: colors.border),
+          Obx(() => ListTile(
+            onTap: (controller.isSyncingOrders.value || controller.pendingCount.value == 0) 
+                ? null 
+                : () => controller.syncOrdersToLive(),
+            leading: CircleAvatar(
+              backgroundColor: Colors.blue.withOpacity(0.1),
+              child: controller.isSyncingOrders.value
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.cloud_upload_outlined, color: Colors.blue),
+            ),
+            title: Text("Sync Pending Orders", style: TextStyle(color: colors.text)),
+            subtitle: Text(
+              controller.isSyncingOrders.value 
+                  ? "Syncing ${controller.pendingCount.value} items..." 
+                  : "${controller.pendingCount.value} orders/payments pending.",
+              style: TextStyle(color: colors.subtext),
+            ),
+            // trailing: controller.pendingCount.value > 0 && !controller.isSyncingOrders.value
+            //     ? Icon(Icons.arrow_forward_ios, size: 8.sp, color: colors.subtext)
+            //     : null,
           )),
           Divider(height: 1, color: colors.border),
           Obx(() => ListTile(

@@ -495,7 +495,7 @@ class CashierController extends GetxController {
         final bool isOffline = result['offline'] == true;
         if (isOffline) {
           final String? localUuid = result['preview']?['local_uuid']?.toString();
-          await _savePaymentLocally(isComp: isComp, localUuid: localUuid, result: result);
+          await _savePaymentLocally(isComp: isComp, localUuid: localUuid, result: result, payType: payType);
           return;
         }
         final messageMap = result['message'] is Map ? result['message'] as Map : null;
@@ -542,7 +542,7 @@ class CashierController extends GetxController {
     }
   }
 
-  Future<void> _savePaymentLocally({bool isComp = false, String? localUuid,Map<String, dynamic>? result,}) async {
+  Future<void> _savePaymentLocally({bool isComp = false, String? localUuid,Map<String, dynamic>? result, int? payType}) async {
     try {
       int cashId = selectedCashLedgerId.value != 0
           ? selectedCashLedgerId.value
@@ -581,12 +581,15 @@ class CashierController extends GetxController {
           p['sales_odr_roundoff'] = finalRoundOff;
           p['tot_amount'] = finalTotal;
           p['sales_odr_total'] = finalTotal;
+          p['res_status'] = 3; // ✅ SET TO PAID
+          p['sale_pay_type'] = payType ?? (isComp ? 2 : 0); // ✅ SET PAY TYPE
           updatedPayload = jsonEncode(p);
         }
       }
       await _dbHelper.updateOrderStatusByUuid(
         orderIdForDb,
         'paid',
+        isSynced: 0, // ✅ FORCE RE-SYNC
         payload: updatedPayload,
         total: finalTotal,
       );

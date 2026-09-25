@@ -1,11 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:restaurant_pos/app/modules/home/controller/dashboard_controller.dart';
+import 'package:restaurant_pos/app/modules/home/controller/order_controller.dart';
 import 'package:restaurant_pos/app/modules/home/controller/table_controller.dart';
+import 'package:restaurant_pos/helper/snackbar_helper.dart';
 import 'package:uuid/uuid.dart';
 import '../../../data/Device_Roles/device_roles.dart';
+import '../../../data/services/database_helper.dart';
 import '../../../data/services/local_hub_client.dart';
 import '../../../data/services/local_hub_network.dart';
 import '../../../data/services/local_hub_server.dart';
@@ -29,18 +33,47 @@ class SettingsController extends GetxController {
   final isTestingHubConnection = false.obs;
   final hubStatus = 'Not connected'.obs;
   Timer? _deviceListTimer;
+  Timer? _countRefreshTimer; // ← new: Timer for automatic count refresh
   final connectedDevices = <Map<String, dynamic>>[].obs;   // ← new
   final showMyOrdersOnly = DeviceConfig.showMyOrdersOnly.obs;
+
+  final pendingCount = 0.obs;
+  final isSyncingOrders = false.obs;
 
   @override
   void onInit() {
     super.onInit();
     _initializeHub();
+    refreshPendingCount();
+    _startCountRefreshPolling(); // ← new
+
+    // Automatically refresh count when background sync status changes
+    ever(_syncService.isSyncing, (bool syncing) {
+      if (!syncing) {
+        refreshPendingCount();
+        // Also refresh order lists if they are active
+        if (Get.isRegistered<OrdersController>()) {
+          Get.find<OrdersController>().fetchOrders();
+        }
+      }
+    });
+  }
+
+  /// Starts a timer to refresh the pending count every 5 seconds
+  void _startCountRefreshPolling() {
+    _countRefreshTimer?.cancel();
+    _countRefreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      // Don't refresh while a manual sync is already in progress (it handles its own refreshes)
+      if (!isSyncingOrders.value) {
+        refreshPendingCount();
+      }
+    });
   }
 
   @override
   void onClose() {
-    _deviceListTimer?.cancel();   // ← new
+    _deviceListTimer?.cancel();
+    _countRefreshTimer?.cancel(); // ← new
     super.onClose();
   }
 
@@ -282,7 +315,6 @@ class SettingsController extends GetxController {
   }
 
   void _refreshControllers() {
-    // Refresh Dashboard Data (Categories, Products, Favorites, VAT)
     if (Get.isRegistered<DashboardController>()) {
       Get.find<DashboardController>().refreshDashboardData();
     }
@@ -290,6 +322,11 @@ class SettingsController extends GetxController {
     // Refresh Tables and Areas
     if (Get.isRegistered<TablesController>()) {
       Get.find<TablesController>().fetchTables();
+    }
+
+    // Refresh Orders and Sold Orders
+    if (Get.isRegistered<OrdersController>()) {
+      Get.find<OrdersController>().fetchOrders();
     }
   }
 
@@ -310,5 +347,53 @@ class SettingsController extends GetxController {
 
   Future<void> performManualMasterSync() async {
     await _syncService.syncMasterData();
+  }
+
+  Future<void> refreshPendingCount() async {
+    final orderCount = await DatabaseHelper.instance.getUnsyncedOrdersCount();
+    final paymentCount = await DatabaseHelper.instance.getUnsyncedPaymentsCount();
+    pendingCount.value = orderCount + paymentCount;
+  }
+
+  Future<void> syncOrdersToLive() async {
+    if (isSyncingOrders.value) return;
+    try {
+      final result = await InternetAddress.lookup('google.com').timeout(const Duration(seconds: 5));
+      if (result.isEmpty || result[0].rawAddress.isEmpty) {
+        showSafeSnackbar("No Internet", "Please check your network connection.");
+        return;
+      }
+    } catch (_) {
+      showSafeSnackbar("No Internet", "Please check your network connection.");
+      return;
+    }
+
+    isSyncingOrders.value = true;
+    try {
+      final unsyncedOrders = await DatabaseHelper.instance.getUnsyncedOrders();
+      for (var order in unsyncedOrders) {
+        await _syncService.syncOrder(order);
+        await refreshPendingCount();
+      }
+
+      final unsyncedPayments = await DatabaseHelper.instance.getUnsyncedPayments();
+      for (var payment in unsyncedPayments) {
+        await _syncService.syncPayment(payment);
+        await refreshPendingCount();
+      }
+
+      _refreshControllers();
+
+      if (pendingCount.value == 0) {
+        showSafeSnackbar("Sync Complete", "All data has been synced to the live server.");
+      } else {
+        showSafeSnackbar("Sync Partial", "Some items could not be synced. Check logs for details.");
+      }
+    } catch (e) {
+      showSafeSnackbar("Sync Error", "An error occurred: $e");
+    } finally {
+      isSyncingOrders.value = false;
+      await refreshPendingCount();
+    }
   }
 }

@@ -212,6 +212,14 @@ class PrinterController extends GetxController {
   }
 
   Future<String> _resolveInvoiceLabel(OrderModel order) async {
+    // Prefer the real branch invoice number (host-assigned, e.g. "M-MPM0007")
+    // — this is exactly what the Orders page displays, so print must match it.
+    if (order.branchInv != null &&
+        order.branchInv!.isNotEmpty &&
+        order.branchInv != "null") {
+      return order.branchInv!;
+    }
+
     final branch = AppState.branchDisName.isNotEmpty
         ? AppState.branchDisName
         : AppState.branchName;
@@ -224,7 +232,7 @@ class PrinterController extends GetxController {
     if (order.invNo.isNotEmpty &&
         order.invNo != "LOCAL" &&
         order.invNo != "OFFLINE") {
-      return order.branchInv.toString();
+      return order.invNo.toString();
     }
     final seq = await DatabaseHelper.instance.assignOfflineSeqForOrder(
       order.id,
@@ -603,7 +611,6 @@ class PrinterController extends GetxController {
       final int splitNo = split['ps_split_no'] as int;
       final double splitAmount = (split['ps_split_amnt'] as num).toDouble();
       final String splitLabel = "$splitNo/$totalSplits";
-
       debugPrint("🖨️ Printing split $splitLabel - Amount: $splitAmount");
 
       if (type == 'wifi') {
