@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 20, // bumped from 18 → 19 for cat_token_printer in products
+      version: 21, // bumped from 20 → 21 for hub_status_syncing in local server
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -225,6 +225,11 @@ class DatabaseHelper {
     if (oldVersion < 20) {
       try {
         await db.execute('ALTER TABLE orders ADD COLUMN created_by_device_id TEXT');
+      } catch (e) {}
+    }
+    if (oldVersion < 21) {
+      try {
+        await db.execute('ALTER TABLE orders ADD COLUMN hub_synced INTEGER DEFAULT 1');
       } catch (e) {}
     }
   }
@@ -656,6 +661,16 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getOrderItemsByUuid(String uuid) async {
     final db = await instance.database;
     return await db.query('order_items', where: 'order_uuid = ?', whereArgs: [uuid]);
+  }
+
+  Future<List<Map<String, dynamic>>> getOrdersPendingHubSync() async {
+    final db = await instance.database;
+    return await db.query('orders', where: 'hub_synced = ?', whereArgs: [0]);
+  }
+
+  Future<void> markOrderHubSynced(String uuid) async {
+    final db = await instance.database;
+    await db.update('orders', {'hub_synced': 1}, where: 'uuid = ?', whereArgs: [uuid]);
   }
 
   Future<int> updateOrderStatusByServerId(String serverId, String status, {int? isSynced, double? total, double? tax, String? payload, String? invNo, String? branchInv}) async {

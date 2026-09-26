@@ -1031,6 +1031,59 @@ class CartController extends GetxController {
           }
         } catch (e) {
           log("❌ LOCAL ORDER SAVE FAILED: $e");
+
+          if (deviceRole == DeviceRole.client) {
+            // Hub unreachable — don't lose the order. Save it locally, flagged
+            // for retry, and let the UI/printer proceed as if it succeeded.
+            try {
+              await _dbHelper.saveOrderOffline(
+                {
+                  'uuid': orderUuid,
+                  'server_id': null,
+                  'inv_no': null,
+                  'branch_inv': null,
+                  'created_by_device_id': DeviceConfig.deviceId,
+                  'order_type_id': AppState.orderType.id,
+                  'table_id': int.tryParse(selectedTableId.value) ?? 0,
+                  'customer_name': body['cust_name'],
+                  'customer_phone': body['phone_no'],
+                  'total_amount': finalTotal,
+                  'total_tax': totalTax,
+                  'status': isDraft ? 'draft' : 'pending',
+                  'is_synced': 0,
+                  'hub_synced': 0,
+                  'payload': jsonEncode(hubPayload),
+                  'created_at': now.toIso8601String(),
+                },
+                localItems,
+              );
+              log("✅ Order saved locally on client, pending hub sync: $orderUuid");
+            } catch (dbError) {
+              log("❌ Even local save failed: $dbError");
+              showSafeSnackbar("Order Failed", "Could not save order. Please try again.");
+              return null;
+            }
+
+            final localBranchInv = "OFFLINE-${orderUuid.substring(orderUuid.length - 6)}";
+            final syntheticResponse = _buildOfflineResponse(
+              orderUuid: orderUuid,
+              branchInv: localBranchInv,
+              body: body,
+              totalWithTax: totalWithTax,
+              totalTax: totalTax,
+              saleItems: saleItems,
+              isDraft: isDraft,
+              now: now,
+              isCompliment: isCompliment,
+              isSplit: isSplit,
+              splitCount: splitCount,
+              splitAmounts: splitAmounts,
+              isBill: isBill,
+            );
+            _clearDashboardSearch();
+            return syntheticResponse;
+          }
+
           showSafeSnackbar("Order Failed", "Could not save/send order on the local network.");
           return null;
         }
@@ -1560,16 +1613,12 @@ class CartController extends GetxController {
             "│         oldFreeLimit: $oldFreeLimit  oldFree: $oldFreePart  oldPaid: $oldPaidPart  subId: $addonSubId",
           );
 
-          // ── Free portion ─────────────────────────────────────────────────────
-          final bool freeChanged =
-              currentFreePart != oldFreePart || unitChanged;
-
+          final bool freeChanged = currentFreePart != oldFreePart || unitChanged;
           if (currentFreePart > 0 || oldFreePart > 0) {
             if (freeChanged) {
               anyAddonChanged = true;
               hasAnyChange = true;
             }
-
             if (currentFreePart > 0 && (freeChanged || parentChanged)) {
               log(
                 "│  >>> FREE PART: ${addon.name}  qty: $currentFreePart  oldQty: $oldFreePart  subId: $addonSubId",
@@ -2280,7 +2329,6 @@ class CartController extends GetxController {
     final cartItem = cartItems.firstWhereOrNull(
           (c) => c.product.id == prdId && !c.isDeleted.value,
     );
-
     return cartItem?.product.tokenPrinterId;
   }
 }

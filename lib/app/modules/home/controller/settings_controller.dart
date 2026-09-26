@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:restaurant_pos/app/modules/home/controller/dashboard_controller.dart';
@@ -57,6 +58,11 @@ class SettingsController extends GetxController {
         }
       }
     });
+
+    // Enforce no-sync for clients in local mode on start
+    if (isLocalMode && isClient) {
+      toggleBackgroundSync(false);
+    }
   }
 
   /// Starts a timer to refresh the pending count every 5 seconds
@@ -127,12 +133,38 @@ class SettingsController extends GetxController {
 
   Future<void> changeOperationMode(bool local) async {
     final newMode = local ? OperationMode.local : OperationMode.online;
+
+    // Switching away from Local while hosting active clients kills their
+    // connection immediately — confirm before doing that.
+    if (!local && isLocalMode && isHost && connectedDevices.isNotEmpty) {
+      final confirm = await Get.dialog<bool>(
+        AlertDialog(
+          title: const Text("Switch to Online Mode?"),
+          content: Text(
+            "${connectedDevices.length} device(s) are currently connected to this host. "
+                "Switching to Online Mode will stop the local server and disconnect them immediately.",
+          ),
+          actions: [
+            TextButton(onPressed: () => Get.back(result: false), child: const Text("Cancel")),
+            TextButton(
+              onPressed: () => Get.back(result: true),
+              child: const Text("Switch Anyway", style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+    }
+
     operationMode.value = newMode;
     await DeviceConfig.setOperationMode(newMode);
 
     if (newMode == OperationMode.local) {
       if (isHost) {
         await startLocalServer();
+      } else {
+        // Automatically disable live sync when switching to client local mode
+        toggleBackgroundSync(false);
       }
     } else {
       if (LocalHubServer.instance.isRunning) {
@@ -142,31 +174,86 @@ class SettingsController extends GetxController {
     }
   }
 
+  Future<Map<String, String>?> _scanSubnetForHost({
+    required String myDeviceId,
+    required int port,
+  }) async {
+    final String? myIp = await LocalHubNetwork.getLocalIp();
+    if (myIp == null) return null;
+
+    final segments = myIp.split('.');
+    if (segments.length != 4) return null;
+    final prefix = '${segments[0]}.${segments[1]}.${segments[2]}';
+
+    const int chunkSize = 32; // probe in batches so we don't fire 254 sockets at once
+    for (int start = 1; start <= 254; start += chunkSize) {
+      final end = math.min(start + chunkSize - 1, 254);
+      final candidates = [
+        for (int i = start; i <= end; i++)
+          if ('$prefix.$i' != myIp) '$prefix.$i'
+      ];
+
+      final results = await Future.wait(candidates.map((ip) async {
+        try {
+          final status = await LocalHubClient.instance
+              .testConnection(hostIp: ip, port: port)
+              .timeout(const Duration(milliseconds: 350));
+          return MapEntry(ip, status);
+        } catch (_) {
+          return null;
+        }
+      }));
+
+      for (final entry in results) {
+        if (entry == null) continue;
+        final respondingId = entry.value['hostDeviceId']?.toString();
+        if (respondingId != null && respondingId.isNotEmpty && respondingId != myDeviceId) {
+          return {'ip': entry.key, 'deviceId': respondingId};
+        }
+      }
+    }
+    return null;
+  }
+
   Future<void> becomeHost() async {
     if (isChangingRole.value) return;
     isChangingRole.value = true;
     try {
       final String myDeviceId = await _getOrCreateDeviceId();
-      final String? probeIp = await LocalHubNetwork.getLocalIp();
+      String? conflictIp;
 
-      if (probeIp != null) {
+      // 1. Fast path — check the last-known peer IP, if we have one.
+      final String? knownPeerIp = DeviceConfig.hostIp;
+      if (knownPeerIp != null && knownPeerIp.trim().isNotEmpty) {
         try {
-          final status = await LocalHubClient.instance.testConnection(hostIp: probeIp, port: hostPort.value);
-          final String? respondingDeviceId = status['hostDeviceId']?.toString();
-
-          if (respondingDeviceId != null && respondingDeviceId.isNotEmpty && respondingDeviceId != myDeviceId) {
-            Get.snackbar(
-              'Host Already Running',
-              'Another device is already acting as the Main Cashier on this network ($probeIp). Only one host is allowed. Please connect as a client to it instead.',
-              snackPosition: SnackPosition.BOTTOM,
-              duration: const Duration(seconds: 6),
-            );
-            return;
+          final status = await LocalHubClient.instance
+              .testConnection(hostIp: knownPeerIp, port: hostPort.value)
+              .timeout(const Duration(seconds: 2));
+          final respondingId = status['hostDeviceId']?.toString();
+          if (respondingId != null && respondingId.isNotEmpty && respondingId != myDeviceId) {
+            conflictIp = knownPeerIp;
           }
-          // Same device id, or no id returned — safe to proceed.
         } catch (_) {
-          // No response — nothing hosting at this address, safe to proceed.
+          // no response from stored peer — fall through to scan
         }
+      }
+
+      // 2. Thorough fallback — scan the subnet. Covers a device that has
+      //    never connected as a client, so it has no stored peer IP.
+      if (conflictIp == null) {
+        final scanResult = await _scanSubnetForHost(myDeviceId: myDeviceId, port: hostPort.value);
+        if (scanResult != null) conflictIp = scanResult['ip'];
+      }
+
+      if (conflictIp != null) {
+        Get.snackbar(
+          'Host Already Running',
+          'Another device is already acting as the Main Cashier at $conflictIp on this network. '
+              'Only one host is allowed. Please connect as a client to it instead.',
+          snackPosition: SnackPosition.BOTTOM,
+          duration: const Duration(seconds: 6),
+        );
+        return;
       }
 
       await DeviceConfig.setRole(DeviceRole.server);
@@ -185,6 +272,27 @@ class SettingsController extends GetxController {
 
   Future<void> becomeClient() async {
     if (isChangingRole.value) return;
+
+    if (isHost && connectedDevices.isNotEmpty) {
+      final confirm = await Get.dialog<bool>(
+        AlertDialog(
+          title: const Text("Switch to Client?"),
+          content: Text(
+            "${connectedDevices.length} device(s) are currently connected to this host. "
+                "Switching roles will disconnect them immediately.",
+          ),
+          actions: [
+            TextButton(onPressed: () => Get.back(result: false), child: const Text("Cancel")),
+            TextButton(
+              onPressed: () => Get.back(result: true),
+              child: const Text("Switch Anyway", style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+    }
+
     isChangingRole.value = true;
     try {
       if (LocalHubServer.instance.isRunning) {
@@ -196,6 +304,10 @@ class SettingsController extends GetxController {
 
       await DeviceConfig.setRole(DeviceRole.client);
       deviceRoleRx.value = DeviceRole.client;
+
+      if (isLocalMode) {
+        toggleBackgroundSync(false);
+      }
 
       Get.snackbar('Client Mode Enabled', 'Enter the Main Cashier IP below to connect.', snackPosition: SnackPosition.BOTTOM);
     } finally {
@@ -292,7 +404,7 @@ class SettingsController extends GetxController {
       if (token.isNotEmpty) {
         await DeviceConfig.setAuthToken(token);
         isHubConnected.value = true;
-
+        Get.find<SyncService>().syncPendingHubOrders();
         // Refresh Master Data (Categories, Products, Tables, etc.)
         _refreshControllers();
 
@@ -341,12 +453,25 @@ class SettingsController extends GetxController {
   }
 
   void toggleBackgroundSync(bool value) {
+    // Only host or online mode can manage background sync to live
+    if (isLocalMode && isClient) {
+      isBackgroundSync.value = false;
+      AppState.isBackgroundSyncEnabled = false;
+      return;
+    }
     isBackgroundSync.value = value;
     AppState.isBackgroundSyncEnabled = value;
   }
 
   Future<void> performManualMasterSync() async {
-    await _syncService.syncMasterData();
+    if (isLocalMode && isClient) return;
+    try {
+      await _syncService.syncMasterData();
+      _refreshControllers();
+      Get.snackbar('Success', 'Data synced successfully', snackPosition: SnackPosition.BOTTOM);
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to sync data: $e', snackPosition: SnackPosition.BOTTOM);
+    }
   }
 
   Future<void> refreshPendingCount() async {
@@ -356,6 +481,7 @@ class SettingsController extends GetxController {
   }
 
   Future<void> syncOrdersToLive() async {
+    if (isLocalMode && isClient) return;
     if (isSyncingOrders.value) return;
     try {
       final result = await InternetAddress.lookup('google.com').timeout(const Duration(seconds: 5));

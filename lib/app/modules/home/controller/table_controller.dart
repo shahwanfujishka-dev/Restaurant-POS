@@ -1,18 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/get_instance/src/extension_instance.dart';
-import 'package:get/get_navigation/src/extension_navigation.dart';
-import 'package:get/get_navigation/src/snackbar/snackbar.dart';
-import 'package:get/get_rx/src/rx_types/rx_types.dart';
-import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
-import 'package:get/get_state_manager/src/simple/get_controllers.dart';
-import 'package:get/get_state_manager/src/simple/get_view.dart';
-import 'package:get/get_utils/src/extensions/internacionalization.dart';
-
+import 'package:get/get.dart';
+import 'package:restaurant_pos/app/modules/home/controller/dashboard_controller.dart';
+import 'package:restaurant_pos/app/modules/home/controller/home_controller.dart';
+import 'package:restaurant_pos/app/modules/cart/controller/cart_controller.dart';
+import 'package:restaurant_pos/app/widgets/reusable_button.dart';
 import '../../../../helper/snackbar_helper.dart';
 import '../../../data/Device_Roles/device_roles.dart';
 import '../../../data/services/api_services.dart';
@@ -21,9 +17,6 @@ import '../../../data/services/local_hub_client.dart';
 import '../../../data/utils/AppState.dart';
 import '../../../theme/app_theme.dart';
 import '../../../theme/app_typography.dart';
-import '../../../widgets/reusable_button.dart';
-import '../../cart/controller/cart_controller.dart';
-import 'home_controller.dart';
 
 enum TableStatus { vacant, partiallyOccupied, fullyOccupied }
 
@@ -86,7 +79,7 @@ class TableModel {
   }
 }
 
-class TablesController extends GetxController {
+class TablesController extends GetxController with WidgetsBindingObserver {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
   final ApiService _apiService = Get.find<ApiService>();
 
@@ -98,21 +91,57 @@ class TablesController extends GetxController {
 
   // Track occupancy from local, unsynced orders
   final localOrdersOccupancy = <int, int>{}.obs;
-  // Track which server-known orders have a pending local update to avoid double counting
-  final pendingUpdateServerIds = <String>{}.obs;
+  // Track which orders have a pending local update to avoid double counting with Hub/Cloud data
+  final pendingUpdateIds = <String>{}.obs;
+
+  Timer? _pollingTimer;
 
   @override
   void onInit() {
     super.onInit();
+    WidgetsBinding.instance.addObserver(this);
     fetchTables();
+    _startPolling();
+  }
+
+  @override
+  void onClose() {
+    _pollingTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.onClose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      fetchTables(silent: true);
+    }
+  }
+
+  void _startPolling() {
+    _pollingTimer?.cancel();
+    // Fast polling in local mode to ensure multi-device sync
+    final duration = DeviceConfig.operationMode == OperationMode.local ? const Duration(seconds: 5) : const Duration(seconds: 20);
+    _pollingTimer = Timer.periodic(duration, (_) {
+      fetchTables(silent: true);
+    });
+  }
+
+  int _safeInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
   }
 
   // Dual-Load Strategy: Load from DB first (instant), then API for fresh status
-  Future<void> fetchTables() async {
+  Future<void> fetchTables({bool silent = false}) async {
     try {
-      await _updateLocalOccupancy();
-      await _loadFromLocalDB();
-      if (areas.isEmpty) isLoading.value = true;
+      if (!silent) {
+        await _updateLocalOccupancy();
+        await _loadFromLocalDB();
+        if (areas.isEmpty) isLoading.value = true;
+      }
 
       List<dynamic> dataList = [];
 
@@ -148,7 +177,6 @@ class TablesController extends GetxController {
           }
         } catch (e) {
           debugPrint("fetchTables: Cloud API failed, using local cache: $e");
-          // If offline and not in local hub client mode, we just stick with what's in local DB
           return;
         }
       }
@@ -174,29 +202,36 @@ class TablesController extends GetxController {
       final cartController = Get.find<CartController>();
 
       for (var order in unsynced) {
+        final status = order['status']?.toString().toLowerCase();
+        if (status == 'paid' || status == 'cancelled' || status == 'deleted') continue;
+
         final tableId = (order['table_id'] as num?)?.toInt();
         if (tableId == null) continue;
         if (cartController.isEditing && order['uuid'] == cartController.editingOrderId.value) {
           continue;
         }
+        
+        // Mark both UUID and server_id to avoid double counting with Host data
+        final uuid = order['uuid']?.toString();
+        if (uuid != null) skipIds.add(uuid);
+        
         final serverId = order['server_id']?.toString();
         if (serverId != null && serverId.isNotEmpty) {
           skipIds.add(serverId);
         }
+
         int seats = 0;
         final payloadStr = order['payload'] as String?;
         if (payloadStr != null && payloadStr.isNotEmpty) {
           try {
             final payload = jsonDecode(payloadStr);
-            seats = (payload['no_seats'] as num? ?? 0).toInt();
-          } catch (e) {
-            debugPrint("Error parsing local order payload for occupancy: $e");
-          }
+            seats = _safeInt(payload['no_seats'] ?? payload['sales_odr_no_seats']);
+          } catch (e) {}
         }
         occupancy[tableId] = (occupancy[tableId] ?? 0) + seats;
       }
       localOrdersOccupancy.assignAll(occupancy);
-      pendingUpdateServerIds.assignAll(skipIds);
+      pendingUpdateIds.assignAll(skipIds);
     } catch (e) {
       debugPrint("Error updating local occupancy: $e");
     }
@@ -244,7 +279,7 @@ class TablesController extends GetxController {
     for (var order in table.processingTable) {
       if (order is Map) {
         final String? orderInvNo = order['sales_odr_inv_no']?.toString() ?? order['sq_inv_no']?.toString();
-        final String? orderId = order['sales_odr_id']?.toString() ?? order['sq_id']?.toString();
+        final String? orderId = (order['sales_odr_id'] ?? order['sq_id'] ?? order['uuid'] ?? order['local_uuid'])?.toString();
 
         // Skip current editing order's seats in occupied calculation
         if (cartController.isEditing &&
@@ -254,11 +289,11 @@ class TablesController extends GetxController {
         }
 
         // Skip orders that have a pending local update (we use the local count instead)
-        if (orderId != null && pendingUpdateServerIds.contains(orderId)) {
+        if (orderId != null && pendingUpdateIds.contains(orderId)) {
           continue;
         }
 
-        occupied += (order['sales_odr_no_seats'] as num? ?? 0).toInt();
+        occupied += _safeInt(order['sales_odr_no_seats'] ?? order['no_seats']);
       }
     }
 
@@ -344,50 +379,44 @@ class ChairSelectionDialog extends GetView<TablesController> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Obx(() => Wrap(
-            spacing: 2.w,
-            runSpacing: 2.h,
-            alignment: WrapAlignment.center,
+            spacing: AppTypography.smallText,
+            runSpacing:AppTypography.smallText,
             children: List.generate(table.chairCount, (index) {
               final chairNum = index + 1;
-              final isOccupied = chairNum <= occupiedCount;
-              final isSelected = !isOccupied &&
-                  chairNum <= (occupiedCount + controller.selectedChairCount.value);
+              final bool isAlreadyOccupied = chairNum <= occupiedCount;
 
-              final bgColor = isOccupied
-                  ? (colors.isDark ? colors.bg : Colors.grey.shade200)
-                  : isSelected
-                  ? AppTheme.primaryGreen
-                  : colors.card;
-
-              final borderColor = isOccupied
-                  ? (colors.isDark ? colors.border : Colors.grey.shade300)
-                  : isSelected
-                  ? AppTheme.primaryGreen
-                  : colors.border;
-
-              final textColor = isOccupied
-                  ? colors.subtext.withOpacity(0.5)
-                  : isSelected
-                  ? Colors.white
-                  : colors.text;
+              // Correct logic as requested: Tapping chair X means selecting X - occupiedCount chairs.
+              // Highlights ONLY the tapped chair.
+              // final bool isCurrentlySelected = controller.selectedChairCount.value > 0 &&
+              //                                 (occupiedCount + controller.selectedChairCount.value == chairNum);
+              final bool isCurrentlySelected =
+                  chairNum > occupiedCount &&
+                      chairNum <= occupiedCount + controller.selectedChairCount.value;
 
               return InkWell(
-                onTap: isOccupied ? null : () {
-                  controller.selectedChairCount.value = chairNum - occupiedCount;
+                onTap: isAlreadyOccupied ? null : () {
+                   controller.selectedChairCount.value = chairNum - occupiedCount;
                 },
                 child: Container(
-                  width: 45.w,
-                  height: 45.w,
+                  width: AppTypography.iconXL,
+                  height:  AppTypography.iconXL,
                   decoration: BoxDecoration(
-                    color: bgColor,
-                    border: Border.all(color: borderColor, width: 1.5),
-                    borderRadius: BorderRadius.circular(8.r),
+                    color: isCurrentlySelected
+                        ? AppTheme.primaryGreen
+                        : (isAlreadyOccupied ? Colors.red.withOpacity(0.2) : colors.textField),
+                    borderRadius: BorderRadius.circular(10.r),
+                    border: Border.all(
+                      color: isCurrentlySelected ? AppTheme.primaryGreen : colors.border,
+                      width: 1.5,
+                    ),
                   ),
                   child: Center(
                     child: Text(
                       chairNum.toString(),
-                      style: AppTypography.cardTitle.copyWith(
-                        color: textColor,
+                      style: TextStyle(
+                        color: isCurrentlySelected
+                            ? Colors.white
+                            : (isAlreadyOccupied ? Colors.red : colors.text),
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -396,10 +425,26 @@ class ChairSelectionDialog extends GetView<TablesController> {
               );
             }),
           )),
-          SizedBox(height: 20.h),
-          PrimaryButton(
-            text: 'confirm'.tr,
-            onPressed: () => controller.confirmSelection(table),
+          SizedBox(height: 24.h),
+          Row(
+            children: [
+              Expanded(
+                child: PrimaryButton(
+                  text: 'cancel'.tr,
+                  onPressed: () => Get.back(),
+                  color: Colors.grey.shade200,
+                  style: TextStyle(color: Colors.black87),
+                ),
+              ),
+              SizedBox(width: 12.w),
+              Expanded(
+                child: PrimaryButton(
+                  text: 'confirm'.tr,
+                  onPressed: () => controller.confirmSelection(table),
+                  color: AppTheme.primaryGreen,
+                ),
+              ),
+            ],
           ),
         ],
       ),

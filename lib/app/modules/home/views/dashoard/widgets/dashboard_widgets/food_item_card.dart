@@ -5,6 +5,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get_core/src/get_main.dart';import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
 
+import '../../../../../../../helper/screen_type.dart';
 import '../../../../../../data/utils/AppState.dart';
 import '../../../../../../theme/app_theme.dart';
 import '../../../../../../theme/app_typography.dart';
@@ -137,8 +138,13 @@ class _FoodItemCardState extends State<FoodItemCard>
 
                 if (widget.item.isVeg != 0)
                   Positioned(
-                    top: 8.h,
-                    right: 5,
+                    top: AppTypography.smallText,
+                    left: ScreenType.isMobile()
+                        ? -AppTypography.sizeText
+                        : null,
+                    right: ScreenType.isMobile()
+                        ? null
+                        : 5,
                     child: Transform.rotate(
                       angle: -0.785398, // -45 degrees
                       child: Container(

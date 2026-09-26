@@ -335,7 +335,14 @@ class OrdersController extends GetxController {
       }
 
       finalOrders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      orders.assignAll(finalOrders);
+      List<OrderModel> visibleOrders = finalOrders;
+      if (DeviceConfig.operationMode == OperationMode.local &&
+          DeviceConfig.showMyOrdersOnly) {
+        visibleOrders = finalOrders
+            .where((o) => o.createdByDeviceId == DeviceConfig.deviceId)
+            .toList();
+      }
+      orders.assignAll(visibleOrders);
 
     } catch (e) {
       debugPrint("Error fetching active orders: $e");
@@ -467,8 +474,14 @@ class OrdersController extends GetxController {
             mergedList.add(cached);
           }
 
-          mergedList.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-          soldOrders.assignAll(mergedList);
+          List<OrderModel> visibleSold = mergedList;
+          if (DeviceConfig.operationMode == OperationMode.local &&
+              DeviceConfig.showMyOrdersOnly) {
+            visibleSold = mergedList
+                .where((o) => o.createdByDeviceId == DeviceConfig.deviceId)
+                .toList();
+          }
+          soldOrders.assignAll(visibleSold);
 
           _backgroundFetchSoldOrderDetails(apiSoldOrders);
         }
@@ -504,8 +517,8 @@ class OrdersController extends GetxController {
     int? priceGroupId;
     int orderType = (json['order_type_id'] as num? ?? 0).toInt();
     String invNo = json['inv_no']?.toString() ?? "LOCAL";
-    String branchInv = json['branch_inv']?.toString() ?? ""; // ✅ Added
-    String? createdByDeviceId = json['created_by_device_id']?.toString(); // ← new
+    String branchInv = json['branch_inv']?.toString() ?? "";
+    String? createdByDeviceId = json['created_by_device_id']?.toString();
     String orderId = json['server_id']?.toString() ?? json['uuid']?.toString() ?? "";
     String tableId = json['table_id']?.toString() ?? "";
     double discount = (json['discount_amount'] as num? ?? 0.0).toDouble();
@@ -518,7 +531,6 @@ class OrdersController extends GetxController {
     String? qrLink;
     String? captainName;
     int? offlineSeq = json['offline_seq'] != null ? (json['offline_seq'] as num).toInt() : null;
-
     try {
       final payloadStr = json['payload'] as String?;
       if (payloadStr != null && payloadStr.isNotEmpty) {
@@ -988,7 +1000,7 @@ class OrdersController extends GetxController {
           );
           if (hubResult['success'] == true) {
             final data = hubResult['data'];
-            updateExistingOrder(parseOrderResponse({'preview': data, 'offline': true}));
+            updateExistingOrder(_mapJsonToOrderModel(Map<String, dynamic>.from(data)));
             return;
           }
         } catch (e) {

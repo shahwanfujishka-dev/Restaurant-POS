@@ -11,10 +11,12 @@ import 'package:get/get_state_manager/src/rx_flutter/rx_disposable.dart';
 import 'package:get_storage/get_storage.dart';
 
 import '../../modules/cart/controller/cart_controller.dart';
+import '../../modules/home/controller/order_controller.dart';
 import '../Device_Roles/device_roles.dart';
 import '../utils/AppState.dart';
 import 'api_services.dart';
 import 'database_helper.dart';
+import 'local_hub_client.dart';
 
 class SyncService extends GetxService with WidgetsBindingObserver {
   final ApiService _apiService = Get.find<ApiService>();
@@ -23,7 +25,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
   final isSyncing = false.obs;
   final isMasterSyncing = false.obs;
   final masterSyncProgress = 0.0.obs;
-
+  final isHubSyncing = false.obs;
   Timer? _syncTimer;
 
   @override
@@ -47,6 +49,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         log("SyncService: App resumed, triggering sync...");
         syncPendingOrders();
       }
+      syncPendingHubOrders();
     }
   }
 
@@ -56,6 +59,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       if (AppState.isBackgroundSyncEnabled) {
         syncPendingOrders();
       }
+      syncPendingHubOrders();
     });
   }
 
@@ -67,11 +71,57 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     await _syncPayment(payment);
   }
 
+  Future<void> syncPendingHubOrders() async {
+    if (isHubSyncing.value) return;
+    if (!(DeviceConfig.isLocal && DeviceConfig.role == DeviceRole.client)) return;
+
+    final hostIp = DeviceConfig.hostIp;
+    if (hostIp == null || hostIp.trim().isEmpty || !DeviceConfig.hasAuthToken) return;
+
+    final pending = await _dbHelper.getOrdersPendingHubSync();
+    if (pending.isEmpty) return;
+
+    isHubSyncing.value = true;
+    log("SyncService: ${pending.length} order(s) pending hub sync, retrying...");
+
+    try {
+      for (var order in pending) {
+        final String uuid = order['uuid'];
+        final String? payloadStr = order['payload'];
+        if (payloadStr == null || payloadStr.isEmpty) continue;
+
+        try {
+          final Map<String, dynamic> hubPayload = jsonDecode(payloadStr);
+          final result = await LocalHubClient.instance.createOrder(
+            order: hubPayload,
+            hostIp: hostIp,
+            port: DeviceConfig.hostPort,
+          );
+
+          if (result['success'] == true || result['duplicate'] == true) {
+            await _dbHelper.markOrderHubSynced(uuid);
+            log("SyncService: ✅ Hub-synced pending order $uuid");
+
+            if (Get.isRegistered<OrdersController>()) {
+              Get.find<OrdersController>().fetchOrdersSafely();
+            }
+          }
+        } catch (e) {
+          log("SyncService: Hub still unreachable, stopping retry batch: $e");
+          break; // host still down — don't hammer it order-by-order, wait for next tick
+        }
+      }
+    } finally {
+      isHubSyncing.value = false;
+    }
+  }
+
   Future<void> syncPendingOrders() async {
     if (isSyncing.value) return;
 
-    if (DeviceConfig.isLocal) {
-      log("SyncService: Device is in Local Hub Mode. Skipping Live DB order sync.");
+    // Clients in Local Hub Mode are NOT allowed to sync to Live DB
+    if (DeviceConfig.isLocal && DeviceConfig.role == DeviceRole.client) {
+      log("SyncService: Device is a Client in Local Hub Mode. Live DB sync is disabled for clients.");
       return;
     }
 

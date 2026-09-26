@@ -2,9 +2,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get.dart';
+import 'package:get/get.dart' hide ScreenType;
 
-import '../../../../data/Device_Roles/device_roles.dart';
+import '../../../../../helper/screen_type.dart';
 import '../../../../data/utils/AppState.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/app_typography.dart';
@@ -19,10 +19,12 @@ class SettingsView extends GetView<SettingsController> {
 
     return Scaffold(
       backgroundColor: colors.bg,
-      // appBar: AppBar(
-      //   title: Text('settings'.tr),
-      //   backgroundColor: colors.isDark ? Colors.black : Colors.white,
-      // ),
+      appBar: ScreenType.isMobile()
+          ? AppBar(
+        title: Text('settings'.tr),
+        backgroundColor: colors.isDark ? Colors.black : Colors.white,
+      )
+          : null,
       body: ListView(
         padding: EdgeInsets.all(8.w),
         children: [
@@ -92,16 +94,28 @@ class SettingsView extends GetView<SettingsController> {
           // ============================================================
           // SYNC PREFERENCES
           // ============================================================
-          SizedBox(height: 24.h),
-          Text(
-            "Sync Preferences",
-            style: AppTypography.cardTitle.copyWith(
-              fontWeight: FontWeight.bold,
-              color: colors.text,
-            ),
-          ),
-          SizedBox(height: 12.h),
-          _buildSyncPreferencesCard(context),
+          Obx(() {
+            // Only show live sync preferences to Host or when in Online Mode
+            if (controller.isLocalMode && controller.isClient) {
+              return const SizedBox.shrink();
+            }
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(height: 24.h),
+                Text(
+                  "Sync Preferences",
+                  style: AppTypography.cardTitle.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colors.text,
+                  ),
+                ),
+                SizedBox(height: 12.h),
+                _buildSyncPreferencesCard(context),
+              ],
+            );
+          }),
 
           // ============================================================
           // ABOUT APP
@@ -307,14 +321,14 @@ class SettingsView extends GetView<SettingsController> {
             // ----------------------------------------------------------
             // DEVICE ID — unchanged
             // ----------------------------------------------------------
-            ListTile(
-              leading: Icon(Icons.fingerprint, color: colors.subtext),
-              title: Text("Device ID", style: TextStyle(color: colors.text)),
-              subtitle: Text(
-                controller.deviceId.value.isEmpty ? "Not configured" : controller.deviceId.value,
-                style: TextStyle(color: colors.subtext),
-              ),
-            ),
+            // ListTile(
+            //   leading: Icon(Icons.fingerprint, color: colors.subtext),
+            //   title: Text("Device ID", style: TextStyle(color: colors.text)),
+            //   subtitle: Text(
+            //     controller.deviceId.value.isEmpty ? "Not configured" : controller.deviceId.value,
+            //     style: TextStyle(color: colors.subtext),
+            //   ),
+            // ),
 
             // ----------------------------------------------------------
             // HOST INFORMATION
@@ -482,23 +496,6 @@ class SettingsView extends GetView<SettingsController> {
       child: Column(
         children: [
           Obx(() => ListTile(
-            leading: CircleAvatar(
-              backgroundColor: controller.isBackgroundSync.value ? AppTheme.primaryGreen.withOpacity(0.1) : colors.textField,
-              child: Icon(Icons.sync, color: controller.isBackgroundSync.value ? AppTheme.primaryGreen : colors.subtext),
-            ),
-            title: Text("Background Sync", style: TextStyle(color: colors.text)),
-            subtitle: Text(
-              controller.isBackgroundSync.value ? "Orders sync automatically." : "Orders sync manually.",
-              style: TextStyle(color: colors.subtext),
-            ),
-            trailing: Switch(
-              value: controller.isBackgroundSync.value,
-              onChanged: controller.toggleBackgroundSync,
-              activeColor: AppTheme.primaryGreen,
-            ),
-          )),
-          Divider(height: 1, color: colors.border),
-          Obx(() => ListTile(
             onTap: (controller.isSyncingOrders.value || controller.pendingCount.value == 0) 
                 ? null 
                 : () => controller.syncOrdersToLive(),
@@ -515,9 +512,6 @@ class SettingsView extends GetView<SettingsController> {
                   : "${controller.pendingCount.value} orders/payments pending.",
               style: TextStyle(color: colors.subtext),
             ),
-            // trailing: controller.pendingCount.value > 0 && !controller.isSyncingOrders.value
-            //     ? Icon(Icons.arrow_forward_ios, size: 8.sp, color: colors.subtext)
-            //     : null,
           )),
           Divider(height: 1, color: colors.border),
           Obx(() => ListTile(
