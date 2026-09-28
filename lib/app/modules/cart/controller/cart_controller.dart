@@ -931,6 +931,7 @@ class CartController extends GetxController {
 
       final body = {
         "usr_id": int.tryParse(AppState.userId) ?? 0,
+        "is_mob_restaurant": 1,
         "cust_type": customerData != null ? "0" : "1",
         "cust_id": customerData,
         "cust_name": customerData?['name'] ?? customerName ?? "Cash Customer",
@@ -1965,8 +1966,9 @@ class CartController extends GetxController {
             : [],
         "split_count": isSplit ? splitCount : null,
         "server_sync_time": syncTime,
+        "is_mob_restaurant": 1,
+        if (editingBranchInv.value.isNotEmpty) "branch_ref_no": editingBranchInv.value,
       };
-
       log("Final Body with ${saleItems.length} items");
       log('Api Body: ${jsonEncode(body)}');
       if (DeviceConfig.operationMode == OperationMode.local) {

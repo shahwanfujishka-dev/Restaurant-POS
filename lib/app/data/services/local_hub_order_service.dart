@@ -94,7 +94,8 @@ class LocalHubOrderService {
     }
 
     final String branchInv = await _db.generateLocalInvoiceNumber(AppState.branchDisName);
-    payload = {...payload, 'branch_inv': branchInv};
+    payload = {...payload, 'branch_inv': branchInv,'branch_ref_no': branchInv,
+      'is_mob_restaurant': 1,};
     final List<dynamic> rawItems = payload['items'] is List ? payload['items'] as List : [];
     final List<Map<String, dynamic>> items = rawItems.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).map((item) => {...item, 'order_uuid': uuid}).toList();
 
@@ -155,7 +156,8 @@ class LocalHubOrderService {
     (existingBranchInv != null && existingBranchInv.isNotEmpty)
         ? existingBranchInv
         : payload['branch_inv'];
-    payload = {...payload, 'branch_inv': resolvedBranchInv};
+    payload = {...payload, 'branch_inv': resolvedBranchInv,'branch_ref_no': resolvedBranchInv,
+      'is_mob_restaurant': 1,};
     final List<dynamic> rawItems = payload['items'] is List ? payload['items'] as List : [];
     final List<Map<String, dynamic>> items = rawItems.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).map((item) => {...item, 'order_uuid': uuid}).toList();
 
