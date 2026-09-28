@@ -5,6 +5,7 @@ import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_rx/src/rx_types/rx_types.dart';
 import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
+import 'package:restaurant_pos/helper/screen_type.dart';
 
 import '../../../../../theme/app_theme.dart';
 import '../../../../../theme/app_typography.dart';
@@ -121,7 +122,7 @@ class TableCard extends StatelessWidget {
 
                 Expanded(
                   child: Padding(
-                    padding: EdgeInsets.fromLTRB(14.w, 12.h, 14.w, 12.h),
+                    padding: EdgeInsets.fromLTRB(ScreenType.isMobile() ? 14.w : 10.w, 12.h, ScreenType.isMobile() ? 14.w : 10.w, 12.h),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -180,7 +181,7 @@ class TableCard extends StatelessWidget {
                               children: [
                                 Container(
                                   padding: EdgeInsets.symmetric(
-                                    horizontal: 9.w,
+                                    horizontal: 6.w,
                                     vertical: 4.h,
                                   ),
                                   decoration: BoxDecoration(

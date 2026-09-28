@@ -1,10 +1,9 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
 import 'package:get/get_state_manager/src/simple/get_view.dart';
-
+import 'package:restaurant_pos/helper/screen_type.dart';
 import '../../../../controller/dashboard_controller.dart';
 import 'food_item_card.dart';
 import 'food_item_shimmer.dart';
@@ -14,9 +13,8 @@ class FoodItemsGrid extends GetView<DashboardController> {
 
   @override
   Widget build(BuildContext context) {
-    final controller = Get.put(DashboardController());
+
     return Obx(() {
-      // Show initial shimmer if loading first batch
       if (controller.isLoadingProducts.value && controller.filteredFoodItems.isEmpty) {
         return const FoodItemShimmer();
       }
@@ -31,25 +29,28 @@ class FoodItemsGrid extends GetView<DashboardController> {
             child: GridView.builder(
               padding: EdgeInsets.all(4.w),
               physics: const BouncingScrollPhysics(),
-              gridDelegate:  SliverGridDelegateWithFixedCrossAxisCount(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 mainAxisExtent: 130.0,
                 mainAxisSpacing: 16,
                 crossAxisSpacing: 4,
-                childAspectRatio: 0.9, crossAxisCount: 4,
+                childAspectRatio: 0.9,
+                crossAxisCount: ScreenType.isMobile() ? 3 : 4,
               ),
               itemCount: controller.filteredFoodItems.length,
               itemBuilder: (context, index) {
                 final item = controller.filteredFoodItems[index];
-
+                
+                // Optimized animation: reduced duration and staggered delay to make search feel snappy
                 return TweenAnimationBuilder(
-                  duration: Duration(milliseconds: 300 + (index % 20 * 60)), // Reset delay for each batch
+                  key: ValueKey(item.id), // Use key to help Flutter recycle widgets efficiently
+                  duration: const Duration(milliseconds: 200),
                   tween: Tween<double>(begin: 0, end: 1),
                   curve: Curves.easeOut,
                   builder: (context, double value, child) {
                     return Opacity(
                       opacity: value,
                       child: Transform.scale(
-                        scale: 0.95 + (value * 0.05),
+                        scale: 0.98 + (value * 0.02),
                         child: child,
                       ),
                     );
@@ -57,9 +58,8 @@ class FoodItemsGrid extends GetView<DashboardController> {
                   child: FoodItemCard(
                     item: item,
                     onTap: () {
-                      print(item.id);
                       controller.onProductTapped(item);
-                    } ,
+                    },
                   ),
                 );
               },

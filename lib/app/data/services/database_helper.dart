@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 12, // bumped to 12 for payments table columns
+      version: 21, // bumped from 20 → 21 for hub_status_syncing in local server
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -175,6 +175,63 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE payments ADD COLUMN discount_amount REAL');
       } catch (e) {}
     }
+    if (oldVersion < 13) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS customers (
+          cust_id INTEGER PRIMARY KEY,
+          ledger_id INTEGER,
+          name TEXT,
+          mobile TEXT,
+          vat_no TEXT,
+          address TEXT,
+          email TEXT
+        )
+      ''');
+    }
+    if (oldVersion < 14) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS captains (
+          ledger_id INTEGER PRIMARY KEY,
+          ledger_name TEXT,
+          ledg_name_only TEXT
+        )
+      ''');
+    }
+    if (oldVersion < 15) {
+      try {
+        await db.execute('ALTER TABLE orders ADD COLUMN offline_seq INTEGER');
+      } catch (e) {}
+    }
+    if (oldVersion < 16) {
+      try {
+        await db.execute('ALTER TABLE products ADD COLUMN is_veg INTEGER DEFAULT 0');
+      } catch (e) {}
+    }
+    if (oldVersion < 17) {
+      try {
+        await db.execute('ALTER TABLE order_items ADD COLUMN notes TEXT');
+      } catch (e) {}
+    }
+    if (oldVersion < 18) {
+      try {
+        await db.execute('ALTER TABLE orders ADD COLUMN branch_inv TEXT');
+      } catch (e) {}
+    }
+    if (oldVersion < 19) {
+      try {
+        await db.execute('ALTER TABLE products ADD COLUMN cat_token_printer INTEGER DEFAULT 0');
+      } catch (e) {}
+    }
+    if (oldVersion < 20) {
+      try {
+        await db.execute('ALTER TABLE orders ADD COLUMN created_by_device_id TEXT');
+      } catch (e) {}
+    }
+    if (oldVersion < 21) {
+      try {
+        await db.execute('ALTER TABLE orders ADD COLUMN hub_synced INTEGER DEFAULT 1');
+      } catch (e) {}
+    }
   }
 
   Future _createDB(Database db, int version) async {
@@ -200,6 +257,8 @@ class DatabaseHelper {
         unit_display TEXT,
         tax_cat_id INTEGER,
         tax_per REAL,
+        is_veg INTEGER DEFAULT 0,
+        cat_token_printer INTEGER DEFAULT 0,
         sort_order INTEGER,
         PRIMARY KEY (id, price_group_id)
       )
@@ -307,23 +366,26 @@ class DatabaseHelper {
     ''');
 
     await db.execute('''
-      CREATE TABLE orders (
-        local_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        uuid TEXT UNIQUE,
-        server_id TEXT,
-        inv_no TEXT,
-        order_type_id INTEGER,
-        table_id INTEGER,
-        customer_name TEXT,
-        customer_phone TEXT,
-        total_amount REAL,
-        total_tax REAL,
-        status TEXT, 
-        is_synced INTEGER DEFAULT 0,
-        payload TEXT,
-        created_at TEXT
-      )
-    ''');
+  CREATE TABLE orders (
+    local_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT UNIQUE,
+    server_id TEXT,
+    inv_no TEXT,
+    branch_inv TEXT,
+    created_by_device_id TEXT,
+    order_type_id INTEGER,
+    table_id INTEGER,
+    customer_name TEXT,
+    customer_phone TEXT,
+    total_amount REAL,
+    total_tax REAL,
+    status TEXT, 
+    is_synced INTEGER DEFAULT 0,
+    payload TEXT,
+    offline_seq INTEGER,
+    created_at TEXT
+  )
+''');
 
     await db.execute('''
       CREATE TABLE order_items (
@@ -336,6 +398,7 @@ class DatabaseHelper {
         tax REAL,
         subtotal REAL,
         is_printed INTEGER DEFAULT 0,
+        notes TEXT,
         FOREIGN KEY (order_uuid) REFERENCES orders (uuid) ON DELETE CASCADE
       )
     ''');
@@ -400,6 +463,26 @@ class DatabaseHelper {
         updated_at TEXT
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE customers (
+        cust_id INTEGER PRIMARY KEY,
+        ledger_id INTEGER,
+        name TEXT,
+        mobile TEXT,
+        vat_no TEXT,
+        address TEXT,
+        email TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE captains (
+        ledger_id INTEGER PRIMARY KEY,
+        ledger_name TEXT,
+        ledg_name_only TEXT
+      )
+    ''');
   }
 
   // --- App Settings ---
@@ -438,6 +521,87 @@ class DatabaseHelper {
     return await db.query('ledgers', where: 'type = ?', whereArgs: [type]);
   }
 
+  // --- Captains ---
+  Future<void> insertCaptains(List<Map<String, dynamic>> captains) async {
+    final db = await instance.database;
+    await db.transaction((txn) async {
+      await txn.delete('captains');
+      final batch = txn.batch();
+      for (var captain in captains) {
+        batch.insert('captains', {
+          'ledger_id': _toInt(captain['ledger_id']),
+          'ledger_name': captain['ledger_name'],
+          'ledg_name_only': captain['ledg_name_only'],
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getCaptains() async {
+    final db = await instance.database;
+    return await db.query('captains', orderBy: 'ledger_id ASC');
+  }
+
+  Future<void> insertCustomers(List<Map<String, dynamic>> customers) async {
+    final db = await instance.database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (var customer in customers) {
+        batch.insert('customers', {
+          'cust_id': _toInt(customer['cust_id']),
+          'ledger_id': _toInt(customer['ledger_id']),
+          'name': customer['name'],
+          'mobile': customer['mobile'],
+          'vat_no': customer['vat_no'],
+          'address': customer['cust_home_addr'] ?? customer['dflt_delvry_addr'] ?? customer['address'],
+          'email': customer['email'],
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<void> upsertCustomerByMobile(Map<String, dynamic> customer) async {
+    final db = await instance.database;
+    final String mobile = customer['mobile']?.toString() ?? "";
+    if (mobile.isEmpty) return;
+
+    final List<Map<String, dynamic>> existing = await db.query(
+      'customers',
+      where: 'mobile = ?',
+      whereArgs: [mobile],
+      limit: 1,
+    );
+
+    if (existing.isEmpty) {
+      await db.insert('customers', {
+        'name': customer['name'],
+        'mobile': mobile,
+        'address': customer['address'],
+        'vat_no': customer['vat_no'],
+        'ledger_id': customer['ledger_id'] ?? 0,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    } else {
+      await db.update('customers', {
+        'name': customer['name'],
+        'address': customer['address'],
+        'vat_no': customer['vat_no'],
+        'ledger_id': customer['ledger_id'] ?? existing.first['ledger_id'],
+      }, where: 'mobile = ?', whereArgs: [mobile]);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getCustomers() async {
+    final db = await instance.database;
+    return await db.query('customers', orderBy: 'name ASC');
+  }
+
+  Future<List<Map<String, dynamic>>> searchCustomers(String query) async {
+    final db = await instance.database;
+    return await db.query('customers', where: 'name LIKE ? OR mobile LIKE ?', whereArgs: ['%$query%', '%$query%'], orderBy: 'name ASC');
+  }
+
   // --- Payments ---
   Future<void> insertPayment(Map<String, dynamic> payment) async {
     final db = await instance.database;
@@ -454,7 +618,6 @@ class DatabaseHelper {
     await db.update('payments', {'is_synced': isSynced}, where: 'id = ?', whereArgs: [id]);
   }
 
-  // --- Orders ---
   Future<void> insertOrder(Map<String, dynamic> order, List<Map<String, dynamic>> items) async {
     final db = await instance.database;
     await db.transaction((txn) async {
@@ -472,6 +635,18 @@ class DatabaseHelper {
     return await db.query('orders', where: 'is_synced = ?', whereArgs: [0]);
   }
 
+  Future<int> getUnsyncedOrdersCount() async {
+    final db = await instance.database;
+    final result = await db.rawQuery('SELECT COUNT(*) as count FROM orders WHERE is_synced = 0');
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  Future<int> getUnsyncedPaymentsCount() async {
+    final db = await instance.database;
+    final result = await db.rawQuery('SELECT COUNT(*) as count FROM payments WHERE is_synced = 0');
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
   Future<List<Map<String, dynamic>>> getAllLocalOrders() async {
     final db = await instance.database;
     return await db.query('orders', orderBy: 'created_at DESC');
@@ -480,7 +655,7 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getOrdersByStatus(List<String> statuses) async {
     final db = await instance.database;
     final String statusPlaceholder = List.filled(statuses.length, '?').join(',');
-    return await db.query('orders', where: "status IN ($statusPlaceholder)", whereArgs: statuses, orderBy: 'created_at DESC');
+    return await db.rawQuery('SELECT * FROM orders WHERE status IN ($statusPlaceholder) ORDER BY created_at DESC', statuses);
   }
 
   Future<List<Map<String, dynamic>>> getOrderItemsByUuid(String uuid) async {
@@ -488,7 +663,17 @@ class DatabaseHelper {
     return await db.query('order_items', where: 'order_uuid = ?', whereArgs: [uuid]);
   }
 
-  Future<int> updateOrderStatusByServerId(String serverId, String status, {int? isSynced, double? total, double? tax, String? payload, String? invNo}) async {
+  Future<List<Map<String, dynamic>>> getOrdersPendingHubSync() async {
+    final db = await instance.database;
+    return await db.query('orders', where: 'hub_synced = ?', whereArgs: [0]);
+  }
+
+  Future<void> markOrderHubSynced(String uuid) async {
+    final db = await instance.database;
+    await db.update('orders', {'hub_synced': 1}, where: 'uuid = ?', whereArgs: [uuid]);
+  }
+
+  Future<int> updateOrderStatusByServerId(String serverId, String status, {int? isSynced, double? total, double? tax, String? payload, String? invNo, String? branchInv}) async {
     final db = await instance.database;
     final Map<String, dynamic> values = {'status': status};
     if (isSynced != null) values['is_synced'] = isSynced;
@@ -496,7 +681,8 @@ class DatabaseHelper {
     if (tax != null) values['total_tax'] = tax;
     if (payload != null) values['payload'] = payload;
     if (invNo != null) values['inv_no'] = invNo;
-    
+    if (branchInv != null) values['branch_inv'] = branchInv;
+
     int count = await db.update('orders', values, where: 'server_id = ?', whereArgs: [serverId]);
     if (count == 0) {
       count = await db.update('orders', values, where: 'uuid = ?', whereArgs: [serverId]);
@@ -510,6 +696,7 @@ class DatabaseHelper {
       for (var json in serverOrders) {
         final serverId = (json['sales_odr_id'] ?? '').toString();
         final invNo = (json['sales_odr_inv_no'] ?? '').toString();
+        final branchInv = (json['sales_odr_branch_inv'] ?? json['sales_branch_inv'] ?? '').toString();
 
         // Check if we have an unsynced local version first
         final List<Map<String, dynamic>> existing = await txn.query(
@@ -533,11 +720,12 @@ class DatabaseHelper {
           'uuid': serverId,
           'server_id': serverId,
           'inv_no': invNo,
+          'branch_inv': branchInv,
           'order_type_id': (json['sales_odr_order_type'] as num? ?? 0).toInt(),
           'table_id': (json['sales_odr_table_id'] ?? 0).toString(),
           'customer_name': json['sales_odr_table_name']?.toString() ?? json['ledger_name']?.toString() ?? 'N/A',
-          'total_amount': (json['sales_odr_total'] as num? ?? 0.0).toDouble(),
-          'total_tax': (json['sales_odr_tax'] as num? ?? 0.0).toDouble(),
+          'total_amount': _toDouble(json['sales_odr_total'] ?? json['tot_amount'] ?? json['total_amount']),
+          'total_tax': _toDouble(json['sales_odr_tax'] ?? json['tot_tax'] ?? json['total_tax']),
           'status': status,
           'is_synced': 1,
           'created_at': DateTime.tryParse(json['sales_odr_datetime'] ?? '')?.toIso8601String() ?? DateTime.now().toIso8601String(),
@@ -546,14 +734,17 @@ class DatabaseHelper {
     });
   }
 
-  Future<void> updateOrderStatusByUuid(String uuid, String status, {int? isSynced, String? serverId, String? invNo, String? payload}) async {
+  Future<void> updateOrderStatusByUuid(String uuid, String status, {int? isSynced, String? serverId, String? invNo, String? branchInv, String? payload, double? total, double? tax}) async {
     final db = await instance.database;
     final Map<String, dynamic> values = {'status': status};
     if (isSynced != null) values['is_synced'] = isSynced;
     if (serverId != null) values['server_id'] = serverId;
     if (invNo != null) values['inv_no'] = invNo;
+    if (branchInv != null) values['branch_inv'] = branchInv;
     if (payload != null) values['payload'] = payload;
-    
+    if (total != null) values['total_amount'] = total;
+    if (tax != null) values['total_tax'] = tax;
+
     int count = await db.update('orders', values, where: 'uuid = ?', whereArgs: [uuid]);
     if (count == 0) {
       count = await db.update('orders', values, where: 'server_id = ?', whereArgs: [uuid]);
@@ -564,7 +755,7 @@ class DatabaseHelper {
     final db = await instance.database;
     await db.transaction((txn) async {
       final String id = (orderValues['server_id'] ?? orderValues['uuid']).toString();
-      
+
       // Try to find existing record to get its real UUID
       final List<Map<String, dynamic>> existing = await txn.query(
         'orders',
@@ -573,7 +764,7 @@ class DatabaseHelper {
         whereArgs: [id, id],
         limit: 1,
       );
-      
+
       String targetUuid;
       if (existing.isNotEmpty) {
         targetUuid = existing.first['uuid'];
@@ -583,7 +774,7 @@ class DatabaseHelper {
         orderValues['uuid'] = targetUuid; // ensure uuid is set
         await txn.insert('orders', orderValues, conflictAlgorithm: ConflictAlgorithm.replace);
       }
-      
+
       // Sync items table
       await txn.delete('order_items', where: 'order_uuid = ?', whereArgs: [targetUuid]);
       for (var item in itemValues) {
@@ -603,13 +794,13 @@ class DatabaseHelper {
         whereArgs: [id, id],
         limit: 1,
       );
-      
+
       if (maps.isNotEmpty) {
         final String uuid = maps.first['uuid'];
         await txn.delete('order_items', where: 'order_uuid = ?', whereArgs: [uuid]);
         await txn.delete('payments', where: 'order_uuid = ?', whereArgs: [uuid]);
       }
-      
+
       await txn.delete('orders', where: 'uuid = ? OR server_id = ?', whereArgs: [id, id]);
     });
   }
@@ -645,6 +836,35 @@ class DatabaseHelper {
     await db.delete('token_printer_assignments', where: 'token_printer_id = ?', whereArgs: [tokenPrinterId]);
   }
 
+  Future<List<Map<String, dynamic>>> getActiveLocalOrders() async {
+    final db = await instance.database;
+    return await db.query(
+      'orders',
+      where: 'status NOT IN (?, ?)',
+      whereArgs: ['paid', 'cancelled'],
+      orderBy: 'created_at DESC',
+    );
+  }
+
+  Future<String> generateLocalInvoiceNumber(String branchCode) async {
+    final db = await instance.database;
+    return await db.transaction((txn) async {
+      final key = 'local_inv_seq_$branchCode';
+      final rows = await txn.query('app_settings', where: 'key = ?', whereArgs: [key]);
+      int current = 0;
+      if (rows.isNotEmpty) {
+        current = int.tryParse(rows.first['value'].toString()) ?? 0;
+      }
+      final next = current + 1;
+      await txn.insert(
+        'app_settings',
+        {'key': key, 'value': next.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      return 'M-$branchCode${next.toString().padLeft(4, '0')}';
+    });
+  }
+
   // --- Master Data ---
   Future<void> insertCategories(List<Map<String, dynamic>> categories) async {
     final db = await instance.database;
@@ -673,13 +893,21 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getProducts({String? categoryId, int priceGroupId = 0}) async {
     final db = await instance.database;
+
+    // Fallback: If product doesn't exist in specific price group, use default group (0)
     String query = '''
       SELECT p.*, c.token_printer_id as cat_token_printer
-      FROM products p
+      FROM (
+        SELECT * FROM products WHERE price_group_id = ?
+        UNION ALL
+        SELECT * FROM products p1 WHERE price_group_id = 0 
+        AND NOT EXISTS (SELECT 1 FROM products p2 WHERE p2.id = p1.id AND p2.price_group_id = ?)
+      ) p
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.price_group_id = ?
+      WHERE 1=1
     ''';
-    List<dynamic> args = [priceGroupId];
+
+    List<dynamic> args = [priceGroupId, priceGroupId];
 
     if (categoryId != null && categoryId.isNotEmpty) {
       query += " AND p.category_id = ?";
@@ -692,13 +920,21 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> searchProducts(String query, {int priceGroupId = 0}) async {
     final db = await instance.database;
+
     return await db.rawQuery('''
       SELECT p.*, c.token_printer_id as cat_token_printer
-      FROM products p
+      FROM (
+        SELECT * FROM products WHERE price_group_id = ?
+        UNION ALL
+        SELECT * FROM products p1 WHERE price_group_id = 0 
+        AND NOT EXISTS (SELECT 1 FROM products p2 WHERE p2.id = p1.id AND p2.price_group_id = ?)
+      ) p
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.price_group_id = ? AND p.name LIKE ?
+      WHERE p.name LIKE ? 
+         OR p.id = ? 
+         OR EXISTS (SELECT 1 FROM bulk_product_units b WHERE b.produnit_prod_id = CAST(p.id AS INTEGER) AND b.produnit_ean_barcode = ?)
       ORDER BY p.sort_order ASC
-    ''', [priceGroupId, '%$query%']);
+    ''', [priceGroupId, priceGroupId, '%$query%', query, query]);
   }
 
   Future<void> insertProductUnits(String prdId, int pgId, List<dynamic> units) async {
@@ -711,7 +947,7 @@ class DatabaseHelper {
         'unit_id': _toInt(unit['unit_id']),
         'unit_name': unit['prd_unit_name'],
         'unit_display': unit['unit_display'],
-        'rate': _toDouble(unit['sale_rate']),
+        'rate': _toDouble(unit['sur_unit_rate'] ?? unit['sale_rate'] ?? unit['prd_unit_rate']),
         'unit_base_qty': _toDouble(unit['unit_base_qty'], defaultValue: 1.0),
         'exist_addons': jsonEncode(unit['existAddOn'] ?? []),
       }, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -858,12 +1094,18 @@ class DatabaseHelper {
     final db = await instance.database;
     return await db.rawQuery('''
       SELECT p.*, c.token_printer_id as cat_token_printer
-      FROM products p
-      INNER JOIN favorite_products fp ON p.id = fp.product_id AND p.price_group_id = fp.price_group_id
+      FROM (
+        SELECT * FROM products WHERE price_group_id = ?
+        UNION ALL
+        SELECT * FROM products p1 WHERE price_group_id = 0 
+        AND NOT EXISTS (SELECT 1 FROM products p2 WHERE p2.id = p1.id AND p2.price_group_id = ?)
+      ) p
+      INNER JOIN favorite_products fp ON p.id = fp.product_id AND (fp.price_group_id = ? OR fp.price_group_id = 0)
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE fp.favorite_id = ? AND fp.price_group_id = ?
+      WHERE fp.favorite_id = ?
+      GROUP BY p.id
       ORDER BY p.sort_order ASC
-    ''', [favId, pgId]);
+    ''', [pgId, pgId, pgId, favId]);
   }
 
   // --- Units ---
@@ -882,6 +1124,25 @@ class DatabaseHelper {
     await batch.commit(noResult: true);
   }
 
+  // Future<List<Map<String, dynamic>>> getUnits() async {
+  //   final db = await instance.database;
+  //   return await db.query('units');
+  // }
+
+  // Add to DatabaseHelper
+  Future<List<String>> getProductIdsMissingBulkUnits() async {
+    final db = await instance.database;
+    final result = await db.rawQuery('''
+    SELECT DISTINCT p.id 
+    FROM products p
+    WHERE NOT EXISTS (
+      SELECT 1 FROM bulk_product_units b 
+      WHERE b.produnit_prod_id = CAST(p.id AS INTEGER)
+    )
+  ''');
+    return result.map((r) => r['id'].toString()).toList();
+  }
+
   Future<Map<String, dynamic>?> getUnitById(int unitId) async {
     final db = await instance.database;
     final maps = await db.query('units', where: 'id = ?', whereArgs: [unitId]);
@@ -889,39 +1150,81 @@ class DatabaseHelper {
     return null;
   }
 
-  // --- Bulk Product Units ---
   Future<void> insertBulkProductUnits(List<dynamic> rawList) async {
     final db = await instance.database;
-    const chunkSize = 200;
-    for (int i = 0; i < rawList.length; i += chunkSize) {
-      final end = (i + chunkSize < rawList.length) ? i + chunkSize : rawList.length;
-      final chunk = rawList.sublist(i, end);
-      await db.transaction((txn) async {
-        final batch = txn.batch();
-        for (final item in chunk) {
-          String? unitName = item['unit_name']?.toString() ?? item['prd_unit_name']?.toString();
-          String? unitDisplay = item['unit_display']?.toString() ?? item['unit_name']?.toString();
-          batch.insert(
-            'bulk_product_units',
-            {
-              'produnit_id': _toInt(item['produnit_id'] ?? item['id']),
-              'produnit_prod_id': _toInt(item['produnit_prod_id'] ?? item['prd_id']),
-              'produnit_unit_id': _toInt(item['produnit_unit_id'] ?? item['unit_id']),
-              'unit_name': unitName,
-              'unit_display': unitDisplay,
-              'rate': _toDouble(item['sur_unit_rate'] ?? item['sale_rate'] ?? item['prd_unit_rate']),
-              'unit_base_qty': _toDouble(item['unit_base_qty'], defaultValue: 1.0),
-              'produnit_ean_barcode': item['produnit_ean_barcode']?.toString() ?? '',
-              'produnit_flag': _toInt(item['produnit_flag'], defaultValue: 1),
-              'exist_addons': jsonEncode(item['existAddOn'] ?? item['exist_addons'] ?? []),
-              'common_addons': jsonEncode(item['cmmnAddon'] ?? item['common_addons'] ?? []),
-            },
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
-        }
-        await batch.commit(noResult: true);
-      });
+
+    log("DB_HELPER: Received ${rawList.length} records from API.");
+    if (rawList.isNotEmpty) {
+      log("DB_HELPER: FIRST RECORD DATA: ${rawList.first}");
     }
+
+    await db.transaction((txn) async {
+      // FIX: Removed txn.delete('bulk_product_units') which was wiping data during paginated sync
+
+      final batch = txn.batch();
+      int validCount = 0;
+
+      for (final item in rawList) {
+        // 2. RESILIENT ID MAPPING
+        // We check every possible key name used in ERP systems
+        final dynamic rawId = item['produnit_prod_id'] ??
+            item['prd_id'] ??
+            item['product_id'] ??
+            item['prd_unit_prd_id'] ??
+            item['id'];
+
+        final int resolvedProdId = _toInt(rawId);
+
+        if (resolvedProdId == 0) {
+          // If this prints, the API key names changed and we are skipping data
+          log("DB_HELPER: Skipping record - No valid Product ID found in: $item");
+          continue;
+        }
+
+        // 3. RESILIENT FIELD MAPPING
+        String? unitName = item['unit_name']?.toString() ?? item['prd_unit_name']?.toString();
+        String? unitDisplay = item['unit_display']?.toString() ?? item['unit_name']?.toString() ?? item['prd_unit_display']?.toString();
+
+        batch.insert(
+          'bulk_product_units',
+          {
+            'produnit_id': _toInt(item['produnit_id'] ?? item['id'] ?? item['prd_unit_id']),
+            'produnit_prod_id': resolvedProdId,
+            'produnit_unit_id': _toInt(item['produnit_unit_id'] ?? item['unit_id'] ?? item['prd_unit_unit_id']),
+            'unit_name': unitName,
+            'unit_display': unitDisplay,
+            'rate': _toDouble(item['sur_unit_rate'] ?? item['sale_rate'] ?? item['prd_unit_rate'] ?? item['prd_unit_price']),
+            'unit_base_qty': _toDouble(item['unit_base_qty'] ?? item['prd_unit_base_qty'], defaultValue: 1.0),
+            'produnit_ean_barcode': item['produnit_ean_barcode']?.toString() ?? item['prd_unit_barcode']?.toString() ?? '',
+            'produnit_flag': _toInt(item['produnit_flag'] ?? item['prd_unit_flag'], defaultValue: 1),
+            'exist_addons': jsonEncode(item['existAddOn'] ?? item['exist_addons'] ?? []),
+            'common_addons': jsonEncode(item['cmmnAddon'] ?? item['common_addons'] ?? []),
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        validCount++;
+      }
+
+      await batch.commit(noResult: true);
+      log("DB_HELPER: Successfully batched $validCount records.");
+    });
+
+    // 4. FINAL VERIFICATION
+    final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM bulk_product_units'));
+    log("DB_HELPER: DATABASE VERIFIED - Total rows now in table: $count");
+  }
+
+  Future<void> insertBasicProductUnits(List<Map<String, dynamic>> units) async {
+    final db = await instance.database;
+    final batch = db.batch();
+    for (var unit in units) {
+      batch.insert(
+        'product_units',
+        unit,
+        conflictAlgorithm: ConflictAlgorithm.ignore, // don't overwrite richer data
+      );
+    }
+    await batch.commit(noResult: true);
   }
 
   Future<List<Map<String, dynamic>>> getBulkProductUnits(int prodId) async {
@@ -964,9 +1267,10 @@ class DatabaseHelper {
             'uuid': serverId,
             'server_id': serverId,
             'inv_no': (order['sales_odr_inv_no'] ?? '').toString(),
+            'branch_inv': (order['sales_odr_branch_inv'] ?? order['sales_branch_inv'] ?? '').toString(), // ✅ Updated to check both
             'customer_name': order['ledger_name']?.toString() ?? 'Walk-in Customer',
-            'total_amount': _toDouble(order['sales_odr_total']),
-            'total_tax': _toDouble(order['sales_odr_tax']),
+            'total_amount': _toDouble(order['sales_odr_total'] ?? order['tot_amount'] ?? order['total_amount']),
+            'total_tax': _toDouble(order['sales_odr_tax'] ?? order['tot_tax'] ?? order['total_tax']),
             'status': 'paid',
             'is_synced': 1,
             'created_at': order['sales_odr_datetime'] ?? order['created_at'] ?? DateTime.now().toIso8601String(),
@@ -1018,8 +1322,6 @@ class DatabaseHelper {
 
   Future<Map<String, double>?> getStockUnitRate(int prdId, int unitId, int priceGroupId) async {
     final db = await instance.database;
-
-    // 1. Try with specific price group
     List<Map<String, dynamic>> maps = await db.query(
       'stock_unit_rates',
       columns: ['sur_unit_rate', 'sur_unit_rate2'],
@@ -1027,18 +1329,15 @@ class DatabaseHelper {
       whereArgs: [prdId, unitId, priceGroupId],
       limit: 1,
     );
-
-    // 2. Fallback: Try without price group if not found (grab any available rate for this product and unit)
-    if (maps.isEmpty) {
+    if (maps.isEmpty && priceGroupId != 0) {
       maps = await db.query(
         'stock_unit_rates',
         columns: ['sur_unit_rate', 'sur_unit_rate2'],
-        where: 'sur_prd_id = ? AND sur_unit_id = ?',
+        where: 'sur_prd_id = ? AND sur_unit_id = ? AND price_group_id = 0',
         whereArgs: [prdId, unitId],
         limit: 1,
       );
     }
-
     if (maps.isNotEmpty) {
       return {
         'sur_unit_rate': _toDouble(maps.first['sur_unit_rate']),
@@ -1068,6 +1367,85 @@ class DatabaseHelper {
       await txn.delete('units');
       await txn.delete('stock_unit_rates');
       await txn.delete('ledgers');
+      await txn.delete('customers');
+      await txn.delete('captains');
     });
   }
+
+  Future<int> getLocalOrderNumber(String uuidOrServerId) async {
+    final db = await instance.database;
+    final maps = await db.query(
+      'orders',
+      columns: ['local_id', 'created_at'],
+      where: 'uuid = ? OR server_id = ?',
+      whereArgs: [uuidOrServerId, uuidOrServerId],
+      limit: 1,
+    );
+    if (maps.isNotEmpty) {
+      final String? createdAt = maps.first['created_at']?.toString();
+      final int localId = maps.first['local_id'] as int;
+
+      if (createdAt != null && createdAt.length >= 10) {
+        final String datePart = createdAt.substring(0, 10);
+        final countResult = await db.rawQuery(
+          "SELECT COUNT(*) as count FROM orders WHERE created_at LIKE ? AND local_id <= ?",
+          ["$datePart%", localId],
+        );
+        return Sqflite.firstIntValue(countResult) ?? 1;
+      }
+      return localId;
+    }
+    return 0;
+  }
+  // --- Offline sequential numbering ---
+  Future<int> _getNextOfflineSeq() async {
+    final db = await instance.database;
+    return await db.transaction((txn) async {
+      final rows = await txn.query(
+        'app_settings',
+        where: 'key = ?',
+        whereArgs: ['offline_order_seq'],
+      );
+      int current = 0;
+      if (rows.isNotEmpty) {
+        current = int.tryParse(rows.first['value'].toString()) ?? 0;
+      }
+      final next = current + 1;
+      await txn.insert(
+        'app_settings',
+        {'key': 'offline_order_seq', 'value': next.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      return next;
+    });
+  }
+
+  Future<int?> getOfflineSeqForOrder(String uuidOrServerId) async {
+    final db = await instance.database;
+    final rows = await db.query(
+      'orders',
+      columns: ['offline_seq'],
+      where: 'uuid = ? OR server_id = ?',
+      whereArgs: [uuidOrServerId, uuidOrServerId],
+      limit: 1,
+    );
+    if (rows.isNotEmpty && rows.first['offline_seq'] != null) {
+      return rows.first['offline_seq'] as int;
+    }
+    return null;
+  }
+
+  Future<int> assignOfflineSeqForOrder(String uuidOrServerId) async {
+    final seq = await _getNextOfflineSeq();
+    final db = await instance.database;
+    await db.update(
+      'orders',
+      {'offline_seq': seq},
+      where: 'uuid = ? OR server_id = ?',
+      whereArgs: [uuidOrServerId, uuidOrServerId],
+    );
+    return seq;
+  }
+
+
 }

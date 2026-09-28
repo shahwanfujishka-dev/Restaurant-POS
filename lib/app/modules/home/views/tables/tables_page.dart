@@ -4,6 +4,7 @@ import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
 import 'package:get/get_state_manager/src/simple/get_view.dart';
 import 'package:restaurant_pos/app/modules/home/views/tables/widgets/table_card.dart';
 import 'package:restaurant_pos/app/modules/home/views/tables/widgets/table_shimmer.dart';
+import 'package:restaurant_pos/helper/screen_type.dart';
 
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/app_typography.dart';
@@ -83,9 +84,9 @@ class TablesPage extends GetView<TablesController> {
                   padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 24.h),
                   physics: const BouncingScrollPhysics(),
                   gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 200.w,
+                    maxCrossAxisExtent: ScreenType.isMobile() ? 200.w : 70.w,
                     mainAxisSpacing: 12.h,
-                    crossAxisSpacing: 12.w,
+                    crossAxisSpacing: ScreenType.isMobile() ?12.w : 10.h,
                     childAspectRatio: .92,
                   ),
                   itemCount: tables.length,

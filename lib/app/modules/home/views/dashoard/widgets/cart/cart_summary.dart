@@ -1,9 +1,9 @@
-import 'package:flutter/cupertino.dart';
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get.dart';
-
+import 'package:get/get.dart' hide ScreenType;
 import '../../../../../../../helper/snackbar_helper.dart';
+import '../../../../../../data/Device_Roles/device_roles.dart';
 import '../../../../../../data/models/order_model.dart';
 import '../../../../../../routes/app_pages.dart';
 import '../../../../../../theme/app_theme.dart';
@@ -11,28 +11,55 @@ import '../../../../../../theme/app_typography.dart';
 import '../../../../../../widgets/reusable_button.dart';
 import '../../../../../cart/controller/cart_controller.dart';
 import '../../../../controller/dashboard_controller.dart';
-import '../../../../controller/home_controller.dart';
 import '../../../../controller/order_controller.dart';
 import '../../../../controller/printer_controller.dart';
 import '../../../../../../data/utils/AppState.dart';
+import '../../../../../../../helper/screen_type.dart';
 
 class CartSummary extends StatelessWidget {
   final CartController controller;
 
   const CartSummary({super.key, required this.controller});
+  Future<bool> _validatePrinterReady() async {
+    final printerController = Get.find<PrinterController>();
 
+    // 1. Bluetooth permission check (no-op/true on non-Android platforms)
+    final hasPermission = await printerController.checkPermissions();
+    if (!hasPermission) {
+      showSafeSnackbar(
+        "Bluetooth Permission Required",
+        "Please grant Bluetooth permissions before printing the KOT.",
+      );
+      await printerController.requestBluetoothPermissions();
+      return false;
+    }
+
+    // 2. At least one printer must actually be assigned to a token
+    final hasAssignedPrinter = printerController.tokenPrinterAssignments
+        .any((a) => a.printerAddress.value.isNotEmpty);
+    if (!hasAssignedPrinter) {
+      showSafeSnackbar(
+        "No Printer Assigned",
+        "Please assign a printer to at least one token before printing.",
+      );
+      return false;
+    }
+
+    return true;
+  }
   void _handlePlaceOrUpdateOrder({
     bool isDraft = false,
     int? payType,
     double? cashAmt,
     double? cardAmt,
     bool isCompliment = false,
+    bool shouldPrintReceipt = false,
   }) async {
     if (controller.cartItems.isEmpty || controller.isProcessing.value) return;
 
     // ✅ Table/Chair validation only required for Dine-In (id: 0)
     if (AppState.orderType.id == 0 && !controller.hasSelectedTable) {
-      showSafeSnackbar("table_required".tr, "select_table_msg".tr);
+      Get.find<DashboardController>().showError("table_required".tr, "select_table_msg".tr);
       return;
     }
 
@@ -47,32 +74,73 @@ class CartSummary extends StatelessWidget {
       );
       return;
     }
+    if (controller.selectedCaptainId.value == null) {
+      showSafeSnackbar("Captain Required", "Please select a captain before placing the order.");
+      return;
+    }
+
 
     try {
       controller.isProcessing.value = true;
 
       final responseData = controller.isEditing
           ? await controller.updateOrder(
-              isDraft: isDraft,
-              payType: payType,
-              cashAmt: cashAmt,
-              cardAmt: cardAmt,
-              isCompliment: isCompliment,
-            )
+        isDraft: isDraft,
+        payType: payType,
+        cashAmt: cashAmt,
+        cardAmt: cardAmt,
+        isCompliment: isCompliment,
+      )
           : await controller.placeOrder(
-              isDraft: isDraft,
-              payType: payType,
-              cashAmt: cashAmt,
-              cardAmt: cardAmt,
-              isCompliment: isCompliment,
-            );
+        isDraft: isDraft,
+        payType: payType,
+        cashAmt: cashAmt,
+        cardAmt: cardAmt,
+        isCompliment: isCompliment,
+      );
 
       if (responseData == null) {
         showSafeSnackbar("Error", "Failed to process order. Please try again.");
         return;
       }
 
-      debugPrint("Order Success Response: $responseData");
+      log("Order Success Response: $responseData");
+      if (DeviceConfig.operationMode == OperationMode.local) {
+        debugPrint("🟢 LOCAL MODE: adding order to client's own list");
+        final localOrdersController = Get.find<OrdersController>();
+        final parsedOrder = localOrdersController.parseOrderResponse(responseData);
+        debugPrint("🟢 Parsed order → invNo: ${parsedOrder.invNo}, items: ${parsedOrder.items.length}");
+        localOrdersController.updateExistingOrder(parsedOrder);
+        debugPrint("🟢 orders.length now = ${localOrdersController.orders.length}");
+      }
+      // log(message)
+
+      // ✅ CHECK FOR ERROR STATUS IN RESPONSE
+      bool hasError = false;
+      String errorMessage = "";
+
+      // Check if response contains error status
+      if (responseData is Map) {
+        // Check for message.status == 0 (error)
+        if (responseData['message'] is Map) {
+          final messageMap = responseData['message'] as Map;
+          if (messageMap['status'] == 0) {
+            hasError = true;
+            errorMessage = messageMap['msg'] ?? "Order processing failed";
+          }
+        }
+        // Also check for direct status field
+        else if (responseData['status'] == 0) {
+          hasError = true;
+          errorMessage = responseData['message']?.toString() ?? "Order processing failed";
+        }
+      }
+
+      // If there's an error, show message and stop processing without navigation
+      if (hasError) {
+        showSafeSnackbar("Error", errorMessage);
+        return;
+      }
 
       if (responseData is Map && responseData['no_change'] == true) {
         controller.stopEditing();
@@ -80,27 +148,31 @@ class CartSummary extends StatelessWidget {
         return;
       }
 
+      // AFTER
       final ordersController = Get.find<OrdersController>();
       final bool wasEditing = controller.isEditing;
       final bool wasDraftVal = controller.wasDraft.value;
       final List<OrderItem> originalItemsCopy = List<OrderItem>.from(controller.originalItems);
 
+      final String snapshotTableName = controller.selectedTableName.value;
+      final int snapshotChairCount = controller.selectedChairCount.value;
+
       if (wasEditing) {
         showSafeSnackbar(
-            isDraft ? "Draft Updated" : "Order Updated",
-            isDraft ? "Draft updated successfully." : "Order updated successfully."
+          isDraft ? "Draft Updated" : "Order Updated",
+          isDraft ? "Draft updated successfully." : "Order updated successfully.",
         );
         controller.stopEditing();
       } else {
         showSafeSnackbar(
-            isDraft ? "Draft Saved" : "order_placed".tr,
-            isDraft ? "Order saved as draft." : "Order successfully created."
+          isDraft ? "Draft Saved" : "order_placed".tr,
+          isDraft ? "Order saved as draft." : "Order successfully created.",
         );
         controller.clearCart();
         controller.clearTable();
       }
 
-      Get.offAllNamed(Routes.ORDER_TYPE);
+      Get.offAllNamed(ScreenType.isMobile() ? Routes.ORDER_TYPE : Routes.HOME);
 
       _runBackgroundTasks(
         responseData: responseData,
@@ -109,10 +181,14 @@ class CartSummary extends StatelessWidget {
         wasDraft: wasDraftVal,
         originalItems: originalItemsCopy,
         ordersController: ordersController,
+        snapshotTableName: snapshotTableName,    // ✅ new
+        snapshotChairCount: snapshotChairCount,  // ✅ new
+        shouldPrintReceipt: shouldPrintReceipt,
       );
 
     } catch (e) {
       debugPrint("Order processing error: $e");
+      showSafeSnackbar("Error", "An unexpected error occurred. Please try again.");
     } finally {
       controller.isProcessing.value = false;
     }
@@ -122,12 +198,12 @@ class CartSummary extends StatelessWidget {
     if (controller.cartItems.isEmpty || controller.isProcessing.value) return;
 
     if (AppState.orderType.id == 0 && !controller.hasSelectedTable) {
-      showSafeSnackbar("table_required".tr, "select_table_msg".tr);
+      Get.find<DashboardController>().showError("table_required".tr, "select_table_msg".tr);
       return;
     }
 
     final hasValidItems = controller.cartItems.any(
-      (item) => !item.isDeleted.value && item.quantity.value > 0,
+          (item) => !item.isDeleted.value && item.quantity.value > 0,
     );
 
     if (!hasValidItems) {
@@ -140,12 +216,8 @@ class CartSummary extends StatelessWidget {
 
     final dashboardController = Get.find<DashboardController>();
     final bool showTax = dashboardController.vatType.value == 0;
-
-    // Use current totals from cart
     final double totalTax = showTax ? controller.totalTaxAmount : 0.0;
     final double totalWithTax = showTax ? controller.grandTotal : controller.totalAmount;
-
-    // Map cart items to order items to pass to cashier view
     final items = controller.cartItems
         .where((ci) => !ci.isDeleted.value && ci.quantity.value > 0)
         .map((ci) => OrderItem(
@@ -158,10 +230,10 @@ class CartSummary extends StatelessWidget {
               addonParentPrdId: ci.addonprntId,
               addonParentUnitId: ci.addonuntId,
               unitId: ci.unit.unitId,
+              notes: ci.note.value,
             ))
         .toList();
 
-    // Construct a temporary OrderModel to pass to CashierView
     final tempOrder = OrderModel(
       id: controller.editingOrderId.value.isEmpty ? "PENDING" : controller.editingOrderId.value,
       invNo: controller.editingInvNo.value.isEmpty ? "NEW" : controller.editingInvNo.value,
@@ -189,12 +261,20 @@ class CartSummary extends StatelessWidget {
     required bool wasDraft,
     required List<OrderItem> originalItems,
     required OrdersController ordersController,
+    String snapshotTableName = "",    // ✅ new
+    int snapshotChairCount = 0,       // ✅ new
+    bool shouldPrintReceipt = false,
   }) async {
     if (!isDraft) {
       try {
         final printerController = Get.find<PrinterController>();
-        final OrderModel liveOrder = ordersController.parseOrderResponse(responseData);
-
+        final OrderModel liveOrder = ordersController.parseOrderResponse(
+          responseData,
+          fallbackTableName: snapshotTableName,
+          fallbackChairCount: snapshotChairCount,
+        );
+        debugPrint("🖨️ liveOrder.items.length = ${liveOrder.items.length}"); // ADD
+        debugPrint("🖨️ liveOrder.invNo = ${liveOrder.invNo}");
         List<OrderItem>? oldItemsForKOT;
         if (wasEditing && !wasDraft) {
           oldItemsForKOT = originalItems;
@@ -204,13 +284,19 @@ class CartSummary extends StatelessWidget {
           liveOrder,
           oldItems: oldItemsForKOT,
         );
+
+        if (shouldPrintReceipt) {
+          await printerController.printReceipt(liveOrder, 0, 0);
+        }
       } catch (e) {
         debugPrint("Background Printing failed: $e");
       }
     }
 
     try {
-      await ordersController.fetchOrders();
+      if (DeviceConfig.operationMode != OperationMode.local) {
+        await ordersController.fetchOrdersSafely();
+      }
     } catch (e) {
       debugPrint("Background Fetch Orders failed: $e");
     }
@@ -264,10 +350,28 @@ class CartSummary extends StatelessWidget {
                   value: controller.totalAmount,
                   isBold: false),
               if (showTax) ...[
-                SizedBox(height: 1.h),
-                _buildTotalRow(context, label: 'tax'.tr,
+                SizedBox(height: 4.h),
+                if (AppState.cmpTaxType == 1) ...[
+                  _buildTotalRow(
+                    context,
+                    label: 'tax'.tr,
                     value: controller.totalTaxAmount,
-                    isBold: false),
+                    isBold: false,
+                  ),
+                ] else ...[
+                  _buildTotalRow(
+                    context,
+                    label: 'CGST',
+                    value: (controller.totalTaxAmount/2),
+                    isBold: false,
+                  ),
+                  _buildTotalRow(
+                    context,
+                    label: 'SGST',
+                    value: (controller.totalTaxAmount/2),
+                    isBold: false,
+                  ),
+                ]
               ],
               SizedBox(height: 2.h),
               _buildDivider(context),
@@ -298,21 +402,49 @@ class CartSummary extends StatelessWidget {
                     flex: 2,
                     child: PrimaryButton(
                       isLoading: controller.isProcessing.value,
-                      onPressed: () =>
-                          _handlePlaceOrUpdateOrder(isDraft: false),
-                      text: controller.isEditing ? "Update KOT" : 'place_order'
-                          .tr,
+                      onPressed: () async {
+                        final ready = await _validatePrinterReady();
+                        if (!ready) return;
+                        _handlePlaceOrUpdateOrder(isDraft: false);
+                      },
+                      text: controller.isEditing ? "Update KOT" : 'place_order'.tr,
                     ),
                   ),
                 ],
               ),
               SizedBox(height: 2.h),
-              PrimaryButton(
-                isLoading: controller.isProcessing.value,
-                height: 48.h,
-                onPressed: _navigateToCashier,
-                color: colors.isDark ? Colors.redAccent.shade700 : Colors.redAccent.shade400,
-                text: "Receipt",
+              Row(
+                children: [
+                  Expanded(
+                    child: PrimaryButton(
+                      isLoading: controller.isProcessing.value,
+                      height: 48.h,
+                      onPressed: () async {
+                        final ready = await _validatePrinterReady();
+                        if (!ready) return;
+                        _handlePlaceOrUpdateOrder(isDraft: false, shouldPrintReceipt: true);
+                      },
+                      color: Colors.blueGrey,
+                      text: "KOT & Print",
+                    ),
+                  ),
+                  SizedBox(width: 2.w),
+                  Expanded(
+                    child: PrimaryButton(
+                      isLoading: controller.isProcessing.value,
+                      height: 48.h,
+                      onPressed: () {
+                        if (controller.selectedCaptainId.value == null) {
+                          showSafeSnackbar("Captain Required", "Please select a captain before placing the order.");
+                          return;
+                        }
+                        _navigateToCashier();
+                      },
+                      color: colors.isDark ? Colors.redAccent.shade700 : Colors.redAccent.shade400,
+                      text: "Receipt",
+                    ),
+                  ),
+                ],
               ),
               if (controller.isEditing && !controller.isProcessing.value)
                 TextButton(
@@ -376,7 +508,7 @@ class CartSummary extends StatelessWidget {
   Widget _buildTotalRow(BuildContext context, {required String label, required double value, required bool isBold}) {
     final colors = AppColors.of(context);
     final accentColor = controller.isEditing ? Colors.blue : AppTheme.primaryGreen;
-    
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -384,7 +516,7 @@ class CartSummary extends StatelessWidget {
           label,
           style: isBold
               ? AppTypography.cardTitle.copyWith(fontWeight: FontWeight.w600, color: colors.text)
-              : AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+              : AppTypography.cardTitle.copyWith(color: colors.subtext, fontSize: AppTypography.sizeText),
         ),
         Text(
           value.toStringAsFixed(2),

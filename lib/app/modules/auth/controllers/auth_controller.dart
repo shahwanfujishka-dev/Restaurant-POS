@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_navigation/src/extension_navigation.dart';
@@ -21,7 +22,11 @@ class AuthController extends GetxController {
   final companyCode = ''.obs;
   final branchId = ''.obs;
   final branchName = ''.obs;
-
+  final branchDisplayName = ''.obs;
+  final branchAddress = ''.obs;
+  final branchMob = ''.obs;
+  final branchVat = ''.obs;
+  final branchPhNo = ''.obs;
   final isVerified = false.obs;
   final isLoading = false.obs;
 
@@ -36,10 +41,23 @@ class AuthController extends GetxController {
     _checkSessionExpired();
   }
 
+  void setOrientation({required bool isMobile}) {
+    if (isMobile) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+    } else {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    }
+  }
+
   void _checkSessionExpired() {
     if (storage.read('session_expired_flag') == true) {
       storage.remove('session_expired_flag');
-      // Use a slight delay to ensure the UI is ready to show a snackbar/dialog
       Future.delayed(const Duration(milliseconds: 500), () {
         Get.dialog(
           AlertDialog(
@@ -63,6 +81,11 @@ class AuthController extends GetxController {
     companyCode.value = storage.read('company_code') ?? '';
     branchId.value = storage.read('branch_id')?.toString() ?? '';
     branchName.value = storage.read('branch_name') ?? '';
+    branchDisplayName.value = storage.read('branch_display_name') ?? '';
+    branchAddress.value = storage.read('branch_address') ?? '';
+    branchPhNo.value = storage.read('branch_phone') ?? '';
+    branchMob.value = storage.read('branch_mob') ?? '';
+    branchVat.value = storage.read('branch_mob') ?? '';
 
     _checkVerificationStatus();
   }
@@ -86,16 +109,29 @@ class AuthController extends GetxController {
   }
 
   Future<void> processQrValue(String rawValue) async {
-    if (rawValue.isEmpty) return;
+    final trimmed = rawValue.trim();
+    if (trimmed.isEmpty) return;
+
+    // Safety check: If it looks like a file path, ignore it
+    if (trimmed.startsWith('/') || trimmed.startsWith('C:\\')) {
+      debugPrint("⚠️ Ignoring suspected file path input: $trimmed");
+      return;
+    }
 
     try {
-      String decodedString = rawValue;
+      String decodedString = trimmed;
 
-      if (!rawValue.trim().startsWith('{')) {
+      if (!trimmed.startsWith('{')) {
         try {
-          final decodedBytes = base64Decode(rawValue);
+          final decodedBytes = base64Decode(trimmed);
           decodedString = utf8.decode(decodedBytes);
-        } catch (_) {}
+        } catch (_) {
+          // If base64 decode fails, we keep decodedString as trimmed and let jsonDecode handle it
+        }
+      }
+
+      if (!decodedString.startsWith('{')) {
+        throw const FormatException("Invalid JSON format");
       }
 
       final parsed = jsonDecode(decodedString);
@@ -107,7 +143,10 @@ class AuthController extends GetxController {
       }
     } catch (e) {
       debugPrint("❌ Manual Entry Error: $e");
-      Get.snackbar("Error", "Invalid configuration code", backgroundColor: Colors.red, colorText: Colors.white);
+      // Only show snackbar if it's not a background/empty trigger
+      if (trimmed.length > 5) {
+        Get.snackbar("Error", "Invalid configuration code", backgroundColor: Colors.red, colorText: Colors.white);
+      }
     }
   }
 
@@ -146,6 +185,22 @@ class AuthController extends GetxController {
           "systemVersion": iosInfo.systemVersion,
         };
         deviceToken = iosInfo.identifierForVendor ?? "ios_device";
+      } else if (Platform.isMacOS) {
+        final MacOsDeviceInfo macInfo = await deviceInfo.macOsInfo;
+        deviceData = {
+          "model": macInfo.model,
+          "computerName": macInfo.computerName,
+          "osRelease": macInfo.osRelease,
+        };
+        deviceToken = macInfo.systemGUID ?? "macos_device";
+      } else if (Platform.isWindows) {
+        final WindowsDeviceInfo windowsInfo = await deviceInfo.windowsInfo;
+        deviceData = {
+          "computerName": windowsInfo.computerName,
+          "numberOfCores": windowsInfo.numberOfCores,
+          "systemMemoryInMegabytes": windowsInfo.systemMemoryInMegabytes,
+        };
+        deviceToken = windowsInfo.deviceId;
       }
 
       storage.write('base_url', url);
@@ -158,22 +213,53 @@ class AuthController extends GetxController {
       });
 
       if (response.statusCode == 200 && response.data != null) {
-        final List<dynamic> dataList = response.data;
+        final dynamic responseData = response.data;
+        Map<String, dynamic>? branchData;
 
-        if (dataList.isNotEmpty) {
-          final branchData = dataList[0];
+        if (responseData is List && responseData.isNotEmpty) {
+          branchData = responseData[0];
+        } else if (responseData is Map<String, dynamic>) {
+          if (responseData.containsKey('data')) {
+            final dynamic dataField = responseData['data'];
+            if (dataField is List && dataField.isNotEmpty) {
+              branchData = dataField[0];
+            } else if (dataField is Map<String, dynamic>) {
+              branchData = dataField;
+            }
+          } else {
+            branchData = responseData;
+          }
+        }
+
+        if (branchData != null) {
           final String token = branchData['token'] ?? '';
-          final String bName = branchData['branch_name'] ?? branchData['branch_display_name'];
-
+          final String bName = branchData['branch_name'] ?? '';
+          final String bDisName = branchData['branch_display_name'] ?? '';
+          final String bAddress = branchData['branch_address'] ?? '';
+          final String bMob = branchData['branch_mob'] ?? '';
+          final String bPh = branchData['branch_phone'] ?? '';
+          final String bTin = branchData['branch_tin'] ?? '';
+          final int taxType = branchData['cmp_tax_type'] ?? 1;
+          debugPrint("✅ Branch Display Name: $bDisName");
           serverUrl.value = url;
           companyCode.value = code;
           branchId.value = bId;
           branchName.value = bName;
-
+          branchDisplayName.value = bDisName;
+          branchAddress.value = bAddress;
+          branchMob.value = bMob;
+          branchPhNo.value = bPh;
+          branchVat.value = bTin;
           storage.write('company_code', code);
           storage.write('branch_id', bId);
           storage.write('branch_name', bName);
+          storage.write('branch_display_name', bDisName);
+          storage.write('branch_address', bAddress);
+          storage.write('branch_mob', bMob);
+          storage.write('branch_phone', bPh);
+          storage.write('branch_tin', bTin);
           storage.write('branch_token', token);
+          storage.write('cmp_tax_type', taxType);
 
           isVerified.value = true;
           Get.snackbar("✓ Verified", "Branch verified: $code", backgroundColor: Colors.green, colorText: Colors.white);
@@ -196,36 +282,85 @@ class AuthController extends GetxController {
     isLoading.value = true;
 
     try {
-      final response = await _apiService.post('mobileapp/user/caption_login', data: {
-        "usr_name": username,
+      final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+      String systemId = "";
+
+      if (Platform.isAndroid) {
+        final AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
+
+        final id = androidInfo.id;
+        final deviceName = "${androidInfo.manufacturer} ${androidInfo.model}";
+
+        systemId = "$id - $deviceName";
+
+      } else if (Platform.isIOS) {
+        final IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
+
+        final id = iosInfo.identifierForVendor ?? "ios_device";
+        final deviceName = iosInfo.utsname.machine; // or use name if available
+
+        systemId = "$id - $deviceName";
+
+      } else if (Platform.isMacOS) {
+        final MacOsDeviceInfo macInfo = await deviceInfo.macOsInfo;
+
+        final id = macInfo.systemGUID ?? "macos_device";
+        final deviceName = macInfo.model;
+
+        systemId = "$id - $deviceName";
+      } else if (Platform.isWindows) {
+        final WindowsDeviceInfo windowsInfo = await deviceInfo.windowsInfo;
+        systemId = "${windowsInfo.deviceId} - ${windowsInfo.computerName}";
+      }
+      final requestBody = {
+        "company_code": companyCode.value,
+        "usr_email": username,
         "usr_password": password,
-      });
+        "system_id": systemId,
+      };
+      debugPrint("📤 LOGIN REQUEST BODY: $requestBody");
+      final response = await _apiService.post(
+        'mobileapp/login',
+        data: requestBody,
+      );
+      debugPrint("📥 STATUS CODE: ${response.statusCode}");
+      debugPrint("📥 RESPONSE DATA: ${response.data}");
+      debugPrint("Branch Name: ${AppState.branchDisName}");
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
 
         if (data['status'] == 200) {
+          debugPrint("✅ LOGIN SUCCESS");
+
           AppState.updateSession(
             profile: data['profile'] ?? {},
           );
-          // Redirect to Sync screen instead of Home
+          debugPrint("Branch Disp: ${AppState.branchDisName}");
           Get.offAllNamed('/sync');
         } else {
-          Get.snackbar("Error", data['error'] ?? "Login failed", backgroundColor: Colors.red, colorText: Colors.white);
+          debugPrint("❌ API ERROR: ${data['error']}");
+
+          Get.snackbar(
+            "Error",
+            data['error'] ?? "Login failed",
+            backgroundColor: Colors.red,
+            colorText: Colors.white,
+          );
         }
       }
-    } catch (e) {
-      debugPrint("❌ Login Error: $e");
+    } catch (e, stackTrace) {
+      debugPrint("❌ LOGIN EXCEPTION: $e");
+      debugPrint("📌 STACKTRACE: $stackTrace");
+
+      Get.snackbar(
+        "Error",
+        "Login failed",
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
     } finally {
       isLoading.value = false;
     }
-  }
-
-  void resetBranchVerification() {
-    storage.remove('base_url');
-    storage.remove('branch_token');
-    storage.remove('company_code');
-    storage.remove('branch_id');
-    isVerified.value = false;
   }
 }

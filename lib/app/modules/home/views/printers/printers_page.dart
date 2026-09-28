@@ -47,7 +47,7 @@ class PrintersPage extends GetView<PrinterController> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.bluetooth_disabled, size: 80.w, color: Colors.orange),
+            Icon(Icons.bluetooth_disabled, size: ScreenType.isMobile()? 80.w : 40.w, color: Colors.orange),
             SizedBox(height: 24.h),
             Text(
               "Bluetooth Permissions Required",
@@ -236,7 +236,7 @@ class PrintersPage extends GetView<PrinterController> {
                 Text("Available Printers",
                     style: AppTypography.cardTitle.copyWith(color: colors.text)),
                 IconButton(
-                  icon: Icon(Icons.refresh, size: 20.w, color: colors.subtext),
+                  icon: Icon(Icons.refresh, size: AppTypography.sizeText, color: colors.subtext),
                   onPressed: () => controller.refreshPrinters(),
                   tooltip: "Refresh list",
                 ),
@@ -264,7 +264,7 @@ class PrintersPage extends GetView<PrinterController> {
       children: [
         Text(label, style: TextStyle(color: colors.subtext, fontSize: AppTypography.sizeText)),
         Container(
-          padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 4.h),
+          padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
           decoration: BoxDecoration(
             color: color.withOpacity(0.1),
             borderRadius: BorderRadius.circular(20.r),
@@ -511,7 +511,7 @@ class PrintersPage extends GetView<PrinterController> {
     final colors = AppColors.of(context);
     return ElevatedButton.icon(
       onPressed: onPressed,
-      icon: Icon(icon, size: 18.w, color: isPrimary ? Colors.white : AppTheme.primaryGreen),
+      icon: Icon(icon, size: AppTypography.sizeText, color: isPrimary ? Colors.white : AppTheme.primaryGreen),
       label: Text(label, style: TextStyle(color: isPrimary ? Colors.white : AppTheme.primaryGreen)),
       style: ElevatedButton.styleFrom(
         backgroundColor: isPrimary ? AppTheme.primaryGreen : colors.card,

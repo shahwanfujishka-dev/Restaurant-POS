@@ -10,6 +10,11 @@ class AuthView extends GetView<AuthController> {
   const AuthView({super.key});
   @override
   Widget build(BuildContext context) {
+    if (ScreenType.isMobile()) {
+      controller.setOrientation(isMobile: true);
+    } else {
+      controller.setOrientation(isMobile: false);
+    }
     return ScreenType.isMobile()
         ? const LoginMobileView()
         : const LoginTabletView();

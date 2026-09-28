@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer';
 import 'dart:io';
 import 'package:esc_pos_printer_plus/esc_pos_printer_plus.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
@@ -8,26 +9,27 @@ import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_navigation/src/extension_navigation.dart';
 import 'package:get/get_navigation/src/root/parse_route.dart';
-import 'package:get/get_navigation/src/snackbar/snackbar.dart';
 import 'package:get/get_rx/src/rx_types/rx_types.dart';
 import 'package:get/get_state_manager/src/simple/get_controllers.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:intl/intl.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:restaurant_pos/helper/snackbar_helper.dart';
 import '../../../data/models/order_model.dart';
+import '../../../data/models/order_type.dart';
 import '../../../data/services/database_helper.dart';
+import '../../../data/utils/AppState.dart';
 import '../views/dashoard/models/dashboard_models.dart';
 import 'dashboard_controller.dart';
 
 class PrinterModel {
   String name;
   final String address;
-  final String type; // bluetooth or wifi
-  final dynamic device; // Original device object
+  final String type;
+  final dynamic device;
   final bool isLikelyPrinter;
-
 
   PrinterModel({
     required this.name,
@@ -40,9 +42,9 @@ class PrinterModel {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is PrinterModel &&
-              runtimeType == other.runtimeType &&
-              address == other.address;
+      other is PrinterModel &&
+          runtimeType == other.runtimeType &&
+          address == other.address;
 
   @override
   int get hashCode => address.hashCode;
@@ -76,28 +78,23 @@ class PrinterController extends GetxController {
   var selectedBluetoothPrinter = Rxn<PrinterModel>();
   var selectedWifiPrinter = Rxn<PrinterModel>();
   var isCheckingConnection = false.obs;
-
-  // Permission state
   var isBluetoothPermissionGranted = true.obs;
-
   var tokenPrinterAssignments = <TokenPrinterAssignment>[].obs;
-
   final NetworkInfo _networkInfo = NetworkInfo();
   StreamSubscription? _scanSubscription;
-
   List<PrinterModel> get filteredBluetoothDevices {
     if (!showOnlyPrinters.value) return bluetoothPrinters;
     return bluetoothPrinters.where((d) => d.isLikelyPrinter).toList();
   }
 
+  // double calculatedCgst = 0;
+  // double calculatedSgst = 0;
   @override
   void onInit() {
     super.onInit();
     _initWifi();
     _loadSavedMappings();
     _listenToBleScan();
-
-    // Initial scan with permission check
     checkPermissions().then((granted) {
       if (granted) {
         scanBluetoothPrinters();
@@ -107,6 +104,7 @@ class PrinterController extends GetxController {
   }
 
   void _listenToBleScan() {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
     _scanSubscription = FlutterBluePlus.onScanResults.listen((results) {
       for (ScanResult r in results) {
         String name = r.device.platformName.isNotEmpty
@@ -139,11 +137,9 @@ class PrinterController extends GetxController {
 
   Future<bool> checkPermissions() async {
     if (!Platform.isAndroid) return true;
-
     bool scan = await Permission.bluetoothScan.isGranted;
     bool connect = await Permission.bluetoothConnect.isGranted;
     bool location = await Permission.location.isGranted;
-
     isBluetoothPermissionGranted.value = scan && connect;
     return isBluetoothPermissionGranted.value;
   }
@@ -159,7 +155,7 @@ class PrinterController extends GetxController {
 
     bool granted =
         (statuses[Permission.bluetoothScan]?.isGranted ?? false) &&
-            (statuses[Permission.bluetoothConnect]?.isGranted ?? false);
+        (statuses[Permission.bluetoothConnect]?.isGranted ?? false);
 
     isBluetoothPermissionGranted.value = granted;
 
@@ -170,7 +166,7 @@ class PrinterController extends GetxController {
         Get.defaultDialog(
           title: "Permissions Required",
           middleText:
-          "Bluetooth permissions are required to scan for printers. Please enable them in app settings.",
+              "Bluetooth permissions are required to scan for printers. Please enable them in app settings.",
           confirm: TextButton(
             onPressed: () => openAppSettings(),
             child: const Text("Settings"),
@@ -190,7 +186,7 @@ class PrinterController extends GetxController {
 
     tokenPrinterAssignments.assignAll(
       savedMappings.map(
-            (m) => TokenPrinterAssignment(
+        (m) => TokenPrinterAssignment(
           tokenPrinterId: m['token_printer_id'],
           address: m['printer_address'],
           name: m['printer_name'],
@@ -201,8 +197,6 @@ class PrinterController extends GetxController {
 
     if (Get.isRegistered<DashboardController>()) {
       final dashboardController = Get.find<DashboardController>();
-
-      // ✅ Corrected: Fetch ALL categories in the background specifically for mapping
       await dashboardController.fetchAllCategoriesForPrinters();
 
       final legacyMappings = await DatabaseHelper.instance
@@ -217,14 +211,58 @@ class PrinterController extends GetxController {
     }
   }
 
+  Future<String> _resolveInvoiceLabel(OrderModel order) async {
+    // Prefer the real branch invoice number (host-assigned, e.g. "M-MPM0007")
+    // — this is exactly what the Orders page displays, so print must match it.
+    if (order.branchInv != null &&
+        order.branchInv!.isNotEmpty &&
+        order.branchInv != "null") {
+      return order.branchInv!;
+    }
+
+    final branch = AppState.branchDisName.isNotEmpty
+        ? AppState.branchDisName
+        : AppState.branchName;
+    final existingSeq = await DatabaseHelper.instance.getOfflineSeqForOrder(
+      order.id,
+    );
+    if (existingSeq != null) {
+      return "$branch ${existingSeq.toString().padLeft(3, '0')}";
+    }
+    if (order.invNo.isNotEmpty &&
+        order.invNo != "LOCAL" &&
+        order.invNo != "OFFLINE") {
+      return order.invNo.toString();
+    }
+    final seq = await DatabaseHelper.instance.assignOfflineSeqForOrder(
+      order.id,
+    );
+    return "$branch ${seq.toString().padLeft(3, '0')}";
+  }
+
+  Map<String, double> _splitTaxShare(OrderModel order, double splitAmount) {
+    final double orderCgst = order.totalCgst > 0
+        ? order.totalCgst
+        : (order.totalTax / 2);
+    final double orderSgst = order.totalSgst > 0
+        ? order.totalSgst
+        : (order.totalTax / 2);
+    final double denom = order.finalTotal > 0 ? order.finalTotal : 1;
+    final double ratio = (splitAmount / denom).clamp(0, 1);
+    return {"cgst": orderCgst * ratio, "sgst": orderSgst * ratio};
+  }
+
   Future<bool> checkPrinterConnection(PrinterModel printer) async {
     isCheckingConnection.value = true;
     bool isConnected = false;
     try {
       if (printer.type == 'wifi') {
         try {
-          final socket = await Socket.connect(printer.address, 9100,
-              timeout: const Duration(seconds: 3));
+          final socket = await Socket.connect(
+            printer.address,
+            9100,
+            timeout: const Duration(seconds: 3),
+          );
           socket.destroy();
           isConnected = true;
         } catch (_) {
@@ -232,7 +270,8 @@ class PrinterController extends GetxController {
         }
       } else {
         isConnected = await PrintBluetoothThermal.connect(
-            macPrinterAddress: printer.address);
+          macPrinterAddress: printer.address,
+        );
       }
     } catch (e) {
       debugPrint("Connection check error: $e");
@@ -244,26 +283,19 @@ class PrinterController extends GetxController {
   }
 
   Future<void> updateTokenPrinter(
-      int tokenPrinterId,
-      PrinterModel printer,
-      ) async {
-    
-    // Check connection first
+    int tokenPrinterId,
+    PrinterModel printer,
+  ) async {
     bool isConnected = await checkPrinterConnection(printer);
-    
     if (!isConnected) {
       showSafeSnackbar(
         "Connection Warning",
         "Could not connect to ${printer.name}. The assignment will be saved, but printing may fail if it remains unreachable.",
-        // snackPosition: SnackPosition.BOTTOM,
-        // backgroundColor: Colors.orange,
-        // colorText: Colors.white,
-        // duration: const Duration(seconds: 4),
       );
     }
 
     var assignment = tokenPrinterAssignments.firstWhereOrNull(
-          (a) => a.tokenPrinterId == tokenPrinterId,
+      (a) => a.tokenPrinterId == tokenPrinterId,
     );
 
     if (assignment == null) {
@@ -295,17 +327,13 @@ class PrinterController extends GetxController {
       showSafeSnackbar(
         "Saved",
         "Token Printer $tokenPrinterId linked to ${printer.name} (Connected)",
-        // snackPosition: SnackPosition.BOTTOM,
-        // backgroundColor: Colors.green,
-        // colorText: Colors.white,
-        // duration: const Duration(seconds: 2),
       );
     }
   }
 
   Future<void> removeTokenPrinterAssignment(int tokenPrinterId) async {
     tokenPrinterAssignments.removeWhere(
-          (a) => a.tokenPrinterId == tokenPrinterId,
+      (a) => a.tokenPrinterId == tokenPrinterId,
     );
     await DatabaseHelper.instance.deleteTokenPrinterAssignment(tokenPrinterId);
 
@@ -330,33 +358,33 @@ class PrinterController extends GetxController {
   Future<void> scanBluetoothPrinters() async {
     if (scanningBluetooth.value) return;
 
-    bool hasPermission = await checkPermissions();
-    if (!hasPermission) {
-      await requestBluetoothPermissions();
-      return;
+    if (Platform.isAndroid || Platform.isIOS) {
+      bool hasPermission = await checkPermissions();
+      if (!hasPermission) {
+        await requestBluetoothPermissions();
+        return;
+      }
     }
 
     debugPrint("🔍 Starting Bluetooth scan...");
     scanningBluetooth.value = true;
 
     try {
-      if (await FlutterBluePlus.adapterState.first !=
-          BluetoothAdapterState.on) {
-        showSafeSnackbar(
-          "Bluetooth Off",
-          "Please enable Bluetooth",
-          // backgroundColor: Colors.orange,
-          // colorText: Colors.white,
-        );
-        scanningBluetooth.value = false;
-        return;
+      if (Platform.isAndroid || Platform.isIOS) {
+        if (await FlutterBluePlus.adapterState.first != BluetoothAdapterState.on) {
+          showSafeSnackbar(
+            "Bluetooth Off",
+            "Please enable Bluetooth",
+          );
+          scanningBluetooth.value = false;
+          return;
+        }
       }
 
       bluetoothPrinters.clear();
 
-      // 1. Get Paired Devices (Classic Bluetooth)
       final List<BluetoothInfo> pairedDevices =
-      await PrintBluetoothThermal.pairedBluetooths;
+          await PrintBluetoothThermal.pairedBluetooths;
       for (var d in pairedDevices) {
         bluetoothPrinters.add(
           PrinterModel(
@@ -368,11 +396,12 @@ class PrinterController extends GetxController {
         );
       }
 
-      // 2. Start Live BLE Scan
-      await FlutterBluePlus.startScan(
-        timeout: const Duration(seconds: 5),
-        androidUsesFineLocation: true,
-      );
+      if (Platform.isAndroid || Platform.isIOS) {
+        await FlutterBluePlus.startScan(
+          timeout: const Duration(seconds: 5),
+          androidUsesFineLocation: true,
+        );
+      }
     } catch (e) {
       debugPrint("❌ Bluetooth Scan Error: $e");
     } finally {
@@ -415,10 +444,7 @@ class PrinterController extends GetxController {
       }
 
       final String subnet = ip.substring(0, ip.lastIndexOf('.'));
-      // Added more common printer ports (9100=RAW, 515=LPD, 631=IPP, 80=Web, 8008/8009=Epson ePOS)
       final List<int> printerPorts = [9100, 515, 631, 80, 8008, 8009];
-
-      // Scanning the full subnet in batches
       const int batchSize = 15;
       for (int i = 1; i < 255; i += batchSize) {
         List<Future> batch = [];
@@ -440,12 +466,11 @@ class PrinterController extends GetxController {
   }
 
   Future<void> _checkIp(
-      String ip,
-      int port,
-      List<PrinterModel> foundPrinters,
-      ) async {
+    String ip,
+    int port,
+    List<PrinterModel> foundPrinters,
+  ) async {
     try {
-      // Slightly longer timeout for better reliability across different router types
       final socket = await Socket.connect(
         ip,
         port,
@@ -483,17 +508,32 @@ class PrinterController extends GetxController {
   }
 
   void stopScan() {
-    FlutterBluePlus.stopScan();
+    if (Platform.isAndroid || Platform.isIOS) {
+      FlutterBluePlus.stopScan();
+    }
     scanningBluetooth.value = false;
     scanningWifi.value = false;
   }
 
-  // --- RECEIPT PRINTING LOGIC ---
-  Future<void> printReceipt(OrderModel order, double received, double change) async {
-    debugPrint("--- START RECEIPT PRINTING ---");
-    // For receipts, we usually print to the "Main" or "Cashier" printer.
-    // Let's assume the first printer in assignments is the default.
-    final assignment = tokenPrinterAssignments.isNotEmpty ? tokenPrinterAssignments.first : null;
+  Future<void> printReceipt(
+    OrderModel order,
+    double received,
+    double change, {
+    bool isBill = false,
+    String? customerName,
+    String? paymentMethod,
+    double? discount,
+    double? roundOff,
+        bool? isSale,
+      }) async {
+    debugPrint("--- START ${isBill ? 'BILL' : 'RECEIPT'} PRINTING ---");
+    final String finalCustomerName =
+        customerName ?? order.customerName ?? order.tableName;
+    final double finalDiscount = discount ?? order.discount;
+    final double finalRoundOff = roundOff ?? order.roundOff;
+    final assignment = tokenPrinterAssignments.isNotEmpty
+        ? tokenPrinterAssignments.first
+        : null;
     final address = assignment?.printerAddress.value ?? "";
     final type = assignment?.printerType.value ?? "bluetooth";
 
@@ -503,28 +543,657 @@ class PrinterController extends GetxController {
     }
 
     final profile = await CapabilityProfile.load();
+    final invoiceLabel = await _resolveInvoiceLabel(order);
+    final bool resolvedIsSale = isSale ?? (order.status.value == OrderStatus.paid);
+
     if (type == 'wifi') {
-      await _printWifiReceipt(address, order, received, change, profile);
+      await _printWifiReceipt(
+        address,
+        invoiceLabel: invoiceLabel,
+        order,
+        received,
+        change,
+        profile,
+        isBill: isBill,
+        isSale: resolvedIsSale,
+        customerName: finalCustomerName,
+        paymentMethod: paymentMethod,
+        discount: finalDiscount,
+        roundOff: finalRoundOff,
+      );
     } else {
-      final printerInfo = PrinterModel(name: assignment!.printerName.value, address: address, type: 'bluetooth');
-      await _printBluetoothReceipt(printerInfo, order, received, change, profile);
+      final printerInfo = PrinterModel(
+        name: assignment!.printerName.value,
+        address: address,
+        type: 'bluetooth',
+      );
+      await _printBluetoothReceipt(
+        printerInfo,
+        order,
+        received,
+        change,
+        profile,
+        invoiceLabel: invoiceLabel,
+        isBill: isBill,
+        isSale: resolvedIsSale,
+        customerName: finalCustomerName,
+        paymentMethod: paymentMethod,
+        discount: finalDiscount,
+        roundOff: finalRoundOff,
+      );
     }
   }
 
-  Future<void> _printWifiReceipt(String ip, OrderModel order, double received, double change, CapabilityProfile profile) async {
+  Future<void> printSplitReceipts(
+    OrderModel order,
+    List<Map<String, dynamic>> splits,
+    int totalSplits, {
+    String? customerName,
+    String? paymentMethod,
+  }) async {
+    debugPrint("--- START SPLIT RECEIPT PRINTING ($totalSplits splits) ---");
+
+    final assignment = tokenPrinterAssignments.isNotEmpty
+        ? tokenPrinterAssignments.first
+        : null;
+    final address = assignment?.printerAddress.value ?? "";
+    final type = assignment?.printerType.value ?? "bluetooth";
+
+    if (address.isEmpty) {
+      debugPrint("No printer assigned for split receipts.");
+      return;
+    }
+
+    final profile = await CapabilityProfile.load();
+    final invoiceLabel = await _resolveInvoiceLabel(order);
+
+    for (var split in splits) {
+      final int splitNo = split['ps_split_no'] as int;
+      final double splitAmount = (split['ps_split_amnt'] as num).toDouble();
+      final String splitLabel = "$splitNo/$totalSplits";
+      debugPrint("🖨️ Printing split $splitLabel - Amount: $splitAmount");
+
+      if (type == 'wifi') {
+        await _printWifiSplitReceipt(
+          address,
+          order,
+          split,
+          splitLabel,
+          splitAmount,
+          profile,
+          invoiceLabel: invoiceLabel,
+          customerName: customerName,
+          paymentMethod: paymentMethod,
+        );
+      } else {
+        final printerInfo = PrinterModel(
+          name: assignment!.printerName.value,
+          address: address,
+          type: 'bluetooth',
+        );
+        await _printBluetoothSplitReceipt(
+          printerInfo,
+          order,
+          split,
+          splitLabel,
+          splitAmount,
+          profile,
+          invoiceLabel: invoiceLabel,
+          customerName: customerName,
+          paymentMethod: paymentMethod,
+        );
+      }
+
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
+  Future<void> _printWifiSplitReceipt(
+    String ip,
+    OrderModel order,
+    Map<String, dynamic> split,
+    String splitLabel,
+    double splitAmount,
+    CapabilityProfile profile, {
+    required String invoiceLabel,
+    String? customerName,
+    String? paymentMethod,
+  }) async {
     try {
       final printer = NetworkPrinter(PaperSize.mm80, profile);
       final res = await printer.connect(ip, port: 9100);
       if (res == PosPrintResult.success) {
-        _generateReceiptTicket(printer, order, received, change);
+        _generateSplitReceiptTicket(
+          printer,
+          order,
+          split,
+          splitLabel,
+          splitAmount,
+          invoiceLabel: invoiceLabel,
+          customerName: customerName,
+          paymentMethod: paymentMethod,
+        );
         await Future.delayed(const Duration(milliseconds: 500));
         printer.disconnect();
       }
-    } catch (e) { debugPrint("WiFi Receipt Error: $e"); }
+    } catch (e) {
+      debugPrint("WiFi Split Receipt Error: $e");
+    }
   }
 
-  Future<void> _printBluetoothReceipt(PrinterModel printer, OrderModel order, double received, double change, CapabilityProfile profile) async {
+  Future<void> _printBluetoothSplitReceipt(
+    PrinterModel printer,
+    OrderModel order,
+    Map<String, dynamic> split,
+    String splitLabel,
+    double splitAmount,
+    CapabilityProfile profile, {
+    required String invoiceLabel,
+    String? customerName,
+    String? paymentMethod,
+  }) async {
     try {
+      bool connected = await PrintBluetoothThermal.connectionStatus;
+      if (!connected) {
+        await PrintBluetoothThermal.connect(macPrinterAddress: printer.address);
+      }
+
+      final generator = Generator(PaperSize.mm80, profile);
+      final dashboardController = Get.find<DashboardController>();
+      final isVatDisabled = dashboardController.vatType.value == 1;
+      List<int> bytes = [];
+      bytes += generator.setGlobalFont(PosFontType.fontA);
+      bytes += generator.text(
+        AppState.branchName,
+        styles: const PosStyles(
+          align: PosAlign.center,
+          height: PosTextSize.size2,
+          fontType: PosFontType.fontA,
+          bold: false,
+        ),
+      );
+      bytes += generator.text(
+        AppState.branchAddress,
+        styles: const PosStyles(align: PosAlign.center),
+      );
+      bytes += generator.text(
+        "Ph:${AppState.branchPhNo}",
+        styles: const PosStyles(align: PosAlign.center),
+      );
+      bytes += generator.text(
+        "MOB:${AppState.branchMob}",
+        styles: const PosStyles(align: PosAlign.center),
+      );
+      if (AppState.cmpTaxType != 1) {
+        bytes += generator.text(
+          "GST No: ${AppState.branchVat}",
+          styles: const PosStyles(align: PosAlign.center),
+        );
+      } else {
+        bytes += generator.text(
+          "VAT No: ${AppState.branchVat}",
+          styles: const PosStyles(align: PosAlign.center),
+        );
+      }
+      bytes += generator.text(
+        "SPLIT BILL",
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+      bytes += generator.text(
+        "Bill $splitLabel",
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
+          height: PosTextSize.size1,
+          width: PosTextSize.size1,
+        ),
+      );
+      bytes += generator.text('-' * 48);
+      final String? effectiveCustomerName = customerName ?? order.customerName ?? "Cash Customer";
+      if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
+  bytes += generator.row([
+    PosColumn(text: "Customer:", width: 5),
+    PosColumn(
+      text: effectiveCustomerName,
+      width: 7,
+      styles: const PosStyles(align: PosAlign.right),
+    ),
+  ]);
+}
+      bytes += generator.row([
+        PosColumn(text: "Order No:", width: 6),
+        PosColumn(
+          text: invoiceLabel,
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+      bytes += generator.row([
+        PosColumn(text: "Order type:", width: 5),
+        PosColumn(
+          // text: OrderType.values
+          //     .firstWhere(
+          //       (e) => e.id == order.sales_odr_order_type,
+          //       orElse: () => OrderType.dineIn,
+          //     )
+          //     .displayName,
+          text: (GetStorage().read('selected_order_type_id') == 0
+              ? 'Dine In'
+              : GetStorage().read('selected_order_type_id') == 1
+              ? 'Delivery'
+              : GetStorage().read('selected_order_type_id') == 2
+              ? 'Pick Up'
+              : ''),
+          width: 7,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+      if (paymentMethod?.toLowerCase() != 'compliment') {
+        bytes += generator.row([
+          PosColumn(text: "Pay type:", width: 5),
+          PosColumn(
+            text: paymentMethod ?? "Cash",
+            width: 7,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
+
+      if (GetStorage().read('selected_order_type_id') == 0) {
+        bytes += generator.row([
+          PosColumn(text: "Table:", width: 6),
+          PosColumn(
+            text: order.tableName,
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
+      bytes += generator.row([
+        PosColumn(text: "Date:", width: 5),
+        PosColumn(
+          text: DateFormat('dd/MM/yyyy').format(order.createdAt),
+          width: 7,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+      bytes += generator.row([
+        PosColumn(text: "Time:", width: 5),
+        PosColumn(
+          text: DateFormat('HH:mm:ss').format(order.createdAt),
+          width: 7,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+      bytes += generator.text('-' * 48);
+
+      for (var item in order.items.where((i) => !i.isRemoved)) {
+        bytes += generator.row([
+          PosColumn(text: "${item.quantity}x ${item.product.name}", width: 9),
+          PosColumn(
+            text: (item.priceAtOrder * item.quantity).toStringAsFixed(2),
+            width: 3,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
+
+      bytes += generator.text('-' * 48);
+      final taxShare = _splitTaxShare(order, splitAmount);
+      bytes += generator.text('-' * 48);
+      if (AppState.cmpTaxType != 1) {
+        isVatDisabled
+            ? SizedBox.shrink()
+            : bytes += generator.row([
+                PosColumn(text: "CGST", width: 6),
+                PosColumn(
+                  text: taxShare["cgst"]!.toStringAsFixed(2),
+                  width: 6,
+                  styles: const PosStyles(align: PosAlign.right),
+                ),
+              ]);
+        isVatDisabled
+            ? SizedBox.shrink()
+            : bytes += generator.row([
+                PosColumn(text: "SGST", width: 6),
+                PosColumn(
+                  text: taxShare["sgst"]!.toStringAsFixed(2),
+                  width: 6,
+                  styles: const PosStyles(align: PosAlign.right),
+                ),
+              ]);
+        bytes += generator.text('-' * 48);
+      }
+      bytes += generator.text(
+        "SPLIT AMOUNT",
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+      bytes += generator.row([
+        PosColumn(
+          text: "Bill $splitLabel",
+          width: 6,
+          styles: const PosStyles(bold: true),
+        ),
+        PosColumn(
+          text: splitAmount.toStringAsFixed(2),
+          width: 6,
+          styles: const PosStyles(
+            align: PosAlign.right,
+            bold: true,
+            height: PosTextSize.size2,
+          ),
+        ),
+      ]);
+
+      bytes += generator.text('-' * 48);
+      if ((paymentMethod?.toLowerCase() != 'compliment') &&
+          AppState.isUpiEnabled &&
+          AppState.upiId.isNotEmpty &&
+          AppState.cmpTaxType != 1) {
+
+        final String upiLink = "upi://pay"
+            "?pa=${AppState.upiId}"
+            "&pn=${Uri.encodeComponent(AppState.branchName)}"
+            "&am=${splitAmount.toStringAsFixed(2)}"
+            "&cu=INR"
+            "&tn=${Uri.encodeComponent("Split Bill $splitLabel")}";
+
+        bytes += generator.qrcode(
+          upiLink,
+          size: QRSize.size5,
+          cor: QRCorrection.L,
+        );
+
+        bytes += generator.emptyLines(1);
+      }
+
+      bytes += generator.text(
+        "Thank You!",
+        styles: const PosStyles(align: PosAlign.center),
+      );
+      bytes += generator.feed(2);
+      bytes += generator.cut();
+
+      await PrintBluetoothThermal.writeBytes(bytes);
+      debugPrint("✅ Split receipt $splitLabel printed successfully");
+    } catch (e) {
+      debugPrint("BT Split Receipt Error: $e");
+    }
+  }
+
+  void _generateSplitReceiptTicket(
+    NetworkPrinter printer,
+    OrderModel order,
+    Map<String, dynamic> split,
+    String splitLabel,
+    double splitAmount, {
+    required String invoiceLabel,
+    String? customerName,
+    String? paymentMethod,
+  }) {
+    final dashboardController = Get.find<DashboardController>();
+    final isVatDisabled = dashboardController.vatType.value == 1;
+    printer.text(
+      AppState.branchName,
+      styles: const PosStyles(
+        align: PosAlign.center,
+        height: PosTextSize.size2,
+        fontType: PosFontType.fontA,
+        bold: false,
+      ),
+    );
+    printer.text(
+      AppState.branchAddress,
+      styles: const PosStyles(align: PosAlign.center),
+    );
+    printer.text(
+      "Ph:${AppState.branchPhNo}",
+      styles: const PosStyles(align: PosAlign.center),
+    );
+    printer.text(
+      "MOB:${AppState.branchMob}",
+      styles: const PosStyles(align: PosAlign.center),
+    );
+    if (AppState.cmpTaxType != 1) {
+      printer.text(
+        "GST No: ${AppState.branchVat}",
+        styles: const PosStyles(align: PosAlign.center),
+      );
+    } else {
+      printer.text(
+        "VAT No: ${AppState.branchVat}",
+        styles: const PosStyles(align: PosAlign.center),
+      );
+    }
+    printer.text(
+      "SPLIT BILL",
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
+    printer.text(
+      "Bill $splitLabel",
+      styles: const PosStyles(
+        align: PosAlign.center,
+        bold: true,
+        height: PosTextSize.size2,
+      ),
+    );
+    printer.hr();
+    final String? effectiveCustomerName = customerName ?? order.customerName ?? "Cash Customer";
+if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
+  printer.row([
+    PosColumn(text: "Customer:", width: 5),
+    PosColumn(
+      text: effectiveCustomerName,
+      width: 7,
+      styles: const PosStyles(align: PosAlign.right),
+    ),
+  ]);
+}
+    printer.row([
+      PosColumn(text: "Order No:", width: 6),
+      PosColumn(
+        text: invoiceLabel,
+        width: 6,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
+    ]);
+
+    printer.row([
+      PosColumn(text: "Order type:", width: 5),
+      PosColumn(
+        // text: OrderType.values
+        //     .firstWhere(
+        //       (e) => e.id == order.sales_odr_order_type,
+        //       orElse: () => OrderType.dineIn,
+        //     )
+        //     .displayName,
+        text: (GetStorage().read('selected_order_type_id') == 0
+            ? 'Dine In'
+            : GetStorage().read('selected_order_type_id') == 1
+            ? 'Delivery'
+            : GetStorage().read('selected_order_type_id') == 2
+            ? 'Pick Up'
+            : ''),
+        width: 7,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
+    ]);
+
+    if (paymentMethod?.toLowerCase() != 'compliment') {
+      printer.row([
+        PosColumn(text: "Pay type:", width: 5),
+        PosColumn(
+          text: paymentMethod ?? "Cash",
+          width: 7,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
+
+    if (GetStorage().read('selected_order_type_id') == 0) {
+      printer.row([
+        PosColumn(text: "Table:", width: 6),
+        PosColumn(
+          text: "${order.tableName} (${order.chairNumber} Seats)",
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
+    printer.row([
+      PosColumn(text: "Date:", width: 5),
+      PosColumn(
+        text: DateFormat('dd/MM/yyyy').format(order.createdAt),
+        width: 7,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
+    ]);
+    printer.row([
+      PosColumn(text: "Time:", width: 5),
+      PosColumn(
+        text: DateFormat('HH:mm:ss').format(order.createdAt),
+        width: 7,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
+    ]);
+    printer.hr();
+
+    for (var item in order.items.where((i) => !i.isRemoved)) {
+      printer.row([
+        PosColumn(text: "${item.quantity}x ${item.product.name}", width: 9),
+        PosColumn(
+          text: (item.priceAtOrder * item.quantity).toStringAsFixed(2),
+          width: 3,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
+
+    printer.hr();
+    final taxShare = _splitTaxShare(order, splitAmount);
+    printer.hr();
+    if (AppState.cmpTaxType != 1) {
+      isVatDisabled
+          ? SizedBox.shrink()
+          : printer.row([
+              PosColumn(text: "CGST", width: 6),
+              PosColumn(
+                text: taxShare["cgst"]!.toStringAsFixed(2),
+                width: 6,
+                styles: const PosStyles(align: PosAlign.right),
+              ),
+            ]);
+      isVatDisabled
+          ? SizedBox.shrink()
+          : printer.row([
+              PosColumn(text: "SGST", width: 6),
+              PosColumn(
+                text: taxShare["sgst"]!.toStringAsFixed(2),
+                width: 6,
+                styles: const PosStyles(align: PosAlign.right),
+              ),
+            ]);
+      printer.hr();
+    }
+    printer.text(
+      "SPLIT AMOUNT",
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
+    printer.row([
+      PosColumn(
+        text: "Bill $splitLabel",
+        width: 6,
+        styles: const PosStyles(bold: true),
+      ),
+      PosColumn(
+        text: splitAmount.toStringAsFixed(2),
+        width: 6,
+        styles: const PosStyles(align: PosAlign.right, bold: true),
+      ),
+    ]);
+    printer.hr();
+
+    if ((paymentMethod?.toLowerCase() != 'compliment') &&
+        AppState.isUpiEnabled &&
+        AppState.upiId.isNotEmpty &&
+        AppState.cmpTaxType != 1) {
+
+      final String upiLink = "upi://pay"
+          "?pa=${AppState.upiId}"
+          "&pn=${Uri.encodeComponent(AppState.branchName)}"
+          "&am=${splitAmount.toStringAsFixed(2)}"
+          "&cu=INR"
+          "&tn=${Uri.encodeComponent("Split Bill $splitLabel")}";
+
+      printer.qrcode(
+        upiLink,
+        size: QRSize.size5,
+        cor: QRCorrection.L,
+      );
+
+      printer.feed(1);
+    }
+    printer.text("Thank You!", styles: const PosStyles(align: PosAlign.center));
+    printer.feed(3);
+    printer.cut();
+  }
+
+  Future<void> _printWifiReceipt(
+    String ip,
+    OrderModel order,
+    double received,
+    double change,
+    CapabilityProfile profile, {
+    bool isBill = false,
+        bool isSale = false,
+    String? customerName,
+    String? paymentMethod,
+    String? invoiceLabel,
+    double discount = 0,
+    double roundOff = 0,
+  }) async {
+    try {
+      final printer = NetworkPrinter(PaperSize.mm80, profile);
+      final res = await printer.connect(ip, port: 9100);
+      if (res == PosPrintResult.success) {
+        _generateReceiptTicket(
+          printer,
+          order,
+          received,
+          change,
+          isSale: isSale,
+          isBill: isBill,
+          customerName: customerName,
+          paymentMethod: paymentMethod,
+          discount: discount,
+          roundOff: roundOff,
+        );
+        await Future.delayed(const Duration(milliseconds: 500));
+        printer.disconnect();
+      }
+    } catch (e) {
+      debugPrint("WiFi Receipt Error: $e");
+    }
+  }
+
+  Future<void> _printBluetoothReceipt(
+    PrinterModel printer,
+    OrderModel order,
+    double received,
+    double change,
+    CapabilityProfile profile, {
+    bool isBill = false,
+        bool isSale = false,
+    String? customerName,
+    String? invoiceLabel,
+    String? paymentMethod,
+    double discount = 0,
+    double roundOff = 0,
+  }) async {
+    try {
+      final DashboardController dashboardController =
+          Get.find<DashboardController>();
+      final bool isVatDisabled = dashboardController.vatType.value == 1;
       bool connected = await PrintBluetoothThermal.connectionStatus;
       if (!connected) {
         await PrintBluetoothThermal.connect(macPrinterAddress: printer.address);
@@ -534,85 +1203,805 @@ class PrinterController extends GetxController {
       bytes += generator.setGlobalFont(PosFontType.fontA);
 
       // Header
-      bytes += generator.text("REST POS", styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
-      bytes += generator.text("Final Receipt", styles: const PosStyles(align: PosAlign.center));
-      bytes += generator.text("-" * 48);
-
-      bytes += generator.row([
-        PosColumn(text: "Order: ${order.invNo}", width: 6),
-        PosColumn(text: DateFormat('dd/MM/yy HH:mm').format(order.createdAt), width: 6, styles: const PosStyles(align: PosAlign.right)),
-      ]);
-
-      // ✅ Added Table and Chair count for Bluetooth Receipt
+      // bytes += generator.text(
+      //   "REST POS",
+      //   styles: const PosStyles(
+      //     align: PosAlign.center,
+      //     bold: false,
+      //     height: PosTextSize.size2,
+      //   ),
+      // );
+      // bytes += generator.text(
+      //   isBill ? "ORDER BILL" : "Final Receipt",
+      //   styles: const PosStyles(align: PosAlign.center),
+      // );
       bytes += generator.text(
-        "Table: ${order.tableName}",
+        AppState.branchName,
+        styles: const PosStyles(
+          align: PosAlign.center,
+          height: PosTextSize.size2,
+          fontType: PosFontType.fontA,
+          bold: false,
+        ),
+      );
+      bytes += generator.text(
+        AppState.branchAddress,
         styles: const PosStyles(align: PosAlign.center),
       );
-
+      bytes += generator.text(
+        "Ph:${AppState.branchPhNo}",
+        styles: const PosStyles(align: PosAlign.center),
+      );
+      bytes += generator.text(
+        "MOB:${AppState.branchMob}",
+        styles: const PosStyles(align: PosAlign.center),
+      );
+      if (AppState.cmpTaxType != 1) {
+        bytes += generator.text(
+          "GST No: ${AppState.branchVat}",
+          styles: const PosStyles(align: PosAlign.center),
+        );
+      } else {
+        bytes += generator.text(
+          "VAT No: ${AppState.branchVat}",
+          styles: const PosStyles(align: PosAlign.center),
+        );
+      }
       bytes += generator.text("-" * 48);
-
-      for (var item in order.items.where((i) => !i.isRemoved)) {
+      final String? effectiveCustomerName = customerName ?? order.customerName ?? "Cash Customer";
+      if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
         bytes += generator.row([
-          PosColumn(text: "${item.quantity}x ${item.product.name}", width: 9),
-          PosColumn(text: (item.priceAtOrder * item.quantity).toStringAsFixed(2), width: 3, styles: const PosStyles(align: PosAlign.right)),
+          PosColumn(text: "Customer:", width: 5),
+          PosColumn(
+            text: effectiveCustomerName,
+            width: 7,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
+      final bool isInvoiced = order.status.value == OrderStatus.paid;
+
+      bytes += generator.row([
+        PosColumn(text: isSale ? "Inv No:" : "Order No:", width: 5),
+        PosColumn(
+          text: invoiceLabel.toString(),
+          width: 7,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+      // bytes += generator.row([
+      //   PosColumn(text: "Captain:", width: 5),
+      //   PosColumn(
+      //     text: order.captainName.toString(),
+      //     width: 7,
+      //     styles: const PosStyles(align: PosAlign.right),
+      //   ),
+      // ]);
+      bytes += generator.row([
+        PosColumn(text: "Order type:", width: 5),
+        PosColumn(
+          // text: OrderType.values
+          //     .firstWhere(
+          //       (e) => e.id == order.sales_odr_order_type,
+          //       orElse: () => OrderType.dineIn,
+          //     )
+          //     .displayName,
+          text: (GetStorage().read('selected_order_type_id') == 0
+              ? 'Dine In'
+              : GetStorage().read('selected_order_type_id') == 1
+              ? 'Delivery'
+              : GetStorage().read('selected_order_type_id') == 2
+              ? 'Pick Up'
+              : ''),
+          width: 7,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+      if (!isBill && paymentMethod?.toLowerCase() != 'compliment') {
+        bytes += generator.row([
+          PosColumn(text: "Pay type:", width: 5),
+          PosColumn(
+            text: paymentMethod ?? "Cash",
+            width: 7,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
+      bytes += generator.row([
+        PosColumn(text: "Date:", width: 5),
+        PosColumn(
+          text: DateFormat('dd/MM/yyyy').format(order.createdAt),
+          width: 7,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+      bytes += generator.row([
+        PosColumn(text: "Time:", width: 5),
+        PosColumn(
+          text: DateFormat('HH:mm:ss').format(order.createdAt),
+          width: 7,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+      if (GetStorage().read('selected_order_type_id') == 0) {
+        bytes += generator.row([
+          PosColumn(text: "Table:", width: 5),
+          PosColumn(
+            text: order.tableName,
+            width: 7,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
         ]);
       }
 
       bytes += generator.text("-" * 48);
+
+      // Column Titles
       bytes += generator.row([
-        PosColumn(text: "TOTAL", width: 6, styles: const PosStyles(bold: true)),
-        PosColumn(text: order.totalAmount.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
+        PosColumn(
+          text: "Item",
+          width: 6, // 👈 increase when no VAT
+        ),
+        PosColumn(text: "Qty", width: 1),
+        PosColumn(
+          text: "Price",
+          width: 2,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+        // if (AppState.cmpTaxType == 1)
+        //   PosColumn(
+        //     text: "Vat",
+        //     width: 2,
+        //     styles: const PosStyles(align: PosAlign.right),
+        //   ),
+        PosColumn(
+          text: "Amount",
+          width: 3,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
       ]);
-      bytes += generator.row([
-        PosColumn(text: "Received", width: 6),
-        PosColumn(text: received.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
-      ]);
-      bytes += generator.row([
-        PosColumn(text: "Change", width: 6),
-        PosColumn(text: change.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
-      ]);
+      bytes += generator.text("-" * 48);
+      double calculatedSubTotal = 0;
+      double calculatedTax = 0;
+      double calculatedCgst = 0;
+      double calculatedSgst = 0;
+      final double itemCgst = (order.Taxpercentage / 2);
+      final double itemSgst = (order.Taxpercentage / 2);
+      for (var item in order.items.where((i) => !i.isRemoved)) {
+        //   final double itemCgst = (item.cgstRate > 0) ? item.cgstRate : (item.product.taxPer/ 2);
+        // final double itemSgst = (item.sgstRate > 0) ? item.sgstRate : itemCgst;
+        double taxPer = item.product.taxPer;
+
+        // double qty = item.quantity.toDouble();
+        double baseqty = item.unit.unitBaseQty.toDouble();
+        double qty;
+        double price;
+        if (order.isUnsynced) {
+          price = item.priceAtOrder.toDouble();
+          qty = item.quantity.toDouble();
+        } else {
+          price = item.product.price * (baseqty > 1.0 ? baseqty : 1.0);
+          qty = item.quantity.toDouble();
+        }
+
+        double vatAmount;
+        double lineTotal;
+        double lineSubTotal;
+
+        if (Get.isRegistered<DashboardController>() &&
+            Get.find<DashboardController>().vatType.value == 1) {
+          // Price includes tax (VAT Disabled for offline/special cases as per requirement)
+          lineTotal = price * qty;
+          vatAmount = 0.0;
+          lineSubTotal = lineTotal;
+        } else {
+          // Price excludes tax
+          lineSubTotal = price * qty;
+          vatAmount = (lineSubTotal * taxPer) / 100;
+          lineTotal = lineSubTotal;
+        }
+        final double lineCgst = taxPer / 2;
+        final double lineSgst = taxPer / 2;
+        calculatedCgst += lineCgst;
+        calculatedSgst += lineSgst;
+        calculatedSubTotal += lineSubTotal;
+        calculatedTax += vatAmount;
+        // calculatedCgst += lineCgstAmt;
+        // calculatedSgst += lineSgstAmt;
+
+        // final hasVat = AppState.cmpTaxType == 1;
+
+        bytes += generator.row([
+          PosColumn(
+            text: item.product.name,
+            width: 6, // 👈 expand when no VAT
+          ),
+          PosColumn(text: item.quantity.toString(), width: 1),
+          PosColumn(
+            text: price.toStringAsFixed(2),
+            width: 2,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+
+          // if (hasVat)
+          //   PosColumn(
+          //     text: vatAmount.toStringAsFixed(2),
+          //     width: 2,
+          //     styles: const PosStyles(align: PosAlign.right),
+          //   ),
+          PosColumn(
+            text: lineTotal.toStringAsFixed(2),
+            width: 3,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+
+        for (var addon in item.selectedAddons) {
+          double addonTotal = addon.price * addon.quantity.value;
+          calculatedSubTotal += addonTotal;
+          bytes += generator.row([
+            PosColumn(text: "", width: 1),
+            PosColumn(text: " + ${addon.name}", width: 4),
+            PosColumn(
+              text: addon.price.toStringAsFixed(2),
+              width: 2,
+              styles: const PosStyles(align: PosAlign.right),
+            ),
+            PosColumn(
+              text: "0.00",
+              width: 2,
+              styles: const PosStyles(align: PosAlign.right),
+            ),
+            PosColumn(
+              text: addonTotal.toStringAsFixed(2),
+              width: 3,
+              styles: const PosStyles(align: PosAlign.right),
+            ),
+          ]);
+        }
+      }
+
+      final double finalSubTotal = (order.subTotal > 0)
+          ? order.subTotal
+          : calculatedSubTotal;
+      final double finalVat =
+          (Get.isRegistered<DashboardController>() &&
+              Get.find<DashboardController>().vatType.value == 1)
+          ? 0.0
+          : ((order.totalTax > 0) ? order.totalTax : calculatedTax);
 
       bytes += generator.text("-" * 48);
-      bytes += generator.text("Thank You!", styles: const PosStyles(align: PosAlign.center));
-      bytes += generator.feed(2);
-      bytes += generator.cut();
+      bytes += generator.row([
+        PosColumn(text: "Sub Total", width: 6),
+        PosColumn(
+          text: finalSubTotal.toStringAsFixed(2),
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+      if (AppState.cmpTaxType == 1) {
+        bytes += generator.row([
+          PosColumn(text: "VAT", width: 6),
+          PosColumn(
+            text: finalVat.toStringAsFixed(2),
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      } else {
+        final double finalCgst = order.totalCgst > 0
+            ? order.totalCgst
+            : (finalVat / 2);
+        final double finalSgst = order.totalSgst > 0
+            ? order.totalSgst
+            : (finalVat / 2);
+        (isVatDisabled)
+            ? ""
+            : bytes += generator.row([
+                PosColumn(text: "CGST(${calculatedCgst}%)", width: 6),
+                PosColumn(
+                  text: finalCgst.toStringAsFixed(2),
+                  width: 6,
+                  styles: const PosStyles(align: PosAlign.right),
+                ),
+              ]);
+        (isVatDisabled)
+            ? ""
+            : bytes += generator.row([
+                PosColumn(text: "SGST(${calculatedSgst}%)", width: 6),
+                PosColumn(
+                  text: finalSgst.toStringAsFixed(2),
+                  width: 6,
+                  styles: const PosStyles(align: PosAlign.right),
+                ),
+              ]);
+      }
+      if (discount > 0) {
+        bytes += generator.row([
+          PosColumn(text: "Discount", width: 6),
+          PosColumn(
+            text: "${discount.toStringAsFixed(2)}",
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
 
+      if (roundOff != 0) {
+        bytes += generator.row([
+          PosColumn(text: "Round Off", width: 6),
+          PosColumn(
+            text: roundOff.toStringAsFixed(2),
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
+      final int vatType = dashboardController.vatType.value;
+
+      bool isCompliment = paymentMethod?.toLowerCase() == 'compliment';
+      bool isOnlineOrPaid =
+          !order.isUnsynced || order.status.value == OrderStatus.paid;
+
+      double netTotal;
+
+      if (isCompliment) {
+        netTotal = 0.0;
+      } else {
+        if (vatType == 0) {
+          // Tax-exclusive: subtotal + VAT - discount + roundOff
+          netTotal = (finalSubTotal + finalVat - discount + roundOff).clamp(
+            0,
+            double.infinity,
+          );
+        } else {
+          // Tax-inclusive
+          if (isOnlineOrPaid) {
+            // order.totalAmount from server already has discount baked in
+            netTotal = (order.totalAmount + roundOff).clamp(0, double.infinity);
+          } else {
+            // Offline totalAmount is pre-discount
+            netTotal = (order.totalAmount - discount + roundOff).clamp(
+              0,
+              double.infinity,
+            );
+          }
+        }
+      }
+      bytes += generator.row([
+        PosColumn(
+          text: "NET TOTAL",
+          width: 6,
+          styles: const PosStyles(height: PosTextSize.size1),
+        ),
+        PosColumn(
+          text: netTotal.toStringAsFixed(2),
+          width: 6,
+          styles: const PosStyles(
+            align: PosAlign.right,
+            height: PosTextSize.size1,
+          ),
+        ),
+      ]);
+
+      // if (!isBill) {
+      //   bytes += generator.row([
+      //     PosColumn(text: "Received", width: 6),
+      //     PosColumn(text: received.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
+      //   ]);
+      //   bytes += generator.row([
+      //     PosColumn(text: "Change", width: 6),
+      //     PosColumn(text: change.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
+      //   ]);
+      // }
+
+      bytes += generator.text("-" * 48);
+
+      if (!isCompliment &&
+          AppState.isUpiEnabled &&
+          AppState.upiId.isNotEmpty &&
+          AppState.cmpTaxType != 1) {
+        final String upiLink =
+            "upi://pay"
+            "?pa=${AppState.upiId}"
+            "&pn=${Uri.encodeComponent(AppState.branchName)}"
+            "&am=${netTotal.toStringAsFixed(2)}"
+            "&cu=INR"
+            "&tn=${Uri.encodeComponent(invoiceLabel.toString())}";
+
+        bytes += generator.qrcode(
+          upiLink,
+          size: QRSize.size5,
+          cor: QRCorrection.L,
+        );
+        bytes += generator.emptyLines(1);
+      }
+
+      bytes += generator.text(
+        "Thank You!",
+        styles: const PosStyles(align: PosAlign.center),
+      );
+      bytes += generator.feed(1);
+      bytes += generator.cut();
       await PrintBluetoothThermal.writeBytes(bytes);
-    } catch (e) { debugPrint("BT Receipt Error: $e"); }
+    } catch (e) {
+      debugPrint("BT Receipt Error: $e");
+    }
   }
 
-  void _generateReceiptTicket(NetworkPrinter printer, OrderModel order, double received, double change) {
-    printer.text("REST POS", styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
+  void _generateReceiptTicket(
+    NetworkPrinter printer,
+    OrderModel order,
+    double received,
+    double change, {
+    bool isBill = false,
+        bool isSale = false,
+    String? customerName,
+    String? paymentMethod,
+    double discount = 0,
+    double roundOff = 0,
+  }) {
+    printer.text(
+      "REST POS",
+      styles: const PosStyles(
+        align: PosAlign.center,
+        bold: true,
+        height: PosTextSize.size2,
+      ),
+    );
+    printer.text(
+      "SPLIT BILL",
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
+    printer.text("-" * 48);
     printer.hr();
-    printer.text("Invoice: ${order.invNo}", styles: const PosStyles(align: PosAlign.center));
-    printer.text("Table: ${order.tableName} (Seats: ${order.chairNumber})", styles: const PosStyles(align: PosAlign.center));
-    printer.hr();
-    for (var item in order.items.where((i) => !i.isRemoved)) {
+    final String? effectiveCustomerName = customerName ?? order.customerName?? "Cash Customer";
+if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
+    printer.row([
+      PosColumn(text: "Customer:", width: 5),
+      PosColumn(
+        text: effectiveCustomerName,
+        width: 7,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
+    ]);}
+
+    final bool isInvoiced = order.status.value == OrderStatus.paid;
+
+    printer.row([
+      PosColumn(text: isSale ? "Inv No:" : "Order No:", width: 5),
+      PosColumn(
+        text: order.branchInv.toString(),
+        width: 7,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
+    ]);
+    printer.row([
+      PosColumn(text: "Captain:", width: 5),
+      PosColumn(
+        text: order.captainName.toString(),
+        width: 7,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
+    ]);
+    printer.row([
+      PosColumn(text: "Order type:", width: 5),
+      PosColumn(
+        // text: OrderType.values
+        //     .firstWhere(
+        //       (e) => e.id == order.sales_odr_order_type,
+        //   orElse: () => OrderType.dineIn,
+        // )
+        //     .displayName,
+        text: (GetStorage().read('selected_order_type_id') == 0
+            ? 'Dine In'
+            : GetStorage().read('selected_order_type_id') == 1
+            ? 'Delivery'
+            : GetStorage().read('selected_order_type_id') == 2
+            ? 'Pick Up'
+            : ''),
+        width: 7,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
+    ]);
+    if (!isBill && paymentMethod?.toLowerCase() != 'compliment') {
       printer.row([
-        PosColumn(text: "${item.quantity}x ${item.product.name}", width: 9),
-        PosColumn(text: (item.priceAtOrder * item.quantity).toStringAsFixed(2), width: 3, styles: const PosStyles(align: PosAlign.right)),
+        PosColumn(text: "Pay type:", width: 5),
+        PosColumn(
+          text: paymentMethod ?? "Cash",
+          width: 7,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
       ]);
     }
+    printer.row([
+      PosColumn(text: "Date:", width: 5),
+      PosColumn(
+        text: DateFormat('dd/MM/yyyy').format(order.createdAt),
+        width: 7,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
+    ]);
+    printer.row([
+      PosColumn(text: "Time:", width: 5),
+      PosColumn(
+        text: DateFormat('HH:mm:ss').format(order.createdAt),
+        width: 7,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
+    ]);
+    if (GetStorage().read('selected_order_type_id') == 0) {
+      printer.row([
+        PosColumn(text: "Table:", width: 5),
+        PosColumn(
+          text: order.tableName,
+          width: 7,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
+
     printer.hr();
+
+    // Column headers
     printer.row([
-      PosColumn(text: "TOTAL", width: 6, styles: const PosStyles(bold: true)),
-      PosColumn(text: order.totalAmount.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
-    ]);
-    printer.row([
-      PosColumn(text: "Received", width: 6),
-      PosColumn(text: received.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
-    ]);
-    printer.row([
-      PosColumn(text: "Change", width: 6),
-      PosColumn(text: change.toStringAsFixed(2), width: 6, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: "Qty", width: 1, styles: const PosStyles(bold: true)),
+      PosColumn(text: "Item", width: 4, styles: const PosStyles(bold: true)),
+      PosColumn(
+        text: "Rate",
+        width: 2,
+        styles: const PosStyles(align: PosAlign.right, bold: true),
+      ),
+      if (AppState.cmpTaxType == 1) ...[
+        PosColumn(
+          text: "Vat",
+          width: 2,
+          styles: const PosStyles(align: PosAlign.right, bold: true),
+        ),
+      ] else ...[
+        PosColumn(
+          text: "Gst Total",
+          width: 2,
+          styles: const PosStyles(align: PosAlign.right, bold: true),
+        ),
+      ],
+      PosColumn(
+        text: "Amount",
+        width: 3,
+        styles: const PosStyles(align: PosAlign.right, bold: true),
+      ),
     ]);
     printer.hr();
+
+    double calculatedSubTotal = 0;
+    double calculatedTax = 0;
+
+    final dashboardController = Get.find<DashboardController>();
+    final int vatType = dashboardController.vatType.value;
+
+    for (var item in order.items.where((i) => !i.isRemoved)) {
+      // ✅ Match BT: use item.product.price, not item.priceAtOrder
+      double price = item.product.price;
+      double taxPer = item.product.taxPer;
+      double qty = item.quantity.toDouble();
+      print("Price: ${item.priceAtOrder}");
+      double vatAmount;
+      double lineTotal;
+      double lineSubTotal;
+
+      if (vatType == 1) {
+        // Tax-inclusive
+        lineTotal = price * qty;
+        vatAmount = 0.0;
+        lineSubTotal = lineTotal;
+      } else {
+        // Tax-exclusive
+        lineSubTotal = price * qty;
+        vatAmount = (lineSubTotal * taxPer) / 100;
+        lineTotal = lineSubTotal + vatAmount;
+      }
+
+      calculatedSubTotal += lineSubTotal;
+      calculatedTax += vatAmount;
+
+      printer.row([
+        PosColumn(text: item.quantity.toString(), width: 1),
+        PosColumn(text: item.product.name, width: 4),
+        PosColumn(
+          text: price.toStringAsFixed(2),
+          width: 2,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+        PosColumn(
+          text: vatAmount.toStringAsFixed(2),
+          width: 2,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+        PosColumn(
+          text: lineTotal.toStringAsFixed(2),
+          width: 3,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+
+      for (var addon in item.selectedAddons) {
+        double addonTotal = addon.price * addon.quantity.value;
+        calculatedSubTotal += addonTotal;
+        printer.row([
+          PosColumn(text: "", width: 1),
+          PosColumn(text: " + ${addon.name}", width: 4),
+          PosColumn(
+            text: addon.price.toStringAsFixed(2),
+            width: 2,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+          PosColumn(
+            text: "0.00",
+            width: 2,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+          PosColumn(
+            text: addonTotal.toStringAsFixed(2),
+            width: 3,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
+    }
+
+    final double finalSubTotal = (order.subTotal > 0)
+        ? order.subTotal
+        : calculatedSubTotal;
+    final double finalVat = (vatType == 1)
+        ? 0.0
+        : ((order.totalTax > 0) ? order.totalTax : calculatedTax);
+
+    printer.hr();
+
+    printer.row([
+      PosColumn(text: "Sub Total", width: 6),
+      PosColumn(
+        text: finalSubTotal.toStringAsFixed(2),
+        width: 6,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
+    ]);
+    if (AppState.cmpTaxType == 1) {
+      printer.row([
+        PosColumn(text: "VAT", width: 6),
+        PosColumn(
+          text: finalVat.toStringAsFixed(2),
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    } else {
+      final double finalCgst = order.totalCgst > 0
+          ? order.totalCgst
+          : (finalVat / 2);
+      final double finalSgst = order.totalSgst > 0
+          ? order.totalSgst
+          : (finalVat / 2);
+
+      (vatType == 1)
+          ? SizedBox.shrink()
+          : printer.row([
+              PosColumn(text: "CGST", width: 6),
+              PosColumn(
+                text: finalCgst.toStringAsFixed(2),
+                width: 6,
+                styles: const PosStyles(align: PosAlign.right),
+              ),
+            ]);
+      (vatType == 1)
+          ? SizedBox.shrink()
+          : printer.row([
+              PosColumn(text: "SGST", width: 6),
+              PosColumn(
+                text: finalSgst.toStringAsFixed(2),
+                width: 6,
+                styles: const PosStyles(align: PosAlign.right),
+              ),
+            ]);
+    }
+
+    if (discount > 0) {
+      printer.row([
+        PosColumn(text: "Discount", width: 6),
+        PosColumn(
+          text: "-${discount.toStringAsFixed(2)}",
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
+
+    if (roundOff != 0) {
+      printer.row([
+        PosColumn(text: "Round Off", width: 6),
+        PosColumn(
+          text: roundOff.toStringAsFixed(2),
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
+
+    // ✅ Match BT: full netTotal logic
+    bool isCompliment = paymentMethod?.toLowerCase() == 'compliment';
+    bool isOnlineOrPaid =
+        !order.isUnsynced || order.status.value == OrderStatus.paid;
+
+    double netTotal;
+    if (isCompliment) {
+      netTotal = 0.0;
+    } else {
+      if (vatType == 0) {
+        // Tax-exclusive: build total from parts
+        netTotal = (finalSubTotal + finalVat - discount + roundOff).clamp(
+          0,
+          double.infinity,
+          );
+      } else {
+        // Tax-inclusive: order.totalAmount already has discount baked in for online/paid
+        if (isOnlineOrPaid) {
+          netTotal = (order.totalAmount + roundOff).clamp(0, double.infinity);
+        } else {
+          netTotal = (order.totalAmount - discount + roundOff).clamp(
+            0,
+            double.infinity,
+          );
+        }
+      }
+    }
+
+    printer.row([
+      PosColumn(
+        text: "NET TOTAL",
+        width: 6,
+        styles: const PosStyles(bold: true),
+      ),
+      PosColumn(
+        text: netTotal.toStringAsFixed(2),
+        width: 6,
+        styles: const PosStyles(align: PosAlign.right, bold: true),
+      ),
+    ]);
+
+    // ✅ Match BT: Received/Change removed (commented out to match BT behaviour)
+    // if (!isBill) {
+    //   printer.row([...Received...]);
+    //   printer.row([...Change...]);
+    // }
+
+    printer.hr();
+
+    if (!isCompliment &&
+        AppState.isUpiEnabled &&
+        AppState.upiId.isNotEmpty &&
+        AppState.cmpTaxType != 1) {
+      final String upiLink =
+          "upi://pay"
+          "?pa=${AppState.upiId}"
+          "&pn=${Uri.encodeComponent(AppState.branchDisName)}"
+          "&am=${netTotal.toStringAsFixed(2)}"
+          "&cu=INR"
+          "&tn=${Uri.encodeComponent(order.branchInv.toString())}";
+
+      printer.qrcode(
+        upiLink,
+        align: PosAlign.center,
+        size: QRSize.size6,
+        cor: QRCorrection.L,
+      );
+      printer.feed(1);
+    }
+
     printer.text("Thank You!", styles: const PosStyles(align: PosAlign.center));
     printer.feed(3);
     printer.cut();
   }
 
-  // --- KOT PRINTING LOGIC ---
   Future<void> printKOT(OrderModel order, {List<OrderItem>? oldItems}) async {
     debugPrint("--- START KOT PRINTING ---");
 
@@ -632,7 +2021,7 @@ class PrinterController extends GetxController {
 
       final newMap = {
         for (var item in order.items)
-          if (!item.isRemoved) itemKey(item): item
+          if (!item.isRemoved) itemKey(item): item,
       };
 
       final oldMap = {for (var item in oldItems) itemKey(item): item};
@@ -646,33 +2035,43 @@ class PrinterController extends GetxController {
         if (oldItem == null && newItem != null && !newItem.isRemoved) {
           // ✅ Completely new item
           itemsToPrint.add(newItem);
-          debugPrint("🆕 NEW ITEM: ${newItem.product.name} x${newItem.quantity}");
-
+          debugPrint(
+            "🆕 NEW ITEM: ${newItem.product.name} x${newItem.quantity}",
+          );
         } else if (newItem == null && oldItem != null) {
           // ✅ Item removed entirely
-          itemsToPrint.add(OrderItem(
-            subId: oldItem.subId,
-            product: oldItem.product,
-            quantity: oldItem.quantity,
-            priceAtOrder: oldItem.priceAtOrder,
-            unit: oldItem.unit,
-            unitId: oldItem.unitId,
-            tokenPrinterId: oldItem.tokenPrinterId,
-            selectedAddons: oldItem.selectedAddons,
-            isRemoved: true,
-          ));
-          debugPrint("❌ REMOVED ITEM: ${oldItem.product.name} x${oldItem.quantity}");
-
+          itemsToPrint.add(
+            OrderItem(
+              subId: oldItem.subId,
+              product: oldItem.product,
+              quantity: oldItem.quantity,
+              priceAtOrder: oldItem.priceAtOrder,
+              unit: oldItem.unit,
+              unitId: oldItem.unitId,
+              tokenPrinterId: oldItem.tokenPrinterId,
+              selectedAddons: oldItem.selectedAddons,
+              isRemoved: true,
+              notes: oldItem.notes,
+            ),
+          );
+          debugPrint(
+            "❌ REMOVED ITEM: ${oldItem.product.name} x${oldItem.quantity}",
+          );
         } else if (oldItem != null && newItem != null) {
           // ✅ Item exists in both - check for changes
 
           final int qtyDifference = newItem.quantity - oldItem.quantity;
           final bool qtyIncreased = qtyDifference > 0;
           final bool qtyDecreased = qtyDifference < 0;
+          final bool notesChanged = newItem.notes != oldItem.notes;
 
           // Check addon changes
-          final oldAddonMap = {for (var a in oldItem.selectedAddons) a.prdId: a};
-          final newAddonMap = {for (var a in newItem.selectedAddons) a.prdId: a};
+          final oldAddonMap = {
+            for (var a in oldItem.selectedAddons) a.prdId: a,
+          };
+          final newAddonMap = {
+            for (var a in newItem.selectedAddons) a.prdId: a,
+          };
           Set<int> allAddonIds = {...oldAddonMap.keys, ...newAddonMap.keys};
           bool addonsChanged = false;
           List<AddonModel> addedAddons = [];
@@ -686,66 +2085,83 @@ class PrinterController extends GetxController {
             if (oldAddon == null && newAddon != null) {
               addonsChanged = true;
               addedAddons.add(newAddon);
-              debugPrint("➕ ADDED ADDON: ${newAddon.name} x${newAddon.quantity.value}");
+              debugPrint(
+                "➕ ADDED ADDON: ${newAddon.name} x${newAddon.quantity.value}",
+              );
             } else if (newAddon == null && oldAddon != null) {
               addonsChanged = true;
               removedAddons.add(oldAddon);
               debugPrint("➖ REMOVED ADDON: ${oldAddon.name}");
-            } else if (oldAddon != null && newAddon != null &&
+            } else if (oldAddon != null &&
+                newAddon != null &&
                 oldAddon.quantity.value != newAddon.quantity.value) {
               addonsChanged = true;
               modifiedAddons.add(newAddon);
-              debugPrint("🔄 MODIFIED ADDON: ${newAddon.name} ${oldAddon.quantity.value} → ${newAddon.quantity.value}");
+              debugPrint(
+                "🔄 MODIFIED ADDON: ${newAddon.name} ${oldAddon.quantity.value} → ${newAddon.quantity.value}",
+              );
             }
           }
 
           // ✅ Handle quantity changes - print as a single change item
           if (qtyIncreased) {
             // Print Increased quantity
-            itemsToPrint.add(OrderItem(
-              subId: newItem.subId,
-              product: newItem.product,
-              quantity: qtyDifference,  // Only the increased amount
-              priceAtOrder: newItem.priceAtOrder,
-              unit: newItem.unit,
-              unitId: newItem.unitId,
-              tokenPrinterId: newItem.tokenPrinterId,
-              selectedAddons: newItem.selectedAddons,
-              isRemoved: false,
-            ));
-            debugPrint("⬆️ INCREASED QTY: ${newItem.product.name} +$qtyDifference (${oldItem.quantity} → ${newItem.quantity})");
-
+            itemsToPrint.add(
+              OrderItem(
+                subId: newItem.subId,
+                product: newItem.product,
+                quantity: qtyDifference, // Only the increased amount
+                priceAtOrder: newItem.priceAtOrder,
+                unit: newItem.unit,
+                unitId: newItem.unitId,
+                tokenPrinterId: newItem.tokenPrinterId,
+                selectedAddons: newItem.selectedAddons,
+                isRemoved: false,
+                notes: newItem.notes,
+              ),
+            );
+            debugPrint(
+              "⬆️ INCREASED QTY: ${newItem.product.name} +$qtyDifference (${oldItem.quantity} → ${newItem.quantity})",
+            );
           } else if (qtyDecreased) {
             // Print Decreased quantity (as removed)
-            itemsToPrint.add(OrderItem(
-              subId: oldItem.subId,
-              product: oldItem.product,
-              quantity: -qtyDifference,  // Positive number of units removed
-              priceAtOrder: oldItem.priceAtOrder,
-              unit: oldItem.unit,
-              unitId: oldItem.unitId,
-              tokenPrinterId: oldItem.tokenPrinterId,
-              selectedAddons: oldItem.selectedAddons,
-              isRemoved: true,
-            ));
-            debugPrint("⬇️ DECREASED QTY: ${oldItem.product.name} -${-qtyDifference} (${oldItem.quantity} → ${newItem.quantity})");
+            itemsToPrint.add(
+              OrderItem(
+                subId: oldItem.subId,
+                product: oldItem.product,
+                quantity: -qtyDifference, // Positive number of units removed
+                priceAtOrder: oldItem.priceAtOrder,
+                unit: oldItem.unit,
+                unitId: oldItem.unitId,
+                tokenPrinterId: oldItem.tokenPrinterId,
+                selectedAddons: oldItem.selectedAddons,
+                isRemoved: true,
+                notes: oldItem.notes,
+              ),
+            );
+            debugPrint(
+              "⬇️ DECREASED QTY: ${oldItem.product.name} -${-qtyDifference} (${oldItem.quantity} → ${newItem.quantity})",
+            );
           }
 
-          // ✅ Handle addon changes separately (if no quantity change)
-          if (!qtyIncreased && !qtyDecreased && addonsChanged) {
-            // Print modified item with addon changes
-            itemsToPrint.add(OrderItem(
-              subId: newItem.subId,
-              product: newItem.product,
-              quantity: newItem.quantity,
-              priceAtOrder: newItem.priceAtOrder,
-              unit: newItem.unit,
-              unitId: newItem.unitId,
-              tokenPrinterId: newItem.tokenPrinterId,
-              selectedAddons: newItem.selectedAddons,
-              isRemoved: false,
-            ));
-            debugPrint("🔄 ADDON CHANGES ONLY: ${newItem.product.name}");
+          // ✅ Handle addon or notes changes separately (if no quantity change)
+          if (!qtyIncreased && !qtyDecreased && (addonsChanged || notesChanged)) {
+            // Print modified item with addon changes or notes changes
+            itemsToPrint.add(
+              OrderItem(
+                subId: newItem.subId,
+                product: newItem.product,
+                quantity: newItem.quantity,
+                priceAtOrder: newItem.priceAtOrder,
+                unit: newItem.unit,
+                unitId: newItem.unitId,
+                tokenPrinterId: newItem.tokenPrinterId,
+                selectedAddons: newItem.selectedAddons,
+                isRemoved: false,
+                notes: newItem.notes,
+              ),
+            );
+            debugPrint("🔄 ADDON OR NOTES CHANGES ONLY: ${newItem.product.name}");
           }
         }
       }
@@ -766,52 +2182,87 @@ class PrinterController extends GetxController {
 
   Future<void> printCancelledOrder(OrderModel order) async {
     debugPrint("--- PRINTING CANCELLED ORDER ---");
-    final cancelledItems = order.items.map((item) => OrderItem(
-      product: item.product,
-      unit: item.unit,
-      quantity: item.quantity,
-      priceAtOrder: item.priceAtOrder,
-      selectedAddons: item.selectedAddons,
-      tokenPrinterId: item.tokenPrinterId,
-      isRemoved: true,
-    )).toList();
+    final cancelledItems = order.items
+        .map(
+          (item) => OrderItem(
+            product: item.product,
+            unit: item.unit,
+            quantity: item.quantity,
+            priceAtOrder: item.priceAtOrder,
+            selectedAddons: item.selectedAddons,
+            tokenPrinterId: item.tokenPrinterId,
+            isRemoved: true,
+            notes: item.notes,
+          ),
+        )
+        .toList();
 
     await _distributeToPrinters(order, cancelledItems, status: "CANCELLED");
   }
 
   int? _resolveTokenPrinterId(OrderItem item) {
-    // 1. Direct from item
+    log(
+      "🖨️ RESOLVE DEBUG START: product=${item.product.name} "
+      "prdId=${item.product.id} categoryId=${item.product.categoryId} "
+      "item.tokenPrinterId=${item.tokenPrinterId} "
+      "item.product.tokenPrinterId=${item.product.tokenPrinterId}",
+    );
+
     if (item.tokenPrinterId != null && item.tokenPrinterId! > 0) {
+      log("🖨️ RESOLVE DEBUG → step1 matched: ${item.tokenPrinterId}");
       return item.tokenPrinterId;
     }
 
-    // 2. From product model
-    if (item.product.tokenPrinterId != null && item.product.tokenPrinterId! > 0) {
+    if (item.product.tokenPrinterId != null &&
+        item.product.tokenPrinterId! > 0) {
+      log("🖨️ RESOLVE DEBUG → step2 matched: ${item.product.tokenPrinterId}");
       return item.product.tokenPrinterId;
     }
 
-    if (!Get.isRegistered<DashboardController>()) return null;
+    if (!Get.isRegistered<DashboardController>()) {
+      log(
+        "🖨️ RESOLVE DEBUG → DashboardController not registered, returning null",
+      );
+      return null;
+    }
     final dash = Get.find<DashboardController>();
 
-    // 3. Exact category ID match
     final cat = dash.allCategoriesForPrinters.firstWhereOrNull(
-          (c) => c.id.toString() == item.product.categoryId.toString(),
+      (c) => c.id.toString() == item.product.categoryId.toString(),
+    );
+    log(
+      "🖨️ RESOLVE DEBUG → step3 category lookup: "
+      "categoryFound=${cat != null} catId=${cat?.id} catTokenPrinterId=${cat?.tokenPrinterId} "
+      "allCategoriesForPrintersCount=${dash.allCategoriesForPrinters.length}",
     );
     if (cat != null && cat.tokenPrinterId != 0) return cat.tokenPrinterId;
 
-    // 4. Fallback: any assignment that has a printer set
-    //    (last resort — use first assigned printer)
-    final firstAssigned = tokenPrinterAssignments
-        .firstWhereOrNull((a) => a.printerAddress.value.isNotEmpty);
+    final firstAssigned = tokenPrinterAssignments.firstWhereOrNull(
+      (a) => a.printerAddress.value.isNotEmpty,
+    );
+    log(
+      "🖨️ RESOLVE DEBUG → step4 fallback assignment: "
+      "found=${firstAssigned != null} tokenPrinterId=${firstAssigned?.tokenPrinterId} "
+      "totalAssignments=${tokenPrinterAssignments.length}",
+    );
     return firstAssigned?.tokenPrinterId;
   }
-  Future<void> _distributeToPrinters(OrderModel order, List<OrderItem> items, {required String status}) async {
-    debugPrint("📍 DISTRIBUTING TO PRINTERS - Status: $status, Items: ${items.length}");
 
+  Future<void> _distributeToPrinters(
+    OrderModel order,
+    List<OrderItem> items, {
+    required String status,
+  }) async {
+    debugPrint(
+      "📍 DISTRIBUTING TO PRINTERS - Status: $status, Items: ${items.length}",
+    );
+    final invoiceLabel = await _resolveInvoiceLabel(order);
     Map<String, List<OrderItem>> printerGroups = {};
 
     for (var item in items) {
-      debugPrint("  📦 Processing item: ${item.product.name}, qty: ${item.quantity}, isRemoved: ${item.isRemoved}");
+      debugPrint(
+        "  📦 Processing item: ${item.product.name}, qty: ${item.quantity}, isRemoved: ${item.isRemoved}",
+      );
 
       int? tokenId = _resolveTokenPrinterId(item);
       debugPrint("  📌 Resolved Token ID: $tokenId");
@@ -820,8 +2271,9 @@ class PrinterController extends GetxController {
         debugPrint("  ⚠️ No token printer ID for item: ${item.product.name}");
         continue;
       }
-
-      final assignment = tokenPrinterAssignments.firstWhereOrNull((a) => a.tokenPrinterId == tokenId);
+      final assignment = tokenPrinterAssignments.firstWhereOrNull(
+        (a) => a.tokenPrinterId == tokenId,
+      );
       final address = assignment?.printerAddress.value ?? "";
       debugPrint("  🖨️ Token $tokenId → Printer address: $address");
 
@@ -850,10 +2302,14 @@ class PrinterController extends GetxController {
       debugPrint("🖨️ Printing to $address (${groupItems.length} items)");
 
       final allPrinters = [...bluetoothPrinters, ...wifiPrinters];
-      var printerInfo = allPrinters.firstWhereOrNull((p) => p.address == address);
+      var printerInfo = allPrinters.firstWhereOrNull(
+        (p) => p.address == address,
+      );
 
       if (printerInfo == null) {
-        final assignment = tokenPrinterAssignments.firstWhereOrNull((a) => a.printerAddress.value == address);
+        final assignment = tokenPrinterAssignments.firstWhereOrNull(
+          (a) => a.printerAddress.value == address,
+        );
         if (assignment != null) {
           printerInfo = PrinterModel(
             name: assignment.printerName.value,
@@ -873,10 +2329,24 @@ class PrinterController extends GetxController {
 
       if (printerInfo.type == 'wifi') {
         debugPrint("  📡 Sending to WiFi printer...");
-        await _printWifiKOT(address, order, groupItems, profile, status: status);
+        await _printWifiKOT(
+          address,
+          order,
+          groupItems,
+          profile,
+          status: status,
+          invoiceLabel: invoiceLabel,
+        );
       } else {
         debugPrint("  📡 Sending to Bluetooth printer...");
-        await _printBluetoothKOT(printerInfo, order, groupItems, profile, status: status);
+        await _printBluetoothKOT(
+          printerInfo,
+          order,
+          groupItems,
+          profile,
+          status: status,
+          invoiceLabel: invoiceLabel,
+        );
       }
     }
   }
@@ -891,18 +2361,25 @@ class PrinterController extends GetxController {
   }
 
   Future<void> _printWifiKOT(
-      String ip,
-      OrderModel order,
-      List<OrderItem> items,
-      CapabilityProfile profile, {
-        required String status,
-      }) async {
+    String ip,
+    OrderModel order,
+    List<OrderItem> items,
+    CapabilityProfile profile, {
+    required String status,
+    required String invoiceLabel,
+  }) async {
     try {
       final printer = NetworkPrinter(PaperSize.mm80, profile);
       final res = await printer.connect(ip, port: 9100);
 
       if (res == PosPrintResult.success) {
-        _generateKOTTicket(printer, order, items, status: status);
+        _generateKOTTicket(
+          printer,
+          order,
+          items,
+          status: status,
+          invoiceLabel: invoiceLabel,
+        );
 
         await Future.delayed(const Duration(milliseconds: 300));
 
@@ -913,14 +2390,25 @@ class PrinterController extends GetxController {
     }
   }
 
-  Future<void> _printBluetoothKOT(PrinterModel printer, OrderModel order, List<OrderItem> items, CapabilityProfile profile, {required String status}) async {
+  Future<void> _printBluetoothKOT(
+    PrinterModel printer,
+    OrderModel order,
+    List<OrderItem> items,
+    CapabilityProfile profile, {
+    required String status,
+    required String invoiceLabel,
+  }) async {
     try {
       debugPrint("🔵 _printBluetoothKOT called for ${printer.name}");
 
       bool connected = await PrintBluetoothThermal.connectionStatus;
       if (!connected) {
-        debugPrint("🔵 Not connected, attempting to connect to ${printer.address}");
-        bool res = await PrintBluetoothThermal.connect(macPrinterAddress: printer.address);
+        debugPrint(
+          "🔵 Not connected, attempting to connect to ${printer.address}",
+        );
+        bool res = await PrintBluetoothThermal.connect(
+          macPrinterAddress: printer.address,
+        );
         if (!res) {
           debugPrint("❌ Failed to connect to Bluetooth printer");
           return;
@@ -934,69 +2422,146 @@ class PrinterController extends GetxController {
       final removedItems = items.where((i) => i.isRemoved).toList();
       final newItems = items.where((i) => !i.isRemoved).toList();
 
-      debugPrint("🔵 Removed items: ${removedItems.length}, New items: ${newItems.length}");
+      debugPrint(
+        "🔵 Removed items: ${removedItems.length}, New items: ${newItems.length}",
+      );
 
       // Always print header
       bytes += generator.setGlobalFont(PosFontType.fontA);
       bytes += generator.text(
-        "Token No : ${order.invNo}",
+        "Token No : $invoiceLabel", // was ${order.invNo}
         styles: const PosStyles(
           align: PosAlign.center,
-          bold: true,
           height: PosTextSize.size2,
-          width: PosTextSize.size2,
+          fontType: PosFontType.fontA,
+          bold: false,
         ),
       );
       bytes += generator.text(
-        "SIMPLIFIED TAX INVOICE",
-        styles: const PosStyles(align: PosAlign.center, bold: true),
+        "KITCHEN ORDER",
+        styles: const PosStyles(align: PosAlign.center),
       );
       bytes += generator.text('-' * 48);
 
       // Order info
       bytes += generator.row([
         PosColumn(text: "Order No:", width: 6),
-        PosColumn(text: order.invNo, width: 6, styles: const PosStyles(align: PosAlign.right)),
-      ]);
-      bytes += generator.row([
-        PosColumn(text: "Table:", width: 6),
         PosColumn(
-          text: "${order.tableName} (${order.chairNumber} Seats)",
+          text: invoiceLabel, // was order.invNo
           width: 6,
           styles: const PosStyles(align: PosAlign.right),
         ),
       ]);
 
+      bytes += generator.row([
+        PosColumn(text: "Order type:", width: 6),
+        PosColumn(
+          // text: OrderType.values
+          //     .firstWhere(
+          //       (e) => e.id == order.sales_odr_order_type,
+          //       orElse: () => OrderType.dineIn,
+          //     )
+          //     .displayName,
+          text: (GetStorage().read('selected_order_type_id') == 0
+              ? 'Dine In'
+              : GetStorage().read('selected_order_type_id') == 1
+              ? 'Delivery'
+              : GetStorage().read('selected_order_type_id') == 2
+              ? 'Pick Up'
+              : ''),
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+      if (order.captainName != null && order.captainName!.isNotEmpty) {
+        bytes += generator.row([
+          PosColumn(text: "Captain:", width: 6),
+          PosColumn(
+            text: order.captainName!,
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
+
+      if (GetStorage().read('selected_order_type_id') == 0) {
+        bytes += generator.row([
+          PosColumn(text: "Table:", width: 6),
+          PosColumn(
+            text: "${order.tableName} (${order.chairNumber} Seats)",
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
+
       // ─── CANCELLED / REMOVED SECTION ───
       if (removedItems.isNotEmpty) {
         debugPrint("🔵 Printing ${removedItems.length} removed items");
         bytes += generator.text('=' * 48, styles: const PosStyles(bold: true));
-        
-        String sectionTitle = status == "CANCELLED" ? "ORDER CANCELLED" : "QUANTITY DECREASED / REMOVED";
-        
+
+        String sectionTitle = status == "CANCELLED"
+            ? "ORDER CANCELLED"
+            : "QUANTITY DECREASED / REMOVED";
+
         bytes += generator.text(
           sectionTitle,
-          styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2),
+          styles: const PosStyles(
+            align: PosAlign.center,
+            bold: true,
+            height: PosTextSize.size2,
+          ),
         );
         bytes += generator.text('=' * 48, styles: const PosStyles(bold: true));
         bytes += generator.row([
-          PosColumn(text: "Item", width: 8, styles: const PosStyles(bold: true)),
-          PosColumn(text: status == "CANCELLED" ? "Qty" : "Qty Removed", width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
+          PosColumn(
+            text: "Item",
+            width: 8,
+            styles: const PosStyles(bold: true),
+          ),
+          PosColumn(
+            text: status == "CANCELLED" ? "Qty" : "Qty Removed",
+            width: 4,
+            styles: const PosStyles(align: PosAlign.right, bold: true),
+          ),
         ]);
         bytes += generator.text('-' * 48);
 
         for (var item in removedItems) {
-          debugPrint("🔵 Printing removed: ${item.product.name} x${item.quantity}");
+          debugPrint(
+            "🔵 Printing removed: ${item.product.name} x${item.quantity}",
+          );
           bytes += generator.row([
-            PosColumn(text: status == "CANCELLED" ? item.product.name : "${item.product.name}", width: 8, styles: const PosStyles(bold: true)),
-            PosColumn(text: "${item.quantity} ${item.unit.unitDisplay}", width: 4,
-                styles: const PosStyles(align: PosAlign.right, bold: true)),
+            PosColumn(
+              text: status == "CANCELLED"
+                  ? item.product.name
+                  : "${item.product.name}",
+              width: 8,
+              styles: const PosStyles(bold: true),
+            ),
+            PosColumn(
+              text: "${item.quantity} ${item.unit.unitDisplay}",
+              width: 4,
+              styles: const PosStyles(align: PosAlign.right, bold: true),
+            ),
           ]);
+
+          // PRINT NOTES
+          if (item.notes.isNotEmpty) {
+            bytes += generator.text(
+              "   NOTE: ${item.notes}",
+              styles: const PosStyles( bold: true),
+            );
+          }
+
           for (var addon in item.selectedAddons) {
             bytes += generator.row([
               PosColumn(text: "  - ${addon.name}", width: 8),
-              PosColumn(text: "${addon.quantity.value} ${addon.unitDisplay}", width: 4,
-                  styles: const PosStyles(align: PosAlign.right)),
+              PosColumn(
+                text: "${addon.quantity.value} ${addon.unitDisplay}",
+                width: 4,
+                styles: const PosStyles(align: PosAlign.right),
+              ),
             ]);
           }
         }
@@ -1006,56 +2571,91 @@ class PrinterController extends GetxController {
       if (newItems.isNotEmpty) {
         debugPrint("🔵 Printing ${newItems.length} new/updated items");
         bytes += generator.text('=' * 48, styles: const PosStyles(bold: true));
-        
-        String sectionTitle = status == "Modified" ? "QUANTITY INCREASED / NEW" : "ORDER ITEMS";
-        
+
+        String sectionTitle = status == "Modified"
+            ? "QUANTITY INCREASED / NEW"
+            : "ORDER ITEMS";
+
         bytes += generator.text(
           sectionTitle,
-          styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2),
+          styles: const PosStyles(
+            align: PosAlign.center,
+            // bold: true,
+            height: PosTextSize.size2,
+          ),
         );
         bytes += generator.text('=' * 48, styles: const PosStyles(bold: true));
         bytes += generator.row([
-          PosColumn(text: "Item", width: 8, styles: const PosStyles(bold: true)),
-          PosColumn(text: status == "Modified" ? "Qty Added" : "Qty", width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
+          PosColumn(
+            text: "Item",
+            width: 8,
+            // styles: const PosStyles(bold: true),
+          ),
+          PosColumn(
+            text: status == "Modified" ? "Qty Added" : "Qty",
+            width: 4,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
         ]);
         bytes += generator.text('-' * 48);
 
         for (var item in newItems) {
           debugPrint("🔵 Printing new: ${item.product.name} x${item.quantity}");
           bytes += generator.row([
-            PosColumn(text: "${item.product.name}", width: 8, styles: const PosStyles(bold: true)),
-            PosColumn(text: "${item.quantity} ${item.unit.unitDisplay}", width: 4,
-                styles: const PosStyles(align: PosAlign.right, bold: true)),
+            PosColumn(
+              text: "${item.product.name}",
+              width: 8,
+              // styles: const PosStyles(bold: true),
+            ),
+            PosColumn(
+              text: "${item.quantity} ${item.unit.unitDisplay}",
+              width: 4,
+              styles: const PosStyles(align: PosAlign.right),
+            ),
           ]);
+
+          // PRINT NOTES
+          if (item.notes.isNotEmpty) {
+            bytes += generator.text(
+              "   NOTE: ${item.notes}",
+              // styles: const PosStyles(bold: true),
+            );
+          }
+
           for (var addon in item.selectedAddons) {
             bytes += generator.row([
               PosColumn(text: "  + ${addon.name}", width: 8),
-              PosColumn(text: "${addon.quantity.value} ${addon.unitDisplay}", width: 4,
-                  styles: const PosStyles(align: PosAlign.right)),
+              PosColumn(
+                text: "${addon.quantity.value} ${addon.unitDisplay}",
+                width: 4,
+                styles: const PosStyles(align: PosAlign.right),
+              ),
             ]);
           }
         }
       }
 
-      // Footer
       bytes += generator.text('=' * 48, styles: const PosStyles(bold: true));
-      bytes += generator.text(
-        "*** Kitchen Copy ***",
-        styles: const PosStyles(align: PosAlign.center),
-      );
+      bytes += generator.text("*** Kitchen Copy ***", styles: const PosStyles(align: PosAlign.center));
       bytes += generator.feed(2);
       bytes += generator.cut();
 
       debugPrint("🔵 Writing ${bytes.length} bytes to printer");
       await PrintBluetoothThermal.writeBytes(bytes);
       debugPrint("✅ KOT printed successfully to Bluetooth printer");
-
     } catch (e) {
       debugPrint("❌ Bluetooth Print Error: $e");
       // debugPrint("Stack trace: ${StackTrace.current}");
     }
   }
-  void _logKOTData(OrderModel order, List<OrderItem> items, String status, String printerType, String address) {
+
+  void _logKOTData(
+    OrderModel order,
+    List<OrderItem> items,
+    String status,
+    String printerType,
+    String address,
+  ) {
     final buffer = StringBuffer();
 
     buffer.writeln("🖨️ ===== KOT PRINT START =====");
@@ -1064,8 +2664,17 @@ class PrinterController extends GetxController {
     buffer.writeln("Status       : $status");
 
     buffer.writeln("Token No     : ${order.invNo}");
-    buffer.writeln("Table        : ${order.tableName} (${order.chairNumber} Seats)");
-    buffer.writeln("Date         : ${DateFormat('dd/MM/yyyy HH:mm:ss').format(order.createdAt)}");
+    buffer.writeln(
+      "Order Type   : ${OrderType.values.firstWhere((e) => e.id == order.sales_odr_order_type, orElse: () => OrderType.dineIn).displayName}",
+    );
+    if (GetStorage().read('selected_order_type_id') == 0) {
+      buffer.writeln(
+        "Table        : ${order.tableName} (${order.chairNumber} Seats)",
+      );
+    }
+    buffer.writeln(
+      "Date         : ${DateFormat('dd/MM/yyyy HH:mm:ss').format(order.createdAt)}",
+    );
 
     buffer.writeln("------------------------------------------");
 
@@ -1076,10 +2685,18 @@ class PrinterController extends GetxController {
         itemName = "[REMOVED] $itemName";
       }
 
-      buffer.writeln("${itemName}  -> ${item.quantity} ${item.unit.unitDisplay}");
+      buffer.writeln(
+        "${itemName}  -> ${item.quantity} ${item.unit.unitDisplay}",
+      );
+
+      if (item.notes.isNotEmpty) {
+        buffer.writeln("   NOTE: ${item.notes}");
+      }
 
       for (var addon in item.selectedAddons) {
-        buffer.writeln("   + ${addon.name} -> ${addon.quantity.value} ${addon.unitDisplay}");
+        buffer.writeln(
+          "   + ${addon.name} -> ${addon.quantity.value} ${addon.unitDisplay}",
+        );
       }
     }
 
@@ -1089,75 +2706,181 @@ class PrinterController extends GetxController {
     debugPrint(buffer.toString());
   }
 
-  void _generateKOTTicket(NetworkPrinter printer, OrderModel order, List<OrderItem> items, {required String status}) {
+  void _generateKOTTicket(
+    NetworkPrinter printer,
+    OrderModel order,
+    List<OrderItem> items, {
+    required String status,
+    required String invoiceLabel,
+  }) {
     final removedItems = items.where((i) => i.isRemoved).toList();
     final newItems = items.where((i) => !i.isRemoved).toList();
 
-    printer.text("Token No : ${order.invNo}",
-        styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
-    printer.text("SIMPLIFIED TAX INVOICE",
-        styles: const PosStyles(align: PosAlign.center, bold: true));
+    printer.text(
+      "Token No : $invoiceLabel",
+      styles: const PosStyles(
+        align: PosAlign.center,
+        bold: true,
+        height: PosTextSize.size2,
+      ),
+    );
+    printer.text(
+      "KITCHEN ORDER",
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
     printer.hr();
 
     // Status badge with change type
     if (status == "Modified") {
-      printer.text("*** ORDER MODIFIED ***",
-          styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
+      printer.text(
+        "*** ORDER MODIFIED ***",
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
+          height: PosTextSize.size2,
+        ),
+      );
     } else if (status == "CANCELLED") {
-      printer.text("*** ORDER CANCELLED ***",
-          styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
+      printer.text(
+        "*** ORDER CANCELLED ***",
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
+          height: PosTextSize.size2,
+        ),
+      );
     } else {
-      printer.text("*** NEW ORDER ***",
-          styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
+      printer.text(
+        "*** NEW ORDER ***",
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
+          height: PosTextSize.size2,
+        ),
+      );
     }
 
     printer.row([
       PosColumn(text: "Order No:", width: 6),
-      PosColumn(text: order.invNo, width: 6, styles: const PosStyles(align: PosAlign.right)),
-    ]);
-
-    printer.row([
-      PosColumn(text: "Table:", width: 6),
       PosColumn(
-        text: "${order.tableName} (${order.chairNumber} Seats)",
+        text: invoiceLabel,
         width: 6,
         styles: const PosStyles(align: PosAlign.right),
       ),
     ]);
 
     printer.row([
+      PosColumn(text: "Order type:", width: 6),
+      PosColumn(
+        // text: OrderType.values
+        //     .firstWhere(
+        //       (e) => e.id == order.sales_odr_order_type,
+        //       orElse: () => OrderType.dineIn,
+        //     )
+        //     .displayName,
+        text: (GetStorage().read('selected_order_type_id') == 0
+            ? 'Dine In'
+            : GetStorage().read('selected_order_type_id') == 1
+            ? 'Delivery'
+            : GetStorage().read('selected_order_type_id') == 2
+            ? 'Pick Up'
+            : ''),
+        width: 6,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
+    ]);
+
+    if (order.captainName != null && order.captainName!.isNotEmpty) {
+      printer.row([
+        PosColumn(text: "Captain:", width: 6),
+        PosColumn(
+          text: order.captainName!,
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
+
+    if (GetStorage().read('selected_order_type_id') == 0) {
+      printer.row([
+        PosColumn(text: "Table:", width: 6),
+        PosColumn(
+          text: "${order.tableName} (${order.chairNumber} Seats)",
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
+
+    printer.row([
       PosColumn(text: "Date:", width: 6),
-      PosColumn(text: DateFormat('dd/MM/yyyy').format(order.createdAt), width: 6, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(
+        text: DateFormat('dd/MM/yyyy').format(order.createdAt),
+        width: 6,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
     ]);
     printer.row([
       PosColumn(text: "Time:", width: 6),
-      PosColumn(text: DateFormat('HH:mm:ss').format(order.createdAt), width: 6, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(
+        text: DateFormat('HH:mm:ss').format(order.createdAt),
+        width: 6,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
     ]);
 
     // ─── QUANTITY DECREASES / REMOVED SECTION ───
     if (removedItems.isNotEmpty) {
       printer.hr();
-      String sectionTitle = status == "CANCELLED" ? "CANCELLED ITEMS" : "QUANTITY DECREASED / REMOVED";
-      printer.text(sectionTitle,
-          styles: const PosStyles(align: PosAlign.center, bold: true));
+      String sectionTitle = status == "CANCELLED"
+          ? "CANCELLED ITEMS"
+          : "QUANTITY DECREASED / REMOVED";
+      printer.text(
+        sectionTitle,
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
       printer.hr();
       printer.row([
         PosColumn(text: "Item", width: 8, styles: const PosStyles(bold: true)),
-        PosColumn(text: status == "CANCELLED" ? "Qty" : "Qty Removed", width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
+        PosColumn(
+          text: status == "CANCELLED" ? "Qty" : "Qty Removed",
+          width: 4,
+          styles: const PosStyles(align: PosAlign.right, bold: true),
+        ),
       ]);
       printer.text('-' * 42);
 
       for (var item in removedItems) {
         printer.row([
-          PosColumn(text: status == "CANCELLED" ? item.product.name : "${item.product.name}", width: 8, styles: const PosStyles(bold: true)),
-          PosColumn(text: "${item.quantity} ${item.unit.unitDisplay}", width: 4,
-              styles: const PosStyles(align: PosAlign.right, bold: true)),
+          PosColumn(
+            text: status == "CANCELLED"
+                ? item.product.name
+                : "${item.product.name}",
+            width: 8,
+            styles: const PosStyles(bold: true),
+          ),
+          PosColumn(
+            text: "${item.quantity} ${item.unit.unitDisplay}",
+            width: 4,
+            styles: const PosStyles(align: PosAlign.right, bold: true),
+          ),
         ]);
+
+        if (item.notes.isNotEmpty) {
+          printer.text(
+            "   NOTE: ${item.notes}",
+            styles: const PosStyles(bold: true),
+          );
+        }
+
         for (var addon in item.selectedAddons) {
           printer.row([
             PosColumn(text: "  - ${addon.name}", width: 8),
-            PosColumn(text: "${addon.quantity.value} ${addon.unitDisplay}", width: 4,
-                styles: const PosStyles(align: PosAlign.right)),
+            PosColumn(
+              text: "${addon.quantity.value} ${addon.unitDisplay}",
+              width: 4,
+              styles: const PosStyles(align: PosAlign.right),
+            ),
           ]);
         }
       }
@@ -1166,13 +2889,21 @@ class PrinterController extends GetxController {
     // ─── QUANTITY INCREASES / NEW SECTION ───
     if (newItems.isNotEmpty) {
       printer.hr();
-      String sectionTitle = status == "Modified" ? "QUANTITY INCREASED / NEW" : "ORDER ITEMS";
-      printer.text(sectionTitle,
-          styles: const PosStyles(align: PosAlign.center, bold: true));
+      String sectionTitle = status == "Modified"
+          ? "QUANTITY INCREASED / NEW"
+          : "ORDER ITEMS";
+      printer.text(
+        sectionTitle,
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
       printer.hr();
       printer.row([
-        PosColumn(text: "Item", width: 8, styles: const PosStyles(bold: true)),
-        PosColumn(text: status == "Modified" ? "Qty Added" : "Qty", width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
+        PosColumn(text: "Item", width: 8),
+        PosColumn(
+          text: status == "Modified" ? "Qty Added" : "Qty",
+          width: 4,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
       ]);
       printer.text('-' * 42);
 
@@ -1180,22 +2911,43 @@ class PrinterController extends GetxController {
         // Show if this is a partial increase
         String qtyDisplay = item.quantity.toString();
         printer.row([
-          PosColumn(text: "${item.product.name}", width: 8, styles: const PosStyles(bold: true)),
-          PosColumn(text: "$qtyDisplay ${item.unit.unitDisplay}", width: 4,
-              styles: const PosStyles(align: PosAlign.right, bold: true)),
+          PosColumn(
+            text: "${item.product.name}",
+            width: 8,
+            // styles: const PosStyles(bold: true),
+          ),
+          PosColumn(
+            text: "$qtyDisplay ${item.unit.unitDisplay}",
+            width: 4,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
         ]);
+
+        if (item.notes.isNotEmpty) {
+          printer.text(
+            "   NOTE: ${item.notes}",
+            styles: const PosStyles(bold: true),
+          );
+        }
+
         for (var addon in item.selectedAddons) {
           printer.row([
             PosColumn(text: "  + ${addon.name}", width: 8),
-            PosColumn(text: "${addon.quantity.value} ${addon.unitDisplay}", width: 4,
-                styles: const PosStyles(align: PosAlign.right)),
+            PosColumn(
+              text: "${addon.quantity.value} ${addon.unitDisplay}",
+              width: 4,
+              styles: const PosStyles(align: PosAlign.right),
+            ),
           ]);
         }
       }
     }
 
     printer.hr();
-    printer.text("*** Kitchen Copy ***", styles: const PosStyles(align: PosAlign.center));
+    printer.text(
+      "*** Kitchen Copy ***",
+      styles: const PosStyles(align: PosAlign.center),
+    );
     printer.feed(3);
     printer.cut();
   }

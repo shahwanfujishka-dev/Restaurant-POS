@@ -33,7 +33,74 @@ class MainContent extends GetView<DashboardController> {
           ScreenType.isMobile()
               ? _buildMobileLayout(context)
               : _buildTabletLayout(context),
-          // 🔹 Loading Overlay
+          
+          Obx(() => controller.showLocalError.value
+              ? Positioned(
+                  bottom: AppTypography.sizeText,
+                  left: AppTypography.sizeText,
+                  right: AppTypography.sizeText,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: TweenAnimationBuilder<double>(
+                      duration: const Duration(milliseconds: 300),
+                      tween: Tween(begin: 0.0, end: 1.0),
+                      builder: (context, value, child) {
+                        return Opacity(
+                          opacity: value,
+                          child: Transform.translate(
+                            offset: Offset(0, 20 * (1 - value)),
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 6.h),
+                        decoration: BoxDecoration(
+                          color: colors.isDark ? Colors.red.shade900 : Colors.red.shade700,
+                          borderRadius: BorderRadius.circular(12.r),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.3),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            )
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded, color: Colors.white, size: AppTypography.sizeText),
+                            SizedBox(width: 6.w),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    controller.localErrorTitle.value,
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize:AppTypography.sizeText),
+                                  ),
+                                  Text(
+                                    controller.localErrorMessage.value,
+                                    style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: AppTypography.sizeText),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.close, color: Colors.white, size: AppTypography.sizeText),
+                              onPressed: () => controller.showLocalError.value = false,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            )
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
+          ),
+
           Obx(() => controller.isLoadingDetails.value
               ? Container(
             color: Colors.black.withOpacity(0.3),

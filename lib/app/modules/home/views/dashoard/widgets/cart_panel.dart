@@ -3,6 +3,7 @@ import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
 import 'package:get/get_state_manager/src/simple/get_view.dart';
 import '../../../../../theme/app_theme.dart';
 import '../../../../cart/controller/cart_controller.dart';
+import '../../../../cart/views/widgets/captain_dropDown.dart';
 import 'cart/cart_header.dart';
 import 'cart/cart_items_list.dart';
 import 'cart/cart_summary.dart';
@@ -13,12 +14,14 @@ class CartPanel extends GetView<CartController> {
 
   @override
   Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => controller.loadCaptains());
     final colors = AppColors.of(context);
     return Scaffold(
       backgroundColor: colors.bg,
       body: Column(
         children: [
           CartHeader(controller: controller),
+          CaptainDropdown(controller: controller),
           Expanded(
             child: Obx(() {
               if (controller.cartItems.isEmpty) {

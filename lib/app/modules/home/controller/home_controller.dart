@@ -8,6 +8,7 @@ import 'package:get/get_state_manager/src/simple/get_controllers.dart';
 import 'package:get/get_utils/src/extensions/internacionalization.dart';
 import 'package:restaurant_pos/app/modules/home/controller/table_controller.dart';
 import 'package:restaurant_pos/app/modules/home/views/settings/settings_view.dart';
+import '../../../data/Device_Roles/device_roles.dart';
 import '../../../data/utils/AppState.dart';
 import '../../../theme/app_theme.dart';
 import '../views/dashoard/dashboard_page.dart';
@@ -48,7 +49,8 @@ class HomeController extends GetxController {
 
     // Refresh orders whenever the Orders page (index 2) is selected
     if (index == 2) {
-      if (Get.isRegistered<OrdersController>()) {
+      if (Get.isRegistered<OrdersController>() &&
+          DeviceConfig.operationMode != OperationMode.local) {
         Get.find<OrdersController>().fetchOrders();
       }
     }

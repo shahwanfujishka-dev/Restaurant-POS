@@ -25,11 +25,17 @@ class OrderTypeController extends GetxController {
     isLoading.value = false;
   }
 
-  Future<void> selectOrderType(OrderType type) async {
+  Future<void> selectOrderType(OrderType type, {bool navigate = true}) async {
     if (isLoading.value) return;
 
     selectedType.value = type;
     AppState.orderType = type; 
+
+    if (!navigate) {
+       _handleHomeNavigation(type);
+       return;
+    }
+
     isLoading.value = true;
 
     // ✅ Crucial: Small delay to allow the UI to render the shimmer

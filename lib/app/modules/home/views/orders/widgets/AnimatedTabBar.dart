@@ -70,7 +70,7 @@ class _AnimatedTabBarState extends State<AnimatedTabBar> {
                 child: AnimatedContainer(
                   padding: EdgeInsets.symmetric(horizontal: 10.w),
                   height: AppTypography.foodIcon,
-                  duration: const Duration(milliseconds: 150),
+                  duration: const Duration(milliseconds: 50),
                   curve: Curves.easeInOut,
                   decoration: BoxDecoration(
                     color: isActive ? tabColor : Colors.transparent,

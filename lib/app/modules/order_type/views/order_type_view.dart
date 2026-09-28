@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart' hide ScreenType;
+import 'package:get_storage/get_storage.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../../../../helper/screen_type.dart';
@@ -185,7 +186,11 @@ class OrderTypeView extends GetView<OrderTypeController> {
   }) {
     final colors = AppColors.of(context);
     return InkWell(
-      onTap: () => controller.selectOrderType(type),
+      onTap: () { controller.selectOrderType(type);
+        print(controller.selectedType.value!.name);
+        print(controller.selectedType.value!.id);
+        print(GetStorage().read('selected_order_type_id'));
+        },
       borderRadius: BorderRadius.circular(20.r),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),

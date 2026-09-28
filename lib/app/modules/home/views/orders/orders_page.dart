@@ -7,14 +7,14 @@ import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
 import 'package:get/get_state_manager/src/simple/get_view.dart';
 import 'package:get/get_utils/src/extensions/internacionalization.dart';
 import 'package:intl/intl.dart';
+import 'package:restaurant_pos/app/data/utils/AppState.dart';
 import 'package:restaurant_pos/app/modules/home/views/orders/widgets/AnimatedTabBar.dart';
-
+import '../../../../../helper/KeepAliveWrapper.dart';
 import '../../../../../helper/screen_type.dart';
 import '../../../../data/models/order_model.dart';
-import '../../../../routes/app_pages.dart';
+import '../../../../data/services/database_helper.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/app_typography.dart';
-import '../../../cart/controller/cart_controller.dart';
 import '../../controller/dashboard_controller.dart';
 import '../../controller/order_controller.dart';
 import '../../controller/printer_controller.dart';
@@ -40,41 +40,35 @@ class OrdersPage extends GetView<OrdersController> {
               preferredSize: Size.fromHeight(60.h),
               child: Container(
                 color: colors.card,
-                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 10.h),
+                padding: EdgeInsets.symmetric(horizontal: ScreenType.isMobile() ? 10.w : 55.w, vertical: 10.h),
                 child: AnimatedTabBar(
                   tabController: tabController,
                 ),
               ),
             ),
-            body: Obx(() {
-              if (controller.isLoading.value) {
-                return const Center(child: FoodItemShimmer());
-              }
-              return TabBarView(
-                controller: tabController,
-                children: [
-                  _buildOrderList(
-                    context,
-                    controller.dineInOrders,
-                    dashboardController,
-                  ),
-                  _buildOrderList(
-                    context,
-                    controller.deliveryOrders,
-                    dashboardController,
-                  ),
-                  _buildOrderList(
-                    context,
-                    controller.pickupOrders,
-                    dashboardController,
-                  ),
-                  _buildPaidOrderList(
-                    context,
-                    dashboardController,
-                  ),
-                ],
-              );
-            }),
+            body: TabBarView(
+              controller: tabController,
+              children: [
+                KeepAliveWrapper(
+                  child: Obx(() => controller.isLoading.value && controller.orders.isEmpty
+                      ? const Center(child: FoodItemShimmer())
+                      : _buildOrderList(context, controller.dineInOrders, dashboardController)),
+                ),
+                KeepAliveWrapper(
+                  child: Obx(() => controller.isLoading.value && controller.orders.isEmpty
+                      ? const Center(child: FoodItemShimmer())
+                      : _buildOrderList(context, controller.deliveryOrders, dashboardController)),
+                ),
+                KeepAliveWrapper(
+                  child: Obx(() => controller.isLoading.value && controller.orders.isEmpty
+                      ? const Center(child: FoodItemShimmer())
+                      : _buildOrderList(context, controller.pickupOrders, dashboardController)),
+                ),
+                KeepAliveWrapper(
+                  child: _buildPaidOrderList(context, dashboardController),
+                ),
+              ],
+            ),
           );
         },
       ),
@@ -90,14 +84,14 @@ class OrdersPage extends GetView<OrdersController> {
       children: [
         // Date Selector Header
         Container(
-          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 2.h),
           color: colors.card,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(
                 children: [
-                  Icon(Icons.calendar_today, size: 18.sp, color: colors.subtext),
+                  Icon(Icons.calendar_today, size: AppTypography.sizeText, color: colors.subtext),
                   SizedBox(width: 8.w),
                   Obx(() => Text(
                         DateFormat('EEEE, MMM d, yyyy')
@@ -119,12 +113,25 @@ class OrdersPage extends GetView<OrdersController> {
                     builder: (context, child) {
                       return Theme(
                         data: Theme.of(context).copyWith(
-                          colorScheme: ColorScheme.light(
-                            primary: AppTheme.primaryGreen,
-                            onPrimary: Colors.white,
-                            onSurface: colors.text,
-                          ),
+                          colorScheme: colors.isDark 
+                            ? ColorScheme.dark(
+                                primary: AppTheme.primaryGreen,
+                                onPrimary: Colors.white,
+                                surface: colors.card,
+                                onSurface: colors.text,
+                              )
+                            : ColorScheme.light(
+                                primary: AppTheme.primaryGreen,
+                                onPrimary: Colors.white,
+                                surface: colors.card,
+                                onSurface: colors.text,
+                              ),
                           dialogBackgroundColor: colors.card,
+                          textButtonTheme: TextButtonThemeData(
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppTheme.primaryGreen,
+                            ),
+                          ),
                         ),
                         child: child!,
                       );
@@ -134,7 +141,7 @@ class OrdersPage extends GetView<OrdersController> {
                     controller.changeSoldDate(picked);
                   }
                 },
-                icon: Icon(Icons.edit_calendar, size: 18.sp),
+                icon: Icon(Icons.edit_calendar, size:AppTypography.sizeText),
                 label: Text('change_date'.tr),
                 style: TextButton.styleFrom(
                   foregroundColor: AppTheme.primaryGreen,
@@ -163,7 +170,7 @@ class OrdersPage extends GetView<OrdersController> {
 
     if (orders.isEmpty) {
       return RefreshIndicator(
-        onRefresh: controller.fetchOrders,
+        onRefresh: controller.fetchOrdersSafely,
         child: Stack(
           children: [
             ListView(
@@ -205,7 +212,7 @@ class OrdersPage extends GetView<OrdersController> {
 
     if (ScreenType.isMobile()) {
       return RefreshIndicator(
-        onRefresh: controller.fetchOrders,
+        onRefresh: controller.fetchOrdersSafely,
         child: ListView.builder(
           padding: EdgeInsets.all(12.w),
           physics: const AlwaysScrollableScrollPhysics(),
@@ -233,7 +240,7 @@ class OrdersPage extends GetView<OrdersController> {
     }
 
     return RefreshIndicator(
-      onRefresh: controller.fetchOrders,
+      onRefresh: controller.fetchOrdersSafely,
       child: GridView.builder(
         padding: EdgeInsets.all(8.w),
         physics: const AlwaysScrollableScrollPhysics(),
@@ -248,6 +255,7 @@ class OrdersPage extends GetView<OrdersController> {
           final order = orders[index];
           return _OrderTicket(
             order: order,
+            key: ValueKey(order.id),
             index: index,
             onEdit: () => controller.editOrder(order),
             onDelete: () => controller.cancelOrder(order),
@@ -269,7 +277,7 @@ void _showOrderDetailsDialog(
 ) {
   final controller = Get.find<OrdersController>();
   final colors = AppColors.of(context);
-  final displayColor = (order.status.value == OrderStatus.paid || order.status.value == OrderStatus.draft)
+  final displayColor = (order.status.value == OrderStatus.draft || order.status.value == OrderStatus.billed)
       ? _getStatusColor(order.status.value)
       : _getOrderTypeColor(order.sales_odr_order_type);
 
@@ -283,6 +291,18 @@ void _showOrderDetailsDialog(
         ) ?? controller.soldOrders.firstWhereOrNull(
           (o) => o.id == order.id,
         ) ?? order;
+
+        final String displayIdentifier = currentOrder.status.value == OrderStatus.paid
+            ? _getOrderTypeName(currentOrder.sales_odr_order_type)
+            : currentOrder.tableName;
+        final isVatDisabled = dashboardController.vatType.value == 1;
+
+        // Calculate subtotal from items to ensure accuracy
+        double calculatedSubtotal = 0;
+        for (var item in currentOrder.items) {
+          calculatedSubtotal += item.priceAtOrder * item.quantity;
+        }
+        final totAmt = currentOrder.finalTotal;
 
         return Container(
           width: 0.4.sw,
@@ -303,31 +323,75 @@ void _showOrderDetailsDialog(
                           color: colors.text,
                         ),
                       ),
-                      Text(
-                        'Inv: #${currentOrder.invNo} • ${currentOrder.tableName} ${currentOrder.chairNumber > 0 ? "• ${currentOrder.chairNumber} chairs" : ""}',
-                        style: AppTypography.cardSubtitle.copyWith(
-                          color: colors.subtext,
+                      // RichText(
+                      //   text: TextSpan(
+                      //     style: AppTypography.cardSubtitle.copyWith(
+                      //       color: colors.subtext,
+                      //     ),
+                      //     children: [
+                      //       TextSpan(text: 'Inv: #${_formatInvNo(currentOrder)} • '),
+                      //       TextSpan(
+                      //         text: displayIdentifier,
+                      //         style: TextStyle(
+                      //           color: displayColor,
+                      //           fontWeight: FontWeight.bold,
+                      //         ),
+                      //       ),
+                      //       if (currentOrder.chairNumber > 0)
+                      //         TextSpan(text: " • ${currentOrder.chairNumber} chairs"),
+                      //     ],
+                      //   ),
+                      // ),
+                      RichText(
+                        text: TextSpan(
+                          style: AppTypography.cardSubtitle.copyWith(
+                            color: colors.subtext,
+                          ),
+                          children: [
+                            TextSpan(text: 'Inv: #${currentOrder.branchInv} • '),   // ← changed from order.branchInv
+                            TextSpan(
+                              text: displayIdentifier,
+                              style: TextStyle(
+                                color: displayColor,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                   Row(
                     children: [
-                      (currentOrder.sales_odr_pos_status == 1 || currentOrder.status.value == OrderStatus.paid)
-                          ? IconButton(
-                              onPressed: () {
-                                final printerController =
-                                    Get.find<PrinterController>();
-                                if (currentOrder.status.value == OrderStatus.paid) {
-                                  printerController.printReceipt(currentOrder, currentOrder.totalAmount, 0);
-                                } else {
-                                  printerController.printKOT(currentOrder);
-                                }
-                              },
-                              icon: const Icon(Icons.print, color: Colors.blue),
-                              tooltip: 'print_order'.tr,
-                            )
-                          : const SizedBox.shrink(),
+                      if (currentOrder.sales_odr_pos_status == 1 || currentOrder.sales_odr_pos_status == 2 || currentOrder.status.value == OrderStatus.paid)
+                        IconButton(
+                          onPressed: () {
+                            final printerController =
+                                Get.find<PrinterController>();
+                            if (currentOrder.status.value == OrderStatus.paid) {
+                              printerController.printReceipt(
+                                currentOrder,
+                                currentOrder.totalAmount,
+                                0, // change
+                                roundOff: currentOrder.roundOff,    // ← add this
+                                discount: currentOrder.discount,    // ← add this
+                              );
+                            } else {
+                              printerController.printKOT(currentOrder);
+                            }
+                          },
+                          icon: const Icon(Icons.print, color: Colors.blue),
+                          tooltip: 'print_kot'.tr,
+                        ),
+                      if ((currentOrder.sales_odr_pos_status == 1 || currentOrder.sales_odr_pos_status == 2) && currentOrder.status.value != OrderStatus.paid)
+                        IconButton(
+                          onPressed: () {
+                            final printerController = Get.find<PrinterController>();
+                            printerController.printReceipt(currentOrder, 0, 0, isBill: true);
+                          },
+                          icon: const Icon(Icons.receipt_long, color: Colors.orange),
+                          tooltip: 'Print Bill',
+                        ),
                       if (currentOrder.status.value != OrderStatus.paid)
                       IconButton(
                         onPressed: () {
@@ -438,77 +502,81 @@ void _showOrderDetailsDialog(
                 ),
               SizedBox(height: 10.h),
               Container(
-                padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
+                padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 8.h),
                 decoration: BoxDecoration(
                   color: displayColor.withOpacity(0.05),
                   borderRadius: BorderRadius.circular(12.r),
                 ),
                 child: Column(
                   children: [
-                    if (dashboardController.vatType.value == 0)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'tax'.tr,
-                            style: AppTypography.cardTitle.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: colors.text,
-                            ),
-                          ),
-                          Text(
-                            currentOrder.totalTax.toStringAsFixed(2),
-                            style: AppTypography.cardTitle.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: displayColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'total_amount'.tr,
-                          style: AppTypography.cardTitle.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: colors.text,
-                          ),
-                        ),
-                        Text(
-                          '${currentOrder.totalAmount.toStringAsFixed(2)}',
-                          style: AppTypography.cardTitle.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: displayColor,
-                          ),
-                        ),
-                      ],
-                    ),
+                    _buildDetailRow(context, 'Subtotal', calculatedSubtotal, colors.text, bold: false),
+                    if (currentOrder.discount > 0)
+                      _buildDetailRow(context, 'Discount', -currentOrder.discount, Colors.red, bold: false),
+                    if (currentOrder.totalTax > 0 && AppState.cmpTaxType == 1)...[
+                      _buildDetailRow(context, 'Tax', currentOrder.totalTax, colors.text, bold: false),
+                    ] else ...[
+                      (isVatDisabled) ? const SizedBox.shrink() :
+                      _buildDetailRow(context, 'SGST', (currentOrder.totalTax/2), colors.text, bold: false),
+                      (isVatDisabled) ? const SizedBox.shrink() :
+                      _buildDetailRow(context, 'CGST',( currentOrder.totalTax/2), colors.text, bold: false),
+                    ],
+                    if (currentOrder.roundOff != 0)
+                      _buildDetailRow(context, 'Round Off', currentOrder.roundOff, colors.text, bold: false),
+                    const Divider(),
+                    _buildDetailRow(context, 'Total Amount', totAmt, displayColor, bold: true),
                   ],
                 ),
               ),
-              SizedBox(height: 16.h),
-              if (currentOrder.status.value != OrderStatus.paid &&
-                  currentOrder.status.value != OrderStatus.cancelled &&
-                  currentOrder.status.value != OrderStatus.draft)
-                ElevatedButton(
-                  onPressed: () {
-                    Get.back();
-                    controller.goToCashier(currentOrder);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: displayColor,
-                    minimumSize: Size(double.infinity, 48.h),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12.r),
-                    ),
-                  ),
-                  child: Text("Settle Order", style: AppTypography.button),
-                ),
+              // SizedBox(height: 16.h),
+              // if (currentOrder.status.value != OrderStatus.paid &&
+              //     currentOrder.status.value != OrderStatus.cancelled &&
+              //     currentOrder.status.value != OrderStatus.draft)
+              //   ElevatedButton(
+              //     onPressed: () {
+              //       Get.back();
+              //       controller.goToCashier(currentOrder);
+              //     },
+              //     style: ElevatedButton.styleFrom(
+              //       backgroundColor: displayColor,
+              //       minimumSize: Size(double.infinity, 48.h),
+              //       shape: RoundedRectangleBorder(
+              //         borderRadius: BorderRadius.circular(12.r),
+              //       ),
+              //     ),
+              //     child: Text("Settle Order", style: AppTypography.button),
+              //   ),
             ],
           ),
         );
       }),
+    ),
+  );
+}
+
+Widget _buildDetailRow(BuildContext context, String label, double amount, Color color, {bool bold = false, double? fontSize}) {
+  final colors = AppColors.of(context);
+  return Padding(
+    padding: EdgeInsets.symmetric(vertical: 2.h),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label.tr,
+          style: AppTypography.cardTitle.copyWith(
+            fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+            color: colors.text,
+            fontSize: fontSize,
+          ),
+        ),
+        Text(
+          amount.toStringAsFixed(2),
+          style: AppTypography.cardTitle.copyWith(
+            fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+            color: color,
+            fontSize: fontSize,
+          ),
+        ),
+      ],
     ),
   );
 }
@@ -532,7 +600,7 @@ class _MobileOrderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = Get.find<OrdersController>();
     final colors = AppColors.of(context);
-    final displayColor = (order.status.value == OrderStatus.paid || order.status.value == OrderStatus.draft)
+    final displayColor = (order.status.value == OrderStatus.draft || order.status.value == OrderStatus.billed)
         ? _getStatusColor(order.status.value)
         : _getOrderTypeColor(order.sales_odr_order_type);
 
@@ -586,11 +654,13 @@ class _MobileOrderCard extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              order.tableName,
+                              order.status.value == OrderStatus.paid
+                                  ? _getOrderTypeName(order.sales_odr_order_type)
+                                  : order.tableName,
                               style: AppTypography.cardTitle.copyWith(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16.sp,
-                                color: colors.text,
+                                color: order.status.value == OrderStatus.paid ? displayColor : colors.text,
                               ),
                             ),
                             Row(
@@ -626,7 +696,7 @@ class _MobileOrderCard extends StatelessWidget {
                         ),
                         SizedBox(height: 4.h),
                         Text(
-                          'Inv: #${order.invNo}${order.chairNumber > 0 ? " • Chair ${order.chairNumber}" : ""}',
+                          'Inv: #${order.branchInv}${order.chairNumber > 0 ? " • Chair ${order.chairNumber}" : ""}',
                           style: AppTypography.cardSubtitle.copyWith(
                             color: colors.subtext,
                           ),
@@ -683,7 +753,7 @@ class _MobileOrderCard extends StatelessWidget {
                               ],
                             ),
                             Text(
-                              '${order.totalAmount.toStringAsFixed(2)}',
+                              '${order.finalTotal.toStringAsFixed(2)}',
                               style: AppTypography.cardTitle.copyWith(
                                 color: displayColor,
                                 fontWeight: FontWeight.bold,
@@ -713,6 +783,7 @@ class _OrderTicket extends StatelessWidget {
   final VoidCallback onTap;
 
   const _OrderTicket({
+    super.key,               // ← accept the key passed from itemBuilder
     required this.order,
     required this.index,
     required this.onEdit,
@@ -724,13 +795,13 @@ class _OrderTicket extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = Get.find<OrdersController>();
     final colors = AppColors.of(context);
-    final displayColor = (order.status.value == OrderStatus.paid || order.status.value == OrderStatus.draft)
+    final displayColor = (order.status.value == OrderStatus.draft || order.status.value == OrderStatus.billed)
         ? _getStatusColor(order.status.value)
         : _getOrderTypeColor(order.sales_odr_order_type);
-
+    final totalAmt = order.finalTotal;
     return TweenAnimationBuilder(
       tween: Tween<double>(begin: 0, end: 1),
-      duration: Duration(milliseconds: 300 + (index * 100)),
+      duration: Duration(milliseconds: 300 + (index.clamp(0, 5) * 80)), // ← capped stagger
       builder: (context, double value, child) {
         return Opacity(
           opacity: value,
@@ -763,7 +834,9 @@ class _OrderTicket extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        order.tableName,
+                        order.status.value == OrderStatus.paid
+                            ? _getOrderTypeName(order.sales_odr_order_type)
+                            : order.tableName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.cardSubtitle.copyWith(
@@ -783,11 +856,10 @@ class _OrderTicket extends StatelessWidget {
                             onPressed: onEdit,
                             icon: Icon(
                               Icons.edit_note,
-                              size: 14.sp,
+                              size: AppTypography.sizeCategory,
                               color: displayColor,
                             ),
                           ),
-                        SizedBox(width: 4.w),
                         if (order.status.value != OrderStatus.paid &&
                             order.status.value != OrderStatus.cancelled)
                           IconButton(
@@ -796,7 +868,7 @@ class _OrderTicket extends StatelessWidget {
                             onPressed: onDelete,
                             icon: Icon(
                               Icons.delete_outline,
-                              size: 14.sp,
+                              size: AppTypography.sizeCategory,
                               color: Colors.red,
                             ),
                           ),
@@ -810,12 +882,12 @@ class _OrderTicket extends StatelessWidget {
                   onTap: onTap,
                   child: Container(
                     width: double.infinity,
-                    padding: EdgeInsets.all(8.w),
+                    padding: EdgeInsets.all(2.w),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'Inv: #${order.invNo}',
+                          'Inv: #${order.branchInv}',
                           style: AppTypography.cardSubtitle.copyWith(
                             fontWeight: FontWeight.bold,
                             color: colors.text,
@@ -825,29 +897,27 @@ class _OrderTicket extends StatelessWidget {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            if(order.status.value != OrderStatus.paid)
-                            Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: 4.w,
-                                vertical: 2.h,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(4.r),
-                              ),
-                              child: Obx(
-                                () => Text(
-                                  controller.getElapsedTime(
-                                    order.createdAt,
-                                  ),
-                                  style: TextStyle(
-                                    color: Colors.orange.shade700,
-                                    fontSize: 10.sp,
-                                    fontWeight: FontWeight.bold,
+                            if (order.status.value != OrderStatus.paid)
+                              Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 4.w,
+                                  vertical: 2.h,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(4.r),
+                                ),
+                                child: Obx(
+                                      () => Text(
+                                    controller.getElapsedTime(order.createdAt),
+                                    style: TextStyle(
+                                      color: Colors.orange.shade700,
+                                      fontSize: AppTypography.smallText,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
                           ],
                         ),
                         Text(
@@ -875,9 +945,9 @@ class _OrderTicket extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      '${order.totalAmount.toStringAsFixed(2)}',
+                      totalAmt.toStringAsFixed(2),
                       style: AppTypography.cardSubtitle.copyWith(
-                        color: Colors.white,
+                        color: displayColor == Colors.lightGreen ? Colors.black : Colors.white,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -889,19 +959,19 @@ class _OrderTicket extends StatelessWidget {
                         },
                         child: Container(
                           padding: EdgeInsets.symmetric(
-                            horizontal: 12.w,
-                            vertical: 6.h,
+                            horizontal: 6.w,
+                            vertical: 2.h,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.25),
+                            color: (displayColor == Colors.lightGreen ? Colors.black : Colors.white).withOpacity(0.25),
                             borderRadius: BorderRadius.circular(6.r),
-                            border: Border.all(color: Colors.white54),
+                            border: Border.all(color: (displayColor == Colors.lightGreen ? Colors.black54 : Colors.white54)),
                           ),
                           child: Text(
                             'PAY',
                             style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 10.sp,
+                              color: displayColor == Colors.lightGreen ? Colors.black : Colors.white,
+                              fontSize: AppTypography.sizeText,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 1,
                             ),
@@ -912,7 +982,7 @@ class _OrderTicket extends StatelessWidget {
                       Text(
                         order.status.value.name.toUpperCase(),
                         style: AppTypography.cardSubtitle.copyWith(
-                          color: Colors.white,
+                          color: displayColor == Colors.lightGreen ? Colors.black : Colors.white,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 1,
                         ),
@@ -986,6 +1056,8 @@ Color _getStatusColor(OrderStatus status) {
       return Colors.red;
     case OrderStatus.draft:
       return Colors.grey;
+    case OrderStatus.billed:
+      return Colors.lightGreen;
     default:
       return Colors.yellow;
   }
@@ -1033,10 +1105,10 @@ class _OrderDetailsContent extends StatelessWidget {
     final DashboardController dashboardController =
         Get.find<DashboardController>();
     final colors = AppColors.of(context);
-    final displayColor = (order.status.value == OrderStatus.paid || order.status.value == OrderStatus.draft)
+    final displayColor = (order.status.value == OrderStatus.draft || order.status.value == OrderStatus.billed)
         ? _getStatusColor(order.status.value)
         : _getOrderTypeColor(order.sales_odr_order_type);
-
+    final DatabaseHelper _dbHelper = DatabaseHelper.instance;
     return Container(
       width: isMobile ? double.infinity : 0.4.sw,
       padding: EdgeInsets.all(isMobile ? 24.w : 20.w),
@@ -1048,6 +1120,16 @@ class _OrderDetailsContent extends StatelessWidget {
           (o) => o.id == order.id,
         ) ?? order;
 
+        final String displayIdentifier = currentOrder.status.value == OrderStatus.paid
+            ? _getOrderTypeName(currentOrder.sales_odr_order_type)
+            : currentOrder.tableName;
+        final isVatDisabled = dashboardController.vatType.value == 1;
+        // Calculate subtotal from items to ensure accuracy
+        double calculatedSubtotal = 0;
+        for (var item in currentOrder.items) {
+          calculatedSubtotal += item.priceAtOrder * item.quantity;
+        }
+        final totAmt = currentOrder.finalTotal;
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1075,28 +1157,54 @@ class _OrderDetailsContent extends StatelessWidget {
                         color: colors.text,
                       ),
                     ),
-                    Text(
-                      'Inv: #${currentOrder.invNo} • ${currentOrder.tableName}',
-                      style: AppTypography.cardSubtitle.copyWith(
-                        color: colors.subtext,
+                    RichText(
+                      text: TextSpan(
+                        style: AppTypography.cardSubtitle.copyWith(
+                          color: colors.subtext,
+                        ),
+                        children: [
+                          TextSpan(text: 'Inv: #${order.branchInv} • '),
+                          TextSpan(
+                            text: displayIdentifier,
+                            style: TextStyle(
+                              color: displayColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
                 Row(
                   children: [
-                    if (currentOrder.sales_odr_pos_status == 1 || currentOrder.status.value == OrderStatus.paid)
+                    if (currentOrder.sales_odr_pos_status == 1 || currentOrder.sales_odr_pos_status == 2 || currentOrder.status.value == OrderStatus.paid)
                       IconButton(
                         onPressed: () {
                           final printerController =
                               Get.find<PrinterController>();
                           if (currentOrder.status.value == OrderStatus.paid) {
-                            printerController.printReceipt(currentOrder, currentOrder.totalAmount, 0);
-                          } else {
+                            printerController.printReceipt(
+                              currentOrder,
+                              currentOrder.totalAmount,
+                              0, // change
+                              roundOff: currentOrder.roundOff,    // ← add this
+                              discount: currentOrder.discount,    // ← add this
+                            );                          } else {
                             printerController.printKOT(currentOrder);
                           }
                         },
                         icon: const Icon(Icons.print, color: Colors.blue),
+                        tooltip: 'print_kot'.tr,
+                      ),
+                    if (currentOrder.sales_odr_pos_status == 1 || currentOrder.sales_odr_pos_status == 2 && currentOrder.status.value != OrderStatus.paid)
+                      IconButton(
+                        onPressed: () {
+                          final printerController = Get.find<PrinterController>();
+                          printerController.printReceipt(currentOrder, 0, 0, isBill: true);
+                        },
+                        icon: const Icon(Icons.receipt_long, color: Colors.orange),
+                        tooltip: 'Print Bill',
                       ),
                     if (currentOrder.status.value != OrderStatus.paid &&
                         currentOrder.status.value != OrderStatus.cancelled)
@@ -1215,56 +1323,32 @@ class _OrderDetailsContent extends StatelessWidget {
               ),
             SizedBox(height: 20.h),
             Container(
-              padding: EdgeInsets.all(8.w),
+              padding: EdgeInsets.all(12.w),
               decoration: BoxDecoration(
                 color: displayColor.withOpacity(0.05),
                 borderRadius: BorderRadius.circular(12.r),
               ),
               child: Column(
                 children: [
-                  if (dashboardController.vatType.value == 0)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'tax'.tr,
-                          style: AppTypography.cardTitle.copyWith(
-                            fontWeight: FontWeight.bold,
-                            fontSize: isMobile ? 16.sp : 15.sp,
-                            color: colors.text,
-                          ),
-                        ),
-                        Text(
-                          '${currentOrder.totalTax.toStringAsFixed(2)}',
-                          style: AppTypography.cardTitle.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: displayColor,
-                            fontSize: isMobile ? 18.sp : 16.sp,
-                          ),
-                        ),
-                      ],
+                  _buildDetailRow(context, 'Subtotal', calculatedSubtotal, colors.text, bold: false, fontSize: isMobile ? 14.sp : 10.sp),
+                  if (currentOrder.discount > 0)
+                    _buildDetailRow(context, 'Discount', -currentOrder.discount, Colors.red, bold: false, fontSize: isMobile ? 14.sp : 10.sp),
+                  if (AppState.cmpTaxType == 1)...[
+                  if (dashboardController.vatType.value == 0 || currentOrder.totalTax > 0)
+                    _buildDetailRow(context, 'Tax', currentOrder.totalTax, colors.text, bold: false, fontSize: isMobile ? 14.sp : 10.sp),
+                  ]else ...[
+                    (isVatDisabled)
+                        ? const SizedBox.shrink():
+                    _buildDetailRow(context, 'SGST', (currentOrder.totalTax/2), colors.text, bold: false, fontSize: isMobile ? 14.sp : 10.sp
                     ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'total_amount'.tr,
-                        style: AppTypography.cardTitle.copyWith(
-                          fontWeight: FontWeight.bold,
-                          fontSize: isMobile ? 16.sp : 15.sp,
-                          color: colors.text,
-                        ),
-                      ),
-                      Text(
-                        '${currentOrder.totalAmount.toStringAsFixed(2)}',
-                        style: AppTypography.cardTitle.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: displayColor,
-                          fontSize: isMobile ? 18.sp : 16.sp,
-                        ),
-                      ),
-                    ],
-                  ),
+                    (isVatDisabled)
+                        ? const SizedBox.shrink():
+                    _buildDetailRow(context, 'CGST',( currentOrder.totalTax/2), colors.text, bold: false, fontSize: isMobile ? 14.sp : 10.sp)
+                  ]
+                  ,if (currentOrder.roundOff != 0)
+                    _buildDetailRow(context, 'Round Off', currentOrder.roundOff, colors.text, bold: false, fontSize: isMobile ? 14.sp : 10.sp),
+                  const Divider(),
+                  _buildDetailRow(context, 'Total Amount', totAmt, displayColor, bold: true, fontSize: isMobile ? 18.sp : 12.sp),
                 ],
               ),
             ),
@@ -1272,9 +1356,10 @@ class _OrderDetailsContent extends StatelessWidget {
             if (currentOrder.status.value != OrderStatus.paid &&
                 currentOrder.status.value != OrderStatus.cancelled)
               ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   Get.back();
-                  controller.goToCashier(currentOrder);
+                  await _dbHelper.getCaptains();
+                  controller.goToCashier(order);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: displayColor,
@@ -1291,4 +1376,27 @@ class _OrderDetailsContent extends StatelessWidget {
       }),
     );
   }
+}
+
+String _getOrderTypeName(int type) {
+  switch (type) {
+    case 0:
+      return 'Dine In';
+    case 1:
+      return 'Delivery';
+    case 2:
+      return 'Pickup';
+    default:
+      return 'Other';
+  }
+}
+
+String _formatInvNo(OrderModel order) {
+  if (order.offlineSeq != null) {
+    final String code = AppState.branchDisName.isNotEmpty
+        ? AppState.branchDisName
+        : AppState.branchName;
+    return "M$code${order.offlineSeq.toString().padLeft(4, '0')}";
+  }
+  return order.branchInv.toString();
 }
