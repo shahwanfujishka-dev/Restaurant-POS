@@ -22,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 21, // bumped from 20 → 21 for hub_status_syncing in local server
+      version: 22, // bumped from 21 → 22 for order_inv_issue in local server
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -230,6 +230,11 @@ class DatabaseHelper {
     if (oldVersion < 21) {
       try {
         await db.execute('ALTER TABLE orders ADD COLUMN hub_synced INTEGER DEFAULT 1');
+      } catch (e) {}
+    }
+    if (oldVersion < 22) {
+      try {
+        await db.execute('ALTER TABLE orders ADD COLUMN create_payload TEXT');
       } catch (e) {}
     }
   }
@@ -865,6 +870,25 @@ class DatabaseHelper {
     });
   }
 
+  Future<String> generateLocalSoNumber(String branchCode) async {
+    final db = await instance.database;
+    return await db.transaction((txn) async {
+      final key = 'local_so_seq_$branchCode';
+      final rows = await txn.query('app_settings', where: 'key = ?', whereArgs: [key]);
+      int current = 0;
+      if (rows.isNotEmpty) {
+        current = int.tryParse(rows.first['value'].toString()) ?? 0;
+      }
+      final next = current + 1;
+      await txn.insert(
+        'app_settings',
+        {'key': key, 'value': next.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      return 'M-$branchCode/SO/${next.toString().padLeft(4, '0')}';
+    });
+  }
+
   // --- Master Data ---
   Future<void> insertCategories(List<Map<String, dynamic>> categories) async {
     final db = await instance.database;
@@ -1318,6 +1342,23 @@ class DatabaseHelper {
         await batch.commit(noResult: true);
       });
     }
+  }
+
+  Future<void> replaceAllTokenPrinterAssignments(List<Map<String, dynamic>> assignments) async {
+    final db = await instance.database;
+    await db.transaction((txn) async {
+      await txn.delete('token_printer_assignments');
+      final batch = txn.batch();
+      for (var a in assignments) {
+        batch.insert('token_printer_assignments', {
+          'token_printer_id': _toInt(a['token_printer_id']),
+          'printer_address': a['printer_address']?.toString() ?? '',
+          'printer_name': a['printer_name']?.toString() ?? '',
+          'printer_type': a['printer_type']?.toString() ?? '',
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<Map<String, double>?> getStockUnitRate(int prdId, int unitId, int priceGroupId) async {

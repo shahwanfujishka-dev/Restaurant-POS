@@ -691,6 +691,235 @@ class CartController extends GetxController {
     return currentUnitId;
   }
 
+  Future<bool> _isNeverSynced(String id) async {
+    // Hub device: its own DB is the source of truth
+    if (!isLocalHubClient) {
+      final db = await _dbHelper.database;
+      final rows = await db.query('orders', columns: ['server_id'],
+          where: 'uuid = ? OR server_id = ?', whereArgs: [id, id], limit: 1);
+      if (rows.isEmpty) return true;
+      final sid = rows.first['server_id']?.toString() ?? '';
+      return sid.isEmpty || sid.startsWith('ORD-');
+    }
+
+    // Client device: ask the hub
+    final res = await LocalHubClient.instance.fetchOrderDetails(
+      hostIp: DeviceConfig.hostIp!,
+      port: DeviceConfig.hostPort,
+      orderId: id,
+    );
+    final data = res['data'];
+    if (res['success'] != true || data is! Map) return true; // hub doesn't have it yet
+    final sid = data['server_id']?.toString() ?? '';
+    return sid.isEmpty || sid.startsWith('ORD-');
+  }
+
+  Future<({List<Map<String, dynamic>> saleItems, List<Map<String, dynamic>> localItems, double totalTax, double totalWithTax})> _buildCreateItems(bool isVatDisabled, String orderUuid) async {
+    final List<Map<String, dynamic>> saleItems = [];
+    final List<Map<String, dynamic>> localItems = [];
+    double totalTax = 0;
+    double totalWithTax = 0;
+
+    for (var item in cartItems.where((i) => !i.isDeleted.value)) {
+      final int resolvedUnitId = await _resolveRealUnitId(item.product.id, item.unit.unitId);
+      if (resolvedUnitId != item.unit.unitId) {
+        log("⚠️ Resolved unit_id 0 → $resolvedUnitId for ${item.product.name}");
+        item.unit = item.unit.copyWith(unitId: resolvedUnitId);
+      }
+      double itemRate = item.priceAtAdd.value;
+      double itemTaxPer = isVatDisabled ? 0 : item.product.prd_tax;
+      int itemQty = item.quantity.value;
+      double itemSubtotal = itemRate * itemQty;
+      double itemTaxAmount = isVatDisabled ? 0 : (itemRate * itemTaxPer) / 100;
+      double itemTotalWithTax = isVatDisabled ? itemSubtotal : (itemRate + itemTaxAmount) * itemQty;
+      totalTax += isVatDisabled ? 0 : itemTaxAmount * itemQty;
+      totalWithTax += itemTotalWithTax;
+
+      saleItems.add({
+        "sales_ord_sub_id": "",
+        "prd_name": item.product.name,
+        "salesub_prd_id": int.tryParse(item.product.id),
+        "salesub_rate": itemRate,
+        "salesub_rate_tmp": itemRate,
+        "salesub_price": itemRate,
+        "salesub_tax": itemTaxAmount,
+        "salesub_tax_per": isVatDisabled ? 0 : itemTaxPer,
+        if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": isVatDisabled ? 0 : itemTaxPer / 2,
+        if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": isVatDisabled ? 0 : itemTaxPer / 2,
+        "salesub_qty": itemQty,
+        "count": itemQty,
+        "sale_total_amount": itemTotalWithTax,
+        "salesub_tax_amnt": itemTaxAmount * itemQty,
+        "base_qty": item.unit.unitBaseQty,
+        "item_disc": 0,
+        "salesub_unit_id": item.unit.unitId,
+        "prd_tax_cat_id": item.product.taxCatId,
+        "salesub_gd_id": 0,
+        "salesub_unit_display": item.unit.unitDisplay,
+        "taxvalperqty": itemTaxAmount,
+        "salesub_amnt": itemSubtotal,
+        "is_addon": 0,
+        "addon_parent_prd_id": null,
+        "addon_parent_unit_id": null,
+        "cat_token_printer": item.product.tokenPrinterId,
+        "item_desc": item.note.value,
+      });
+
+      localItems.add({
+        "order_uuid": orderUuid,
+        "product_id": item.product.id,
+        "name": item.product.name,
+        "quantity": itemQty,
+        "price": itemRate,
+        "tax": itemTaxAmount * itemQty,
+        "subtotal": itemTotalWithTax,
+        "is_printed": 0,
+        "notes": item.note.value,
+      });
+
+      final Map<int, AddonModel> allAddons = {};
+      for (var ea in item.unit.existAddOns) {
+        if (ea.prdaddon_flags == 1) {
+          allAddons[ea.prdId] = ea;
+        }
+      }
+      for (var sa in item.selectedAddons) {
+        allAddons[sa.prdId] = sa;
+      }
+
+      for (var addon in allAddons.values) {
+        int totalQty = addon.quantity.value;
+        if (totalQty == 0 &&
+            addon.freeQty > 0 &&
+            !item.selectedAddons.any((sa) => sa.prdId == addon.prdId)) {
+          totalQty = item.quantity.value * addon.freeQty;
+        }
+
+        if (totalQty <= 0) continue;
+        int freeQtyLimit = addon.freeQty * item.quantity.value;
+        int freePart = totalQty < freeQtyLimit ? totalQty : freeQtyLimit;
+        int paidPart = totalQty - freePart;
+        final existSource = item.unit.existAddOns.firstWhereOrNull((ea) => ea.prdId == addon.prdId);
+        final double catalogPrice = existSource?.price ?? addon.price;
+        final bool isUserSelected = item.selectedAddons.any((sa) => sa.prdId == addon.prdId,);
+        double paidRate = addon.price;
+        if (paidPart > 0) {
+          if (addon.price == 0 && addon.freeQty > 0 && freePart < totalQty) {
+            paidRate = catalogPrice;
+          }
+          else if (isUserSelected && addon.price > 0) {
+            paidRate = addon.price;
+          }
+          else if (paidRate == 0 && catalogPrice > 0) {
+            paidRate = catalogPrice;
+          }
+        }
+
+        // Free portion entry (rate 0)
+        if (freePart > 0) {
+          double rate = 0;
+          double taxPer = isVatDisabled ? 0 : addon.taxPer;
+          double taxAmntPerUnit = 0; // rate is 0
+
+          saleItems.add({
+            "sales_ord_sub_id": "",
+            "prd_name": addon.name,
+            "salesub_prd_id": addon.prdId,
+            "salesub_rate": rate,
+            "salesub_rate_tmp": rate,
+            "salesub_price": rate,
+            "salesub_tax": taxAmntPerUnit,
+            "salesub_tax_per": isVatDisabled ? 0 : taxPer,
+            if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": isVatDisabled ? 0 : taxPer / 2,
+            if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": isVatDisabled ? 0 : taxPer / 2,
+            "salesub_qty": freePart,
+            "count": freePart,
+            "sale_total_amount": 0,
+            "salesub_tax_amnt": 0,
+            "base_qty": addon.unitBaseQty,
+            "item_disc": 0,
+            "salesub_unit_id": addon.unitId,
+            "prd_tax_cat_id": addon.taxCatId,
+            "salesub_gd_id": 0,
+            "salesub_unit_display": addon.unitDisplay,
+            "taxvalperqty": 0,
+            "salesub_amnt": 0,
+            "is_addon": 1,
+            "addon_parent_prd_id": int.tryParse(item.product.id),
+            "addon_parent_unit_id": item.unit.unitId,
+            "is_default": 1,
+            "item_desc": "",
+          });
+
+          localItems.add({
+            "order_uuid": orderUuid,
+            "product_id": addon.prdId.toString(),
+            "name": addon.name,
+            "quantity": freePart,
+            "price": 0.0,
+            "tax": 0.0,
+            "subtotal": 0.0,
+            "is_printed": 0,
+            "notes": item.note.value,
+          });
+        }
+
+        if (paidPart > 0) {
+          double rate = addon.price;
+          double taxPer = isVatDisabled ? 0 : addon.taxPer;
+          double taxAmntPerUnit = (rate * taxPer) / 100;
+          double subtotal = rate * paidPart;
+          double totalWithTaxLine = (rate + taxAmntPerUnit) * paidPart;
+
+          saleItems.add({
+            "sales_ord_sub_id": "",
+            "prd_name": addon.name,
+            "salesub_prd_id": addon.prdId,
+            "salesub_rate": rate,
+            "salesub_rate_tmp": rate,
+            "salesub_price": rate,
+            "salesub_tax": taxAmntPerUnit,
+            "salesub_tax_per": isVatDisabled ? 0 : taxPer,
+            if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": isVatDisabled ? 0 : taxPer / 2,
+            if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": isVatDisabled ? 0 : taxPer / 2,
+            "salesub_qty": paidPart,
+            "count": paidPart,
+            "sale_total_amount": totalWithTaxLine,
+            "salesub_tax_amnt": taxAmntPerUnit * paidPart,
+            "base_qty": addon.unitBaseQty,
+            "item_disc": 0,
+            "salesub_unit_id": addon.unitId,
+            "prd_tax_cat_id": addon.taxCatId,
+            "salesub_gd_id": 0,
+            "salesub_unit_display": addon.unitDisplay,
+            "taxvalperqty": taxAmntPerUnit,
+            "salesub_amnt": subtotal,
+            "is_addon": 0,
+            "addon_parent_prd_id": int.tryParse(item.product.id),
+            "addon_parent_unit_id": item.unit.unitId,
+            "item_desc": "",
+          });
+
+          localItems.add({
+            "order_uuid": orderUuid,
+            "product_id": addon.prdId.toString(),
+            "name": addon.name,
+            "quantity": paidPart,
+            "price": rate,
+            "tax": taxAmntPerUnit * paidPart,
+            "subtotal": totalWithTaxLine,
+            "is_printed": 0,
+            "notes": item.note.value,
+          });
+          totalTax += taxAmntPerUnit * paidPart;
+          totalWithTax += totalWithTaxLine;
+        }
+      }
+    }
+
+    return (saleItems: saleItems, localItems: localItems, totalTax: totalTax, totalWithTax: totalWithTax);
+  }
+
   Future<Map<String, dynamic>?> placeOrder({
     bool isDraft = false,
     int? payType,
@@ -722,209 +951,14 @@ class CartController extends GetxController {
       final dateStr = DateFormat('yyyy-MM-dd').format(now);
       final syncTime = "${DateFormat('yyMMddHHmmssSSS').format(now)}000";
       final orderUuid = _generateUuid();
-      List<Map<String, dynamic>> saleItems = [];
-      List<Map<String, dynamic>> localItems = [];
       final DashboardController dashboardController = Get.find<DashboardController>();
       final bool isVatDisabled = dashboardController.vatType.value == 1;
-      double totalTax = 0;
-      double totalWithTax = 0;
 
-      for (var item in cartItems.where((i) => !i.isDeleted.value)) {
-        final int resolvedUnitId = await _resolveRealUnitId(item.product.id, item.unit.unitId);
-        if (resolvedUnitId != item.unit.unitId) {
-          log("⚠️ Resolved unit_id 0 → $resolvedUnitId for ${item.product.name}");
-          item.unit = item.unit.copyWith(unitId: resolvedUnitId);
-        }
-        double itemRate = item.priceAtAdd.value;
-        double itemTaxPer = isVatDisabled ? 0 : item.product.prd_tax;
-        int itemQty = item.quantity.value;
-        double itemSubtotal = itemRate * itemQty;
-        double itemTaxAmount = isVatDisabled ? 0 : (itemRate * itemTaxPer) / 100;
-        double itemTotalWithTax = isVatDisabled ? itemSubtotal : (itemRate + itemTaxAmount) * itemQty;
-        totalTax += isVatDisabled ? 0 : itemTaxAmount * itemQty;
-        totalWithTax += itemTotalWithTax;
-
-        saleItems.add({
-          "sales_ord_sub_id": "",
-          "prd_name": item.product.name,
-          "salesub_prd_id": int.tryParse(item.product.id),
-          "salesub_rate": itemRate,
-          "salesub_rate_tmp": itemRate,
-          "salesub_price": itemRate,
-          "salesub_tax": itemTaxAmount,
-          "salesub_tax_per": isVatDisabled ? 0 : itemTaxPer,
-          if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": isVatDisabled ? 0 : itemTaxPer / 2,
-          if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": isVatDisabled ? 0 : itemTaxPer / 2,
-          "salesub_qty": itemQty,
-          "count": itemQty,
-          "sale_total_amount": itemTotalWithTax,
-          "salesub_tax_amnt": itemTaxAmount * itemQty,
-          "base_qty": item.unit.unitBaseQty,
-          "item_disc": 0,
-          "salesub_unit_id": item.unit.unitId,
-          "prd_tax_cat_id": item.product.taxCatId,
-          "salesub_gd_id": 0,
-          "salesub_unit_display": item.unit.unitDisplay,
-          "taxvalperqty": itemTaxAmount,
-          "salesub_amnt": itemSubtotal,
-          "is_addon": 0,
-          "addon_parent_prd_id": null,
-          "addon_parent_unit_id": null,
-          "cat_token_printer": item.product.tokenPrinterId,
-          "item_desc": item.note.value,
-        });
-
-        localItems.add({
-          "order_uuid": orderUuid,
-          "product_id": item.product.id,
-          "name": item.product.name,
-          "quantity": itemQty,
-          "price": itemRate,
-          "tax": itemTaxAmount * itemQty,
-          "subtotal": itemTotalWithTax,
-          "is_printed": 0,
-          "notes": item.note.value,
-        });
-
-        final Map<int, AddonModel> allAddons = {};
-        for (var ea in item.unit.existAddOns) {
-          if (ea.prdaddon_flags == 1) {
-            allAddons[ea.prdId] = ea;
-          }
-        }
-        for (var sa in item.selectedAddons) {
-          allAddons[sa.prdId] = sa;
-        }
-
-        for (var addon in allAddons.values) {
-          int totalQty = addon.quantity.value;
-          if (totalQty == 0 &&
-              addon.freeQty > 0 &&
-              !item.selectedAddons.any((sa) => sa.prdId == addon.prdId)) {
-            totalQty = item.quantity.value * addon.freeQty;
-          }
-
-          if (totalQty <= 0) continue;
-          int freeQtyLimit = addon.freeQty * item.quantity.value;
-          int freePart = totalQty < freeQtyLimit ? totalQty : freeQtyLimit;
-          int paidPart = totalQty - freePart;
-          final existSource = item.unit.existAddOns.firstWhereOrNull((ea) => ea.prdId == addon.prdId);
-          final double catalogPrice = existSource?.price ?? addon.price;
-          final bool isUserSelected = item.selectedAddons.any((sa) => sa.prdId == addon.prdId,);
-          double paidRate = addon.price;
-          if (paidPart > 0) {
-            if (addon.price == 0 && addon.freeQty > 0 && freePart < totalQty) {
-              paidRate = catalogPrice;
-            }
-            else if (isUserSelected && addon.price > 0) {
-              paidRate = addon.price;
-            }
-            else if (paidRate == 0 && catalogPrice > 0) {
-              paidRate = catalogPrice;
-            }
-          }
-
-          // Free portion entry (rate 0)
-          if (freePart > 0) {
-            double rate = 0;
-            double taxPer = isVatDisabled ? 0 : addon.taxPer;
-            double taxAmntPerUnit = 0; // rate is 0
-
-            saleItems.add({
-              "sales_ord_sub_id": "",
-              "prd_name": addon.name,
-              "salesub_prd_id": addon.prdId,
-              "salesub_rate": rate,
-              "salesub_rate_tmp": rate,
-              "salesub_price": rate,
-              "salesub_tax": taxAmntPerUnit,
-              "salesub_tax_per": isVatDisabled ? 0 : taxPer,
-              if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": isVatDisabled ? 0 : taxPer / 2,
-              if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": isVatDisabled ? 0 : taxPer / 2,
-              "salesub_qty": freePart,
-              "count": freePart,
-              "sale_total_amount": 0,
-              "salesub_tax_amnt": 0,
-              "base_qty": addon.unitBaseQty,
-              "item_disc": 0,
-              "salesub_unit_id": addon.unitId,
-              "prd_tax_cat_id": addon.taxCatId,
-              "salesub_gd_id": 0,
-              "salesub_unit_display": addon.unitDisplay,
-              "taxvalperqty": 0,
-              "salesub_amnt": 0,
-              "is_addon": 1,
-              "addon_parent_prd_id": int.tryParse(item.product.id),
-              "addon_parent_unit_id": item.unit.unitId,
-              "is_default": 1,
-              "item_desc": "",
-            });
-
-            localItems.add({
-              "order_uuid": orderUuid,
-              "product_id": addon.prdId.toString(),
-              "name": addon.name,
-              "quantity": freePart,
-              "price": 0.0,
-              "tax": 0.0,
-              "subtotal": 0.0,
-              "is_printed": 0,
-              "notes": item.note.value,
-            });
-          }
-
-          if (paidPart > 0) {
-            double rate = addon.price;
-            double taxPer = isVatDisabled ? 0 : addon.taxPer;
-            double taxAmntPerUnit = (rate * taxPer) / 100;
-            double subtotal = rate * paidPart;
-            double totalWithTaxLine = (rate + taxAmntPerUnit) * paidPart;
-
-            saleItems.add({
-              "sales_ord_sub_id": "",
-              "prd_name": addon.name,
-              "salesub_prd_id": addon.prdId,
-              "salesub_rate": rate,
-              "salesub_rate_tmp": rate,
-              "salesub_price": rate,
-              "salesub_tax": taxAmntPerUnit,
-              "salesub_tax_per": isVatDisabled ? 0 : taxPer,
-              if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": isVatDisabled ? 0 : taxPer / 2,
-              if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": isVatDisabled ? 0 : taxPer / 2,
-              "salesub_qty": paidPart,
-              "count": paidPart,
-              "sale_total_amount": totalWithTaxLine,
-              "salesub_tax_amnt": taxAmntPerUnit * paidPart,
-              "base_qty": addon.unitBaseQty,
-              "item_disc": 0,
-              "salesub_unit_id": addon.unitId,
-              "prd_tax_cat_id": addon.taxCatId,
-              "salesub_gd_id": 0,
-              "salesub_unit_display": addon.unitDisplay,
-              "taxvalperqty": taxAmntPerUnit,
-              "salesub_amnt": subtotal,
-              "is_addon": 0,
-              "addon_parent_prd_id": int.tryParse(item.product.id),
-              "addon_parent_unit_id": item.unit.unitId,
-              "item_desc": "",
-            });
-
-            localItems.add({
-              "order_uuid": orderUuid,
-              "product_id": addon.prdId.toString(),
-              "name": addon.name,
-              "quantity": paidPart,
-              "price": rate,
-              "tax": taxAmntPerUnit * paidPart,
-              "subtotal": totalWithTaxLine,
-              "is_printed": 0,
-              "notes": item.note.value,
-            });
-            totalTax += taxAmntPerUnit * paidPart;
-            totalWithTax += totalWithTaxLine;
-          }
-        }
-      }
+      final built = await _buildCreateItems(isVatDisabled, orderUuid);
+      final List<Map<String, dynamic>> saleItems = built.saleItems;
+      final List<Map<String, dynamic>> localItems = built.localItems;
+      final double totalTax = built.totalTax;
+      final double totalWithTax = built.totalWithTax;
 
       final double finalTotal = isCompliment ? 0 : (totalWithTax - discountAmount + roundOffAmount).clamp(0, double.infinity);
       final double finalDiscount = isCompliment ? totalWithTax : discountAmount;
@@ -932,6 +966,7 @@ class CartController extends GetxController {
       final body = {
         "usr_id": int.tryParse(AppState.userId) ?? 0,
         "is_mob_restaurant": 1,
+        "is_online": DeviceConfig.operationMode == OperationMode.online ? 1 : 0,
         "cust_type": customerData != null ? "0" : "1",
         "cust_id": customerData,
         "cust_name": customerData?['name'] ?? customerName ?? "Cash Customer",
@@ -993,7 +1028,6 @@ class CartController extends GetxController {
       final deviceRole = DeviceConfig.role;
 
       if (operationMode == OperationMode.local) {
-        final String localBranchInv = await _dbHelper.generateLocalInvoiceNumber(AppState.branchDisName); // ← adjust source
         final hubPayload = {
           ...body,
           "uuid": orderUuid,
@@ -1262,8 +1296,18 @@ class CartController extends GetxController {
       log("║ editingInvNo: ${editingInvNo.value}");
       log("║ totalCartItems: ${cartItems.length}");
       log("╚══════════════════════════════════════════");
+      final bool neverSynced = DeviceConfig.operationMode == OperationMode.local &&
+          await _isNeverSynced(editingOrderId.value);
 
-      for (var item in cartItems) {
+      if (neverSynced) {
+        final built = await _buildCreateItems(isVatDisabled, editingOrderId.value);
+        saleItems = built.saleItems;
+        totalTax = built.totalTax;
+        totalWithTax = built.totalWithTax;
+        hasAnyChange = true; // settle or edit of an unsynced order must always be saved
+        log("║ Order never synced -> rebuilt create-style sale_items (${saleItems.length})");
+      }
+      for (var item in neverSynced ? <CartItem>[] : cartItems) {
         final int resolvedUnitId = await _resolveRealUnitId(item.product.id, item.unit.unitId);
         if (resolvedUnitId != item.unit.unitId) {
           log("⚠️ Resolved unit_id 0 → $resolvedUnitId for ${item.product.name} (updateOrder)");
@@ -1942,13 +1986,11 @@ class CartController extends GetxController {
           "rt_is_default": 0,
           "rt_avl_seat": selectedChairCount.value,
           "rt_status": 1,
-          "processing_table": editingOrderFullData != null
-              ? [editingOrderFullData]
-              : [],
+          "processing_table": (!neverSynced && editingOrderFullData != null) ? [editingOrderFullData] : [],
           "prcgrp_id": selectedPriceGroupId.value,
         },
         "res_status": isDraft ? 0 : isBill ? 2 : (isCompliment || (payType != null && payType != 0)) ? 3 : 1,
-        "sq_inv_no": int.tryParse(editingInvNo.value) ?? 0,
+        "sq_inv_no": neverSynced ? 0 : (int.tryParse(editingInvNo.value) ?? 0),
         "sq_disc": finalDiscount,
         "sale_acc_ledger_id": bankLedgerId ?? cashLedgerId ?? 0,
         "sale_acc_ledger_id_bank": bankLedgerId,
@@ -1959,7 +2001,7 @@ class CartController extends GetxController {
         "table_name": selectedTableName.value,
         "sales_is_rest_pos": 1,
         "is_compliment": isCompliment ? 1 : 0,
-        "is_pos_edit": true,
+        "is_pos_edit": !neverSynced,
         "is_split": isSplit,
         "split_amnt": isSplit
             ? splitAmounts.map((amount) => {"amount": amount}).toList()
@@ -1967,6 +2009,7 @@ class CartController extends GetxController {
         "split_count": isSplit ? splitCount : null,
         "server_sync_time": syncTime,
         "is_mob_restaurant": 1,
+        "is_online": DeviceConfig.operationMode == OperationMode.online ? 1 : 0,
         if (editingBranchInv.value.isNotEmpty) "branch_ref_no": editingBranchInv.value,
       };
       log("Final Body with ${saleItems.length} items");
@@ -1988,6 +2031,30 @@ class CartController extends GetxController {
             .toList();
 
         final hubPayload = {...body, "uuid": editingOrderId.value, "branch_inv": editingBranchInv.value, "items": hubItems};
+        String resolvedBranchInv = editingBranchInv.value;
+
+        try {
+          if (DeviceConfig.role == DeviceRole.server) {
+            final res = await LocalHubOrderService.instance.updateOrder(payload: hubPayload);
+            resolvedBranchInv = res['branch_inv']?.toString() ?? resolvedBranchInv;
+          } else {
+            final hostIp = DeviceConfig.hostIp;
+            if (hostIp == null || hostIp.trim().isEmpty) {
+              showSafeSnackbar("Local Hub Error", "Main Cashier IP is not configured.");
+              return null;
+            }
+            final res = await LocalHubClient.instance.updateOrder(
+              order: hubPayload,
+              hostIp: hostIp,
+              port: DeviceConfig.hostPort,
+            );
+            if (res is Map) resolvedBranchInv = res['branch_inv']?.toString() ?? resolvedBranchInv;
+          }
+        } catch (e) {
+          log("❌ LOCAL updateOrder FAILED: $e");
+          showSafeSnackbar("Error", "Could not update order on the local network.");
+          return null;
+        }
 
         final syntheticResponse = _buildOfflineUpdateResponse(
           body: body,
@@ -2001,28 +2068,8 @@ class CartController extends GetxController {
           isBill: isBill,
           splitCount: splitCount,
           splitAmounts: splitAmounts,
+          branchInv: resolvedBranchInv, // new
         );
-
-        try {
-          if (DeviceConfig.role == DeviceRole.server) {
-            await LocalHubOrderService.instance.updateOrder(payload: hubPayload);
-          } else {
-            final hostIp = DeviceConfig.hostIp;
-            if (hostIp == null || hostIp.trim().isEmpty) {
-              showSafeSnackbar("Local Hub Error", "Main Cashier IP is not configured.");
-              return null;
-            }
-            await LocalHubClient.instance.updateOrder(
-              order: hubPayload,
-              hostIp: hostIp,
-              port: DeviceConfig.hostPort,
-            );
-          }
-        } catch (e) {
-          log("❌ LOCAL updateOrder FAILED: $e");
-          showSafeSnackbar("Error", "Could not update order on the local network.");
-          return null;
-        }
 
         if (Get.isRegistered<OrdersController>()) {
           final ordersController = Get.find<OrdersController>();
@@ -2193,7 +2240,8 @@ class CartController extends GetxController {
     bool isSplit = false,
     bool isBill = false,
     int? splitCount,
-    List<double> splitAmounts = const [],
+    List<double> splitAmounts = const [],String? branchInv,
+
   }) {
     final dateStr = DateFormat('yyyy-MM-dd').format(now);
     final timeStr = DateFormat('HH:mm:ss').format(now);
@@ -2300,7 +2348,7 @@ class CartController extends GetxController {
       "preview": {
         "sales_odr_id": realServerId,
         "sales_odr_inv_no": realInvNo ?? editingInvNo.value,
-        "sales_odr_branch_inv": realBranchInv ?? editingBranchInv.value, // ✅ Added
+        "sales_odr_branch_inv": branchInv ?? realBranchInv ?? editingBranchInv.value,
         "sales_odr_date": dateStr,
         "sales_odr_time": timeStr,
         "agent_name": selectedCaptainName.value,

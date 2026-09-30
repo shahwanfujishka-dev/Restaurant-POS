@@ -8,6 +8,7 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
 
 import '../Device_Roles/device_roles.dart';
+import 'database_helper.dart';
 import 'local_hub_network.dart';
 import 'local_hub_order_service.dart';
 
@@ -111,6 +112,21 @@ class LocalHubServer {
         } catch (e) {
           debugPrint('[LocalHubServer] POST /device/register exception: $e');
           return _errorResponse('Invalid registration request', statusCode: 400);
+        }
+      });
+
+      router.get('/printers/assignments', (Request request) async {
+        debugPrint('[LocalHubServer] GET /printers/assignments called');
+        if (!_isAuthorized(request)) {
+          debugPrint('[LocalHubServer] GET /printers/assignments Unauthorized');
+          return _errorResponse('Unauthorized', statusCode: 401);
+        }
+        try {
+          final assignments = await DatabaseHelper.instance.getAllTokenPrinterAssignments();
+          return _jsonResponse({'success': true, 'data': assignments});
+        } catch (e) {
+          debugPrint('[LocalHubServer] GET /printers/assignments exception: $e');
+          return _errorResponse('Failed to fetch printer assignments: $e', statusCode: 500);
         }
       });
 

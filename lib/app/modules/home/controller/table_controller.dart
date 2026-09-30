@@ -101,7 +101,7 @@ class TablesController extends GetxController with WidgetsBindingObserver {
     super.onInit();
     WidgetsBinding.instance.addObserver(this);
     fetchTables();
-    _startPolling();
+    // _startPolling();
   }
 
   @override
