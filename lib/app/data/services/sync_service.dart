@@ -12,6 +12,7 @@ import 'package:get_storage/get_storage.dart';
 
 import '../../modules/cart/controller/cart_controller.dart';
 import '../../modules/home/controller/order_controller.dart';
+import '../../modules/home/controller/printer_controller.dart';
 import '../Device_Roles/device_roles.dart';
 import '../utils/AppState.dart';
 import 'api_services.dart';
@@ -50,6 +51,9 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         syncPendingOrders();
       }
       syncPendingHubOrders();
+      if (Get.isRegistered<PrinterController>()) {
+        Get.find<PrinterController>().syncPrinterAssignmentsFromHub();
+      }
     }
   }
 
@@ -60,6 +64,9 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         syncPendingOrders();
       }
       syncPendingHubOrders();
+      if (Get.isRegistered<PrinterController>()) {
+        Get.find<PrinterController>().syncPrinterAssignmentsFromHub();
+      }
     });
   }
 
@@ -108,7 +115,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           }
         } catch (e) {
           log("SyncService: Hub still unreachable, stopping retry batch: $e");
-          break; // host still down — don't hammer it order-by-order, wait for next tick
+          break;
         }
       }
     } finally {
@@ -118,13 +125,10 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
   Future<void> syncPendingOrders() async {
     if (isSyncing.value) return;
-
-    // Clients in Local Hub Mode are NOT allowed to sync to Live DB
     if (DeviceConfig.isLocal && DeviceConfig.role == DeviceRole.client) {
       log("SyncService: Device is a Client in Local Hub Mode. Live DB sync is disabled for clients.");
       return;
     }
-
     try {
       final unsyncedOrders = await _dbHelper.getUnsyncedOrders();
       if (unsyncedOrders.isNotEmpty) {
@@ -134,7 +138,6 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           await _syncOrder(order);
         }
       }
-
       final unsyncedPayments = await _dbHelper.getUnsyncedPayments();
       if (unsyncedPayments.isNotEmpty) {
         isSyncing.value = true;
@@ -143,13 +146,11 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           await _syncPayment(payment);
         }
       }
-
       try {
         await fillMissingProductUnits();
       } catch (e) {
         log("SyncService: fillMissingProductUnits failed during periodic sync: $e");
       }
-
     } catch (e) {
       log("SyncService Error: $e");
     } finally {
@@ -656,6 +657,123 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _syncTwoStep(
+      Map<String, dynamic> order,
+      Map<String, dynamic> settle,
+      String createStr,
+      String? savedStep1,
+      ) async {
+    final String uuid = order['uuid'];
+    Map<String, dynamic> step1;
+
+    // ── STEP 1: add_sales_order (skipped on retry if already done) ──
+    if (savedStep1 != null && savedStep1.isNotEmpty) {
+      step1 = Map<String, dynamic>.from(jsonDecode(savedStep1));
+    } else {
+      final create = Map<String, dynamic>.from(jsonDecode(createStr));
+      create['is_pos_edit'] = false;
+      log("SyncService: [STEP 1] add_sales_order for $uuid (branch_ref_no: ${create['branch_ref_no']})");
+
+      final res = await _apiService.post("mobileapp/pos/add_sales_order", data: create);
+      if (res.statusCode != 200) return;
+      dynamic d = res.data;
+      if (d is String) d = jsonDecode(d);
+      final msg = d is Map ? d['message'] : null;
+      if (msg is Map && msg['status'] == 0) {
+        log("SyncService: ❌ Step 1 rejected: ${msg['msg']}");
+        return;
+      }
+      final preview = (msg is Map ? msg['preview'] : null) ?? (d is Map ? d['preview'] : null);
+      final String serverId = preview?['sq_id']?.toString() ?? preview?['sales_odr_id']?.toString() ?? '';
+      final String invNo = preview?['sq_inv_no']?.toString() ?? preview?['sales_odr_inv_no']?.toString() ?? '';
+      if (serverId.isEmpty || serverId == '0') {
+        log("SyncService: ⚠️ Step 1 returned no serverId, will retry");
+        return;
+      }
+      step1 = {
+        'sq_id': serverId,
+        'inv_no': invNo,
+        'so_branch': preview?['sales_odr_sales_branch_inv'] ?? preview?['sq_branch_qt_no'] ?? create['branch_ref_no'],
+        'subs': preview?['sales_order_sub'] ?? [],
+      };
+      // Persist so a failed step 2 never re-runs step 1 (no duplicate SO)
+      await _dbHelper.saveSetting('sync_step1_$uuid', jsonEncode(step1));
+      await _dbHelper.updateOrderStatusByUuid(uuid, order['status'],
+          isSynced: 0, serverId: serverId, invNo: invNo);
+      log("SyncService: [STEP 1] ✅ serverId: $serverId invNo: $invNo");
+    }
+
+    // ── STEP 2: update_sales_order (settle) ──
+    final int sqId = int.tryParse(step1['sq_id'].toString()) ?? 0;
+    final int sqInv = int.tryParse(step1['inv_no'].toString()) ?? 0;
+    if (sqId == 0 || sqInv == 0) return;
+
+    // Map server sub ids onto the settle items: prd | is_addon | parent prd
+    final List subs = (step1['subs'] as List?) ?? [];
+    final Map<String, List<int>> pool = {};
+    for (final s in subs) {
+      final key = '${s['sales_ord_sub_prod_id']}|${s['sales_odr_sub_is_addon']}|${s['sales_odr_sub_addon_parent_prd_id'] ?? 0}';
+      pool.putIfAbsent(key, () => []).add(_toInt(s['sales_ord_sub_id']));
+    }
+
+    final List<Map<String, dynamic>> items = [];
+    for (final raw in (settle['sale_items'] as List)) {
+      final si = Map<String, dynamic>.from(raw);
+      final key = '${si['salesub_prd_id']}|${si['is_addon'] ?? 0}|${si['addon_parent_prd_id'] ?? 0}';
+      final ids = pool[key];
+      si['sales_ord_sub_id'] = (ids != null && ids.isNotEmpty) ? ids.removeAt(0) : "";
+      si['is_edited'] = false;
+      si['oldqty'] = si['salesub_qty'];
+      si['is_deleted'] = 0;
+      items.add(si);
+    }
+
+    final rt = Map<String, dynamic>.from(settle['res_table'] ?? {});
+    rt['processing_table'] = [
+      {
+        "rt_id": rt['rt_id'],
+        "rt_area_id": rt['rt_area_id'],
+        "rt_name": rt['rt_name'],
+        "rt_seat_count": rt['rt_seat_count'],
+        "rt_status": 1,
+        "prcgrp_id": rt['prcgrp_id'],
+        "sq_id": sqId,
+        "sq_inv_no": sqInv,
+        "sales_odr_branch_inv": step1['so_branch'],
+        "total_amount": settle['sq_total'],
+      }
+    ];
+
+    final body = {
+      ...settle,
+      'sale_items': items,
+      'res_table': rt,
+      'is_pos_edit': true,
+      'sq_inv_no': sqInv,
+      // branch_ref_no stays as the settle payload's invoice number (M-mpm0121)
+    };
+
+    log("SyncService: [STEP 2] update_sales_order for $uuid (sq_id: $sqId, branch_ref_no: ${body['branch_ref_no']})");
+    final res2 = await _apiService.post("mobileapp/pos/update_sales_order", data: body);
+    if (res2.statusCode != 200) return;
+    dynamic d2 = res2.data;
+    if (d2 is String) d2 = jsonDecode(d2);
+    final msg2 = d2 is Map ? d2['message'] : null;
+    if (msg2 is Map && msg2['status'] == 0) {
+      log("SyncService: ❌ Step 2 rejected: ${msg2['msg']}");
+      return;
+    }
+    final preview2 = (msg2 is Map ? msg2['preview'] : null) ?? (d2 is Map ? d2['preview'] : null);
+    final String? finalBranch = preview2?['sales_odr_sales_branch_inv']?.toString() ??
+        preview2?['sales_odr_branch_inv']?.toString() ??
+        preview2?['sq_branch_qt_no']?.toString();
+
+    await _dbHelper.updateOrderStatusByUuid(uuid, order['status'],
+        isSynced: 1, serverId: step1['sq_id'].toString(), invNo: step1['inv_no'].toString(), branchInv: finalBranch);
+    await _dbHelper.saveSetting('sync_step1_$uuid', '');
+    log("SyncService: [STEP 2] ✅ $uuid settled, branchInv: $finalBranch");
+  }
+
   Future<void> _syncOrder(Map<String, dynamic> order) async {
     final String uuid = order['uuid'];
     final String? payloadStr = order['payload'];
@@ -675,6 +793,15 @@ class SyncService extends GetxService with WidgetsBindingObserver {
                                      !serverIdInDb.startsWith('ORD-');
                                      
       bool isEdit = payload['is_pos_edit'] == true && isRealServerOrder;
+      final String? createStr = order['create_payload']?.toString();
+      final bool settled = _safeInt(payload['res_status']) == 3;
+      final String? step1Saved = await _dbHelper.getSetting('sync_step1_$uuid');
+      final bool step1Done = step1Saved != null && step1Saved.isNotEmpty;
+
+      if (createStr != null && createStr.isNotEmpty && settled && (!isRealServerOrder || step1Done)) {
+        await _syncTwoStep(order, payload, createStr, step1Saved);
+        return;
+      }
 
       // Fallback: If payload thinks it's an edit but we don't have a server ID, 
       // treat it as a new order.

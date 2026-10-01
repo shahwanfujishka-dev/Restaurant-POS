@@ -28,7 +28,7 @@ void main() async {
   await LocalHubServer.instance.start();
   final apiService = Get.put(ApiService(), permanent: true);
   Get.put(SyncService(), permanent: true);
-
+  debugPrint('STORAGE: ${GetStorage().getKeys()} -> ${GetStorage().getValues()}');
   final themeController = Get.put(ThemeController(), permanent: true);
 
   final storage = GetStorage();

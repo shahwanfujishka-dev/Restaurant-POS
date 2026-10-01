@@ -85,8 +85,7 @@ class AuthController extends GetxController {
     branchAddress.value = storage.read('branch_address') ?? '';
     branchPhNo.value = storage.read('branch_phone') ?? '';
     branchMob.value = storage.read('branch_mob') ?? '';
-    branchVat.value = storage.read('branch_mob') ?? '';
-
+    branchVat.value = storage.read('branch_tin') ?? '';
     _checkVerificationStatus();
   }
 
@@ -149,10 +148,10 @@ class AuthController extends GetxController {
       }
     }
   }
-
+  String AppstateServerUrl = AppState.serverUrl;
   Future<void> updateBranchConfig(Map<String, dynamic> config) async {
-    final String url = config['server_url'] ?? config['servel_url'] ?? '';
-    final String code = config['company_code'] ?? '';
+    final String url = (config['server_url'] ?? config['servel_url'] ?? '').toString().trim();
+    final String code = (config['company_code'] ?? '').toString().trim();
     final String bId = config['branch_id']?.toString() ?? '';
 
     if (url.isEmpty || code.isEmpty || bId.isEmpty) {
@@ -160,7 +159,17 @@ class AuthController extends GetxController {
       return;
     }
 
+    // Prevent double-trigger (scanner/onChanged/paste firing twice)
+    if (isLoading.value) return;
+
+    debugPrint('CONFIG APPLY: url=$url code=$code bId=$bId\n${StackTrace.current}');
+
     isLoading.value = true;
+
+    // Snapshot current values so we can roll back if verification fails
+    final String? previousUrl = storage.read('base_url');
+    final String previousAppStateUrl = AppState.serverUrl;
+    bool verified = false;
 
     try {
       final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
@@ -203,7 +212,10 @@ class AuthController extends GetxController {
         deviceToken = windowsInfo.deviceId;
       }
 
-      storage.write('base_url', url);
+      // Temporarily point the API at the new URL (needed for the verification call).
+      // Rolled back in `finally` if verification fails.
+      await storage.write('base_url', url);
+      AppstateServerUrl = url; // remove this line if AppState.serverUrl is just a getter over storage
 
       final response = await _apiService.post('api/get_branch_token', data: {
         "branch_id": int.parse(bId),
@@ -231,8 +243,9 @@ class AuthController extends GetxController {
           }
         }
 
-        if (branchData != null) {
-          final String token = branchData['token'] ?? '';
+        final String token = branchData?['token'] ?? '';
+
+        if (branchData != null && token.isNotEmpty) {
           final String bName = branchData['branch_name'] ?? '';
           final String bDisName = branchData['branch_display_name'] ?? '';
           final String bAddress = branchData['branch_address'] ?? '';
@@ -241,6 +254,20 @@ class AuthController extends GetxController {
           final String bTin = branchData['branch_tin'] ?? '';
           final int taxType = branchData['cmp_tax_type'] ?? 1;
           debugPrint("✅ Branch Display Name: $bDisName");
+
+          // Persist everything (awaited so nothing is lost on a debug stop)
+          await storage.write('base_url', url);
+          await storage.write('company_code', code);
+          await storage.write('branch_id', bId);
+          await storage.write('branch_name', bName);
+          await storage.write('branch_display_name', bDisName);
+          await storage.write('branch_address', bAddress);
+          await storage.write('branch_mob', bMob);
+          await storage.write('branch_phone', bPh);
+          await storage.write('branch_tin', bTin);
+          await storage.write('branch_token', token);
+          await storage.write('cmp_tax_type', taxType);
+
           serverUrl.value = url;
           companyCode.value = code;
           branchId.value = bId;
@@ -250,26 +277,31 @@ class AuthController extends GetxController {
           branchMob.value = bMob;
           branchPhNo.value = bPh;
           branchVat.value = bTin;
-          storage.write('company_code', code);
-          storage.write('branch_id', bId);
-          storage.write('branch_name', bName);
-          storage.write('branch_display_name', bDisName);
-          storage.write('branch_address', bAddress);
-          storage.write('branch_mob', bMob);
-          storage.write('branch_phone', bPh);
-          storage.write('branch_tin', bTin);
-          storage.write('branch_token', token);
-          storage.write('cmp_tax_type', taxType);
 
+          verified = true;
           isVerified.value = true;
           Get.snackbar("✓ Verified", "Branch verified: $code", backgroundColor: Colors.green, colorText: Colors.white);
           qrCodeController.clear();
         }
       }
+
+      if (!verified) {
+        Get.snackbar("Error", "Branch verification failed", backgroundColor: Colors.red, colorText: Colors.white);
+      }
     } catch (e) {
       debugPrint("❌ Verification Error: $e");
       Get.snackbar("Error", "Verification failed", backgroundColor: Colors.red, colorText: Colors.white);
     } finally {
+      if (!verified) {
+        // Roll back so a bad/failed config never overwrites the working server URL
+        if (previousUrl == null) {
+          await storage.remove('base_url');
+        } else {
+          await storage.write('base_url', previousUrl);
+        }
+        AppstateServerUrl = previousAppStateUrl; // remove if it's a getter over storage
+        qrCodeController.clear(); // stops a failed value from being re-triggered
+      }
       isLoading.value = false;
     }
   }

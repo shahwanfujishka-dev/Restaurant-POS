@@ -74,7 +74,12 @@ class LocalHubClient {
 
       if (response.statusCode == 401) throw Exception('Hub authentication failed.');
       if (response.statusCode != 200) throw Exception('Hub returned HTTP ${response.statusCode}');
-      return jsonDecode(response.body);
+
+      final data = jsonDecode(response.body);
+      if (data is Map && data['success'] == false) {
+        throw Exception(data['message'] ?? 'Hub rejected the request');
+      }
+      return Map<String, dynamic>.from(data);
     } catch (e) {
       debugPrint('LOCAL HUB CREATE ORDER ERROR: $e');
       rethrow;
@@ -92,7 +97,11 @@ class LocalHubClient {
 
       if (response.statusCode == 401) throw Exception('Hub authentication failed.');
       if (response.statusCode != 200) throw Exception('Hub returned HTTP ${response.statusCode}');
-      return jsonDecode(response.body);
+      final data = jsonDecode(response.body);
+      if (data is Map && data['success'] == false) {
+        throw Exception(data['message'] ?? 'Hub rejected the request');
+      }
+      return Map<String, dynamic>.from(data);
     } catch (e) {
       debugPrint('LOCAL HUB UPDATE ORDER ERROR: $e');
       rethrow;
@@ -169,6 +178,18 @@ class LocalHubClient {
       return jsonDecode(response.body);
     } catch (e) {
       debugPrint('LOCAL HUB FETCH MASTER CAPTAINS ERROR: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchPrinterAssignments({required String hostIp, int port = 8080}) async {
+    final url = Uri.parse('http://$hostIp:$port/printers/assignments');
+    try {
+      final response = await http.get(url, headers: _authenticatedHeaders()).timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) throw Exception('Hub returned ${response.statusCode}');
+      return jsonDecode(response.body);
+    } catch (e) {
+      debugPrint('LOCAL HUB FETCH PRINTER ASSIGNMENTS ERROR: $e');
       rethrow;
     }
   }

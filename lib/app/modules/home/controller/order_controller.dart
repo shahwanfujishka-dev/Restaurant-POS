@@ -875,7 +875,7 @@ class OrdersController extends GetxController {
       if (table != null && table.isNotEmpty) return table;
       if (tableNameField != null && tableNameField.isNotEmpty) return tableNameField;
     }
-    return (fallback.isNotEmpty) ? fallback : "Unknown Customer";
+    return (fallback.isNotEmpty) ? fallback : "Cash Customer";
   }
 
   bool _isRealInvNo(String invNo) =>

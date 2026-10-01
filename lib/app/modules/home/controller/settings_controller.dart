@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:restaurant_pos/app/modules/home/controller/dashboard_controller.dart';
 import 'package:restaurant_pos/app/modules/home/controller/order_controller.dart';
+import 'package:restaurant_pos/app/modules/home/controller/printer_controller.dart';
 import 'package:restaurant_pos/app/modules/home/controller/table_controller.dart';
 import 'package:restaurant_pos/helper/snackbar_helper.dart';
 import 'package:uuid/uuid.dart';
@@ -407,6 +408,9 @@ class SettingsController extends GetxController {
         Get.find<SyncService>().syncPendingHubOrders();
         // Refresh Master Data (Categories, Products, Tables, etc.)
         _refreshControllers();
+        if (Get.isRegistered<PrinterController>()) {
+          Get.find<PrinterController>().syncPrinterAssignmentsFromHub();
+        }
 
         Get.snackbar(
           'Success',

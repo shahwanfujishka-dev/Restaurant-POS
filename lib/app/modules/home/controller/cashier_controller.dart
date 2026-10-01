@@ -287,25 +287,31 @@ class CashierController extends GetxController {
   }
 
   void updateRoundOffAmount(String value) {
-    roundOffAmount.value = double.tryParse(value) ?? 0.0;
+    double val = double.tryParse(value) ?? 0.0;
+    double netAmount = order.totalAmount - discountAmount.value;
+
+    if (val.abs() > netAmount) {
+      roundOffAmount.value = 0.0;
+      roundOffController.text = "";
+      showSafeSnackbar(
+        "Invalid Round Off",
+        "Round off amount cannot be greater than the net amount of ${netAmount.toStringAsFixed(2)}",
+      );
+    } else {
+      roundOffAmount.value = val;
+    }
     _recalculatePaymentAmounts();
     if (isSplit.value) _generateSplitAmounts(splitCount.value);
   }
 
   void incrementRoundOff() {
     double currentVal = double.tryParse(roundOffController.text) ?? 0.0;
-    roundOffAmount.value = currentVal.abs();
-    roundOffController.text = roundOffAmount.value.toStringAsFixed(2);
-    _recalculatePaymentAmounts();
-    if (isSplit.value) _generateSplitAmounts(splitCount.value);
+    updateRoundOffAmount(currentVal.abs().toString());
   }
 
   void decrementRoundOff() {
     double currentVal = double.tryParse(roundOffController.text) ?? 0.0;
-    roundOffAmount.value = -currentVal.abs();
-    roundOffController.text = roundOffAmount.value.toStringAsFixed(2);
-    _recalculatePaymentAmounts();
-    if (isSplit.value) _generateSplitAmounts(splitCount.value);
+    updateRoundOffAmount((-currentVal.abs()).toString());
   }
 
   void _recalculatePaymentAmounts() {

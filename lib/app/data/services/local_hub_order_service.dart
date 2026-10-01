@@ -93,9 +93,11 @@ class LocalHubOrderService {
       return {'success': true, 'duplicate': true, 'message': 'Order already exists', 'order': _injectStatus(existingOrders.first)};
     }
 
-    final String branchInv = await _db.generateLocalInvoiceNumber(AppState.branchDisName);
-    payload = {...payload, 'branch_inv': branchInv,'branch_ref_no': branchInv,
-      'is_mob_restaurant': 1,};
+    final int resStatus = _toInt(payload['res_status']);
+    final String branchInv = resStatus == 3
+        ? await _db.generateLocalInvoiceNumber(AppState.branchDisName) // M-BR0001
+        : await _db.generateLocalSoNumber(AppState.branchDisName);     // M-BR/SO/0001
+    payload = {...payload, 'branch_inv': branchInv, 'branch_ref_no': branchInv, 'is_mob_restaurant': 1};
     final List<dynamic> rawItems = payload['items'] is List ? payload['items'] as List : [];
     final List<Map<String, dynamic>> items = rawItems.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).map((item) => {...item, 'order_uuid': uuid}).toList();
 
@@ -115,6 +117,7 @@ class LocalHubOrderService {
       'status': payload['status'] ?? (_toInt(payload['res_status']) == 0 ? 'draft' : (_toInt(payload['res_status']) == 2 ? 'billed' : (_toInt(payload['res_status']) == 3 ? 'paid' : 'pending'))),
       'is_synced': 0,
       'payload': jsonEncode(payload),
+      'create_payload': jsonEncode(payload),
       'created_at': payload['created_at'] ?? now,
     };
 
@@ -146,43 +149,106 @@ class LocalHubOrderService {
     if (uuid.isEmpty) throw Exception('Order UUID is required for update');
 
     final existing = await _findOrder(uuid);
-    String? createdAt;
-    String? existingBranchInv;
-    if (existing.isNotEmpty) {
-      createdAt = existing.first['created_at'];
-      existingBranchInv = existing.first['branch_inv']?.toString();
+    final Map<String, dynamic>? ex = existing.isNotEmpty ? existing.first : null;
+
+    final String? createdAt = ex?['created_at']?.toString();
+    final String? existingBranchInv = ex?['branch_inv']?.toString();
+    final String? existingServerId = ex?['server_id']?.toString();
+    final String? existingInvNo = ex?['inv_no']?.toString();
+
+    final int resStatus = _toInt(payload['res_status']);
+    final bool alreadySynced = existingServerId != null &&
+        existingServerId.isNotEmpty &&
+        !existingServerId.startsWith('ORD-');
+
+    // ── Settle-only path: the server already has this order ─────────────────
+    // Don't overwrite the stored payload or mark it unsynced. _syncPayment will
+    // call settle_sales_order using the saved payments row.
+    if (alreadySynced && resStatus == 3) {
+      final String realUuid = ex!['uuid'].toString();
+      await _db.updateOrderStatusByUuid(realUuid, 'paid', isSynced: 1);
+
+      if (Get.isRegistered<OrdersController>()) {
+        final oc = Get.find<OrdersController>();
+        Map<String, dynamic> stored = {};
+        try {
+          stored = Map<String, dynamic>.from(jsonDecode(ex['payload']?.toString() ?? '{}'));
+        } catch (_) {}
+        final previewMap = _buildPreviewMap(realUuid, {
+          ...stored,
+          'res_status': 3,
+          'status': 'paid',
+          'inv_no': ex['inv_no'],
+          'branch_inv': ex['branch_inv'],
+        });
+        oc.updateExistingOrder(oc.parseOrderResponse({'preview': previewMap, 'offline': true}));
+      }
+      if (Get.isRegistered<TablesController>()) {
+        Get.find<TablesController>().fetchTables(silent: true);
+      }
+      debugPrint('[LocalHubOrderService] updateOrder settle-only for synced order: $realUuid');
+      return {
+        'success': true,
+        'message': 'Order settled locally, payment pending sync',
+        'branch_inv': ex['branch_inv']?.toString() ?? '',
+      };
     }
-    final String? resolvedBranchInv =
-    (existingBranchInv != null && existingBranchInv.isNotEmpty)
+
+    // ── Branch number: SO format until paid, invoice format once paid ───────
+    final String candidate = (existingBranchInv != null && existingBranchInv.isNotEmpty)
         ? existingBranchInv
-        : payload['branch_inv'];
-    payload = {...payload, 'branch_inv': resolvedBranchInv,'branch_ref_no': resolvedBranchInv,
-      'is_mob_restaurant': 1,};
+        : (payload['branch_inv']?.toString() ?? '');
+
+    String resolvedBranchInv;
+    if (resStatus == 3) {
+      resolvedBranchInv = (candidate.isNotEmpty && !candidate.contains('/SO/'))
+          ? candidate
+          : await _db.generateLocalInvoiceNumber(AppState.branchDisName);
+    } else {
+      resolvedBranchInv = candidate.isNotEmpty
+          ? candidate
+          : await _db.generateLocalSoNumber(AppState.branchDisName);
+    }
+
+    payload = {
+      ...payload,
+      'branch_inv': resolvedBranchInv,
+      'branch_ref_no': resolvedBranchInv,
+      'is_mob_restaurant': 1,
+    };
+
     final List<dynamic> rawItems = payload['items'] is List ? payload['items'] as List : [];
-    final List<Map<String, dynamic>> items = rawItems.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).map((item) => {...item, 'order_uuid': uuid}).toList();
+    final List<Map<String, dynamic>> items = rawItems
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .map((item) => {...item, 'order_uuid': uuid})
+        .toList();
 
     final Map<String, dynamic> orderRow = {
       'uuid': uuid,
-      'server_id': payload['server_id'],
-      'inv_no': payload['inv_no'] ?? payload['sq_inv_no']?.toString(),
-      'branch_inv': payload['branch_inv'],
+      'server_id': (existingServerId?.isNotEmpty ?? false) ? existingServerId : payload['server_id'],
+      'inv_no': (existingInvNo?.isNotEmpty ?? false)
+          ? existingInvNo
+          : (payload['inv_no'] ?? payload['sq_inv_no']?.toString()),
+      'branch_inv': resolvedBranchInv,
       'order_type_id': _toInt(payload['order_type_id'] ?? payload['pos_odr_type'] ?? 0),
       'table_id': payload['table_id'] ?? (payload['res_table']?['rt_id']) ?? 0,
       'customer_name': payload['customer_name'] ?? payload['cust_name'] ?? payload['table_name'],
       'customer_phone': payload['customer_phone'] ?? payload['phone_no'],
       'total_amount': _toDouble(payload['total_amount'] ?? payload['sq_total']),
       'total_tax': _toDouble(payload['total_tax'] ?? payload['sq_tax']),
-      'status': payload['status'] ?? (_toInt(payload['res_status']) == 0 ? 'draft' : (_toInt(payload['res_status']) == 2 ? 'billed' : (_toInt(payload['res_status']) == 3 ? 'paid' : 'pending'))),
+      'status': payload['status'] ??
+          (resStatus == 0 ? 'draft' : (resStatus == 2 ? 'billed' : (resStatus == 3 ? 'paid' : 'pending'))),
       'is_synced': 0,
       'payload': jsonEncode(payload),
     };
-    
+
     if (createdAt != null) {
       orderRow['created_at'] = createdAt;
     }
 
     await _db.saveOrderOffline(orderRow, items);
-    
+
     if (Get.isRegistered<OrdersController>()) {
       final oc = Get.find<OrdersController>();
       final previewMap = _buildPreviewMap(uuid, payload);
@@ -190,13 +256,14 @@ class LocalHubOrderService {
     }
 
     if (Get.isRegistered<TablesController>()) {
-       Get.find<TablesController>().fetchTables(silent: true);
+      Get.find<TablesController>().fetchTables(silent: true);
     }
 
     debugPrint('[LocalHubOrderService] updateOrder success for uuid: $uuid');
     return {
       'success': true,
       'message': 'Order updated successfully on local hub',
+      'branch_inv': resolvedBranchInv,
     };
   }
 
@@ -435,7 +502,7 @@ class LocalHubOrderService {
 
   Future<List<Map<String, dynamic>>> _findOrder(String uuid) async {
     final db = await _db.database;
-    return await db.query('orders', where: 'uuid = ?', whereArgs: [uuid], limit: 1);
+    return await db.query('orders', where: 'uuid = ? OR server_id = ?', whereArgs: [uuid, uuid], limit: 1);
   }
 
   double _toDouble(dynamic value) {

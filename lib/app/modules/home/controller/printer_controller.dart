@@ -17,9 +17,11 @@ import 'package:network_info_plus/network_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:restaurant_pos/helper/snackbar_helper.dart';
+import '../../../data/Device_Roles/device_roles.dart';
 import '../../../data/models/order_model.dart';
 import '../../../data/models/order_type.dart';
 import '../../../data/services/database_helper.dart';
+import '../../../data/services/local_hub_client.dart';
 import '../../../data/utils/AppState.dart';
 import '../views/dashoard/models/dashboard_models.dart';
 import 'dashboard_controller.dart';
@@ -513,6 +515,29 @@ class PrinterController extends GetxController {
     }
     scanningBluetooth.value = false;
     scanningWifi.value = false;
+  }
+
+  Future<void> syncPrinterAssignmentsFromHub() async {
+    if (!(DeviceConfig.isLocal && DeviceConfig.role == DeviceRole.client)) return;
+    final hostIp = DeviceConfig.hostIp;
+    if (hostIp == null || hostIp.trim().isEmpty || !DeviceConfig.hasAuthToken) return;
+
+    try {
+      final result = await LocalHubClient.instance.fetchPrinterAssignments(
+        hostIp: hostIp,
+        port: DeviceConfig.hostPort,
+      );
+      if (result['success'] == true) {
+        final List<dynamic> data = result['data'] ?? [];
+        await DatabaseHelper.instance.replaceAllTokenPrinterAssignments(
+          data.cast<Map<String, dynamic>>(),
+        );
+        await _loadSavedMappings(); // refresh in-memory Rx list from the DB
+        debugPrint("✅ Printer assignments synced from hub (${data.length} entries)");
+      }
+    } catch (e) {
+      debugPrint("Printer assignment sync from hub failed: $e");
+    }
   }
 
   Future<void> printReceipt(
