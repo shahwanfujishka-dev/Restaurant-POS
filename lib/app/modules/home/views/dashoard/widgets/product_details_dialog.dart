@@ -90,7 +90,8 @@ class ProductDetailsDialog extends GetView<DashboardController> {
                 }
 
                 return ChoiceChip(
-                  label: Text("${unit.unitName} (${displayPrice.toStringAsFixed(2)})"),
+                    // (${displayPrice.toStringAsFixed(2)})
+                  label: Text(unit.unitName),
                   selected: isSelected,
                   onSelected: (selected) {
                     if (selected) {

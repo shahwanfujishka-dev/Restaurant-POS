@@ -1183,8 +1183,6 @@ class DatabaseHelper {
     }
 
     await db.transaction((txn) async {
-      // FIX: Removed txn.delete('bulk_product_units') which was wiping data during paginated sync
-
       final batch = txn.batch();
       int validCount = 0;
 
@@ -1487,6 +1485,5 @@ class DatabaseHelper {
     );
     return seq;
   }
-
 
 }

@@ -1080,7 +1080,7 @@ class CartController extends GetxController {
                   'created_by_device_id': DeviceConfig.deviceId,
                   'order_type_id': AppState.orderType.id,
                   'table_id': int.tryParse(selectedTableId.value) ?? 0,
-                  'customer_name': body['cust_name'],
+                  'customer_name': body['cust_name']??'Cash Customer',
                   'customer_phone': body['phone_no'],
                   'total_amount': finalTotal,
                   'total_tax': totalTax,
