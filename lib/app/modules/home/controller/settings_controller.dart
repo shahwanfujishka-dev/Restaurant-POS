@@ -66,13 +66,18 @@ class SettingsController extends GetxController {
     }
   }
 
-  /// Starts a timer to refresh the pending count every 5 seconds
+  /// Starts a timer to refresh the pending count and check client connection
   void _startCountRefreshPolling() {
     _countRefreshTimer?.cancel();
     _countRefreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       // Don't refresh while a manual sync is already in progress (it handles its own refreshes)
       if (!isSyncingOrders.value) {
         refreshPendingCount();
+      }
+
+      // Automatically verify connection if in client mode
+      if (isLocalMode && isClient && hostIp.value != null) {
+        verifyConnection();
       }
     });
   }
@@ -93,6 +98,30 @@ class SettingsController extends GetxController {
 
     if (isLocalMode && isHost) {                       // ← new
       _startConnectedDevicesPolling();
+    }
+
+    // Initial connection check for clients
+    if (isLocalMode && isClient && hostIp.value != null) {
+      verifyConnection();
+    }
+  }
+
+  Future<bool> verifyConnection() async {
+    final ip = hostIp.value;
+    if (ip == null || ip.isEmpty) {
+      isHubConnected.value = false;
+      return false;
+    }
+    try {
+      await LocalHubClient.instance.testConnection(
+        hostIp: ip,
+        port: hostPort.value,
+      ).timeout(const Duration(seconds: 3));
+      isHubConnected.value = true;
+      return true;
+    } catch (_) {
+      isHubConnected.value = false;
+      return false;
     }
   }
 

@@ -360,8 +360,7 @@ class CartController extends GetxController {
           unitId: ea.unitId,
           taxCatId: ea.taxCatId,
           taxPer: ea.taxPer,
-          unitBaseQty: ea.unitBaseQty,
-          initialQty: item.quantity, // ✅ mirrors parent qty
+          unitBaseQty: ea.unitBaseQty, initialQty: ea.freeQty > 0 ? item.quantity * ea.freeQty : item.quantity,// ✅ mirrors parent qty
           isDefault: 1,
           freeQty: ea.freeQty,
         ),
@@ -586,17 +585,19 @@ class CartController extends GetxController {
     }
 
     if (newQty != oldQty && oldQty > 0) {
-      // Scale free/default addons proportionally
       for (var addon in item.selectedAddons) {
-        if (addon.price == 0 || addon.isDefault == 1 || addon.freeQty > 0) {
-          int scaledQty = (addon.quantity.value * newQty / oldQty).round();
-          // If parent is being deleted (qty 0), addons should be 0 too
-          if (newQty == 0) {
-            scaledQty = 0;
-          } else if (scaledQty < 1 && addon.quantity.value > 0) {
-            scaledQty = 1;
-          }
-          addon.quantity.value = scaledQty;
+        if (newQty == 0) {
+          addon.quantity.value = 0;
+          continue;
+        }
+        final int free = item._resolvedFreeQty(addon);
+        if (free > 0) {
+          // keep any paid overflow the user added above the free limit
+          final int overflow = (addon.quantity.value - free * oldQty).clamp(0, 99999);
+          addon.quantity.value = free * newQty + overflow;
+        } else if (addon.price == 0 || addon.isDefault == 1) {
+          final int scaled = (addon.quantity.value * newQty / oldQty).round();
+          addon.quantity.value = scaled < 1 ? 1 : scaled;
         }
       }
     }
@@ -788,20 +789,22 @@ class CartController extends GetxController {
       }
 
       for (var addon in allAddons.values) {
+        final existSource = item.unit.existAddOns.firstWhereOrNull((ea) => ea.prdId == addon.prdId);
+        final int resolvedFreeQty = existSource?.freeQty ?? addon.freeQty;
+        final bool isUserSelected = item.selectedAddons.any((sa) => sa.prdId == addon.prdId);
+
         int totalQty = addon.quantity.value;
-        if (totalQty == 0 &&
-            addon.freeQty > 0 &&
-            !item.selectedAddons.any((sa) => sa.prdId == addon.prdId)) {
-          totalQty = item.quantity.value * addon.freeQty;
+        if (!isUserSelected && resolvedFreeQty > 0) {
+          totalQty = item.quantity.value * resolvedFreeQty; // always mirror parent qty
         }
 
         if (totalQty <= 0) continue;
         int freeQtyLimit = addon.freeQty * item.quantity.value;
         int freePart = totalQty < freeQtyLimit ? totalQty : freeQtyLimit;
         int paidPart = totalQty - freePart;
-        final existSource = item.unit.existAddOns.firstWhereOrNull((ea) => ea.prdId == addon.prdId);
+        // final existSource = item.unit.existAddOns.firstWhereOrNull((ea) => ea.prdId == addon.prdId);
         final double catalogPrice = existSource?.price ?? addon.price;
-        final bool isUserSelected = item.selectedAddons.any((sa) => sa.prdId == addon.prdId,);
+        // final bool isUserSelected = item.selectedAddons.any((sa) => sa.prdId == addon.prdId,);
         double paidRate = addon.price;
         if (paidPart > 0) {
           if (addon.price == 0 && addon.freeQty > 0 && freePart < totalQty) {
