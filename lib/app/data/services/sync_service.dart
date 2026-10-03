@@ -123,6 +123,80 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     }
   }
 
+  /// Fills missing sales_ord_sub_id values on an edit payload from the server's current rows.
+  /// Returns false if the lookup failed (caller should skip this round, not post).
+  Future<bool> _fillSubIdsFromServer(Map<String, dynamic> payload) async {
+    final List items = (payload['sale_items'] as List?) ?? [];
+
+    try {
+      final res = await _apiService.post(
+        "mobileapp/pos/get_sale_order_details_pos",
+        data: {
+          "usr_id": payload['usr_id'],
+          "sales_odr_inv_no": _safeInt(payload['sq_inv_no']),
+          "cmp_tax": AppState.cmpTaxType,
+        },
+      );
+      if (res.statusCode != 200) return false;
+      dynamic d = res.data;
+      if (d is String) d = jsonDecode(d);
+      final data = d is Map ? d['data'] : null;
+      final src = (data is Map && data['preview'] is Map) ? data['preview'] : data;
+      final List allSubs = (src is Map ? src['sales_order_sub'] : null) as List? ?? [];
+      if (allSubs.isEmpty) return false;
+
+      // ignore voided rows (flags == 0)
+      final subs = allSubs.where((s) {
+        final f = s['sales_ord_sub_flags'];
+        return f == null || _toInt(f) != 0;
+      }).toList();
+
+      final serverIds = subs.map((s) => _toInt(s['sales_ord_sub_id'])).toSet();
+      bool needs(dynamic v) =>
+          v == null || v.toString().isEmpty || v.toString() == 'null' ||
+              !serverIds.contains(_toInt(v));
+      String keyOf(int prd, int unit, int parent) => '$prd|$unit|$parent';
+
+      final Map<String, List<int>> pool = {};
+      for (final s in subs) {
+        final k = keyOf(
+          _toInt(s['sales_ord_sub_prod_id']),
+          _toInt(s['sales_ord_sub_unit_id']),
+          _toInt(s['sales_odr_sub_addon_parent_prd_id']),
+        );
+        pool.putIfAbsent(k, () => []).add(_toInt(s['sales_ord_sub_id']));
+      }
+
+      // remove ids the payload already uses, from ALL pools
+      for (final i in items) {
+        if (!needs(i['sales_ord_sub_id'])) {
+          final used = _toInt(i['sales_ord_sub_id']);
+          for (final list in pool.values) {
+            list.remove(used);
+          }
+        }
+      }
+
+      for (final i in items) {
+        if (!needs(i['sales_ord_sub_id'])) continue;
+        final k = keyOf(_toInt(i['salesub_prd_id']), _toInt(i['salesub_unit_id']), _toInt(i['addon_parent_prd_id']));
+        final ids = pool[k];
+        if (ids != null && ids.isNotEmpty) {
+          i['sales_ord_sub_id'] = ids.removeAt(0);
+          if (_toInt(i['is_deleted']) != 1) {
+            i['is_edited'] = _toInt(i['salesub_qty']) != _toInt(i['oldqty']);
+          }
+        } else {
+          log("SyncService: no server row for key $k (${i['prd_name']}) — will be sent as new");
+        }
+      }
+      return true;
+    } catch (e) {
+      log("SyncService: _fillSubIdsFromServer failed: $e");
+      return false;
+    }
+  }
+
   Future<void> syncPendingOrders() async {
     if (isSyncing.value) return;
     if (DeviceConfig.isLocal && DeviceConfig.role == DeviceRole.client) {
@@ -156,6 +230,14 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     } finally {
       isSyncing.value = false;
     }
+  }
+
+  Future<bool> _isGivenUp(String uuid) async =>
+      (int.tryParse(await _dbHelper.getSetting('sync_fail_$uuid') ?? '0') ?? 0) >= 3;
+
+  Future<void> _registerFailure(String uuid) async {
+    final n = int.tryParse(await _dbHelper.getSetting('sync_fail_$uuid') ?? '0') ?? 0;
+    await _dbHelper.saveSetting('sync_fail_$uuid', '${n + 1}');
   }
 
   int _safeInt(dynamic value) {
@@ -777,7 +859,10 @@ class SyncService extends GetxService with WidgetsBindingObserver {
   Future<void> _syncOrder(Map<String, dynamic> order) async {
     final String uuid = order['uuid'];
     final String? payloadStr = order['payload'];
-
+    if (await _isGivenUp(uuid)) {
+      log("SyncService: Skipping $uuid — failed 3 times, needs manual fix.");
+      return;
+    }
     if (payloadStr == null || payloadStr.isEmpty) {
       log("SyncService: Skipping $uuid — no payload");
       return;
@@ -831,7 +916,27 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       } else {
         log("SyncService: ⚠️ WARNING! No sale_items found in payload for $uuid");
       }
-
+      if (isEdit && _safeInt(payload['sq_inv_no']) == 0) {
+        final int inv = _safeInt(order['inv_no']);
+        final int sid = int.tryParse(serverIdInDb ?? '') ?? 0;
+        if (inv > 0 && sid > 0) {
+          payload['sq_inv_no'] = inv;
+          final rt = Map<String, dynamic>.from(payload['res_table'] ?? {});
+          final List pt = (rt['processing_table'] as List?) ?? [];
+          final Map<String, dynamic> first =
+          pt.isNotEmpty ? Map<String, dynamic>.from(pt.first) : {};
+          rt['processing_table'] = [
+            {
+              ...first,
+              'sq_id': sid,
+              'sq_inv_no': inv,
+              'sales_odr_branch_inv': order['branch_inv'] ?? payload['branch_ref_no'],
+            }
+          ];
+          payload['res_table'] = rt;
+          log("SyncService: Repaired edit payload for $uuid → sq_id $sid, inv $inv");
+        }
+      }
       if (isEdit) {
         final int sqInvNo = _safeInt(payload['sq_inv_no']);
         final List processingTable =
@@ -839,6 +944,12 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
         if (sqInvNo == 0 || processingTable.isEmpty) {
           log("SyncService: ⚠️ Skipping edit $uuid — invalid payload. NOT marking as synced.");
+          return;
+        }
+
+        final ok = await _fillSubIdsFromServer(payload);
+        if (!ok) {
+          log("SyncService: Could not resolve sub ids for $uuid, skipping this round.");
           return;
         }
       }
@@ -854,6 +965,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
             final msg = data['message'] as Map;
             if (msg['status'] == 0) {
               log("SyncService: ❌ Server rejected $uuid: ${msg['msg']}");
+              await _registerFailure(uuid);
               return;
             }
           }
@@ -889,6 +1001,9 @@ class SyncService extends GetxService with WidgetsBindingObserver {
               branchInv: branchInv, // ✅ Added
             );
             log("SyncService: ✅ Synced $uuid → serverId: $serverId, invNo: $invNo, branchInv: $branchInv");
+            if (Get.isRegistered<OrdersController>()) {
+              Get.find<OrdersController>().fetchOrdersSafely();
+            }
           } else {
             log("SyncService: ⚠️ Server returned 200 but no serverId for $uuid — will retry");
             log("SyncService: Response keys were: ${data.keys.toList()}");

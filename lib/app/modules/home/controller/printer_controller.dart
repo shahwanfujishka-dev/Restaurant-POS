@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
+import 'package:collection/collection.dart';
 import 'package:esc_pos_printer_plus/esc_pos_printer_plus.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:flutter/material.dart';
@@ -538,6 +539,46 @@ class PrinterController extends GetxController {
     } catch (e) {
       debugPrint("Printer assignment sync from hub failed: $e");
     }
+  }
+
+  AddonModel _addonWithQty(AddonModel a, int qty) => AddonModel(
+    id: a.id,
+    subId: a.subId,
+    prdId: a.prdId,
+    prdaddon_flags: a.prdaddon_flags,
+    name: a.name,
+    price: a.price,
+    unitDisplay: a.unitDisplay,
+    unitId: a.unitId,
+    taxCatId: a.taxCatId,
+    taxPer: a.taxPer,
+    unitBaseQty: a.unitBaseQty,
+    initialQty: qty,
+    isDefault: a.isDefault,
+    freeQty: a.freeQty,
+  );
+
+  /// Addons whose qty differs between old and new.
+  /// removed=true -> qty that was removed; false -> qty that was added.
+  List<AddonModel> _addonDelta(
+      List<AddonModel> oldAddons,
+      List<AddonModel> newAddons, {
+        required bool removed,
+      }) {
+    final oldMap = {for (var a in oldAddons) a.prdId: a};
+    final newMap = {for (var a in newAddons) a.prdId: a};
+    final result = <AddonModel>[];
+
+    for (final id in {...oldMap.keys, ...newMap.keys}) {
+      final oldQ = oldMap[id]?.quantity.value ?? 0;
+      final newQ = newMap[id]?.quantity.value ?? 0;
+      final diff = removed ? oldQ - newQ : newQ - oldQ;
+      if (diff > 0) {
+        final source = removed ? (oldMap[id] ?? newMap[id]!) : (newMap[id] ?? oldMap[id]!);
+        result.add(_addonWithQty(source, diff));
+      }
+    }
+    return result;
   }
 
   Future<void> printReceipt(
@@ -1464,25 +1505,22 @@ if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
         for (var addon in item.selectedAddons) {
           double addonTotal = addon.price * addon.quantity.value;
           calculatedSubTotal += addonTotal;
-          bytes += generator.row([
-            PosColumn(text: "", width: 1),
-            PosColumn(text: " + ${addon.name}", width: 4),
-            PosColumn(
-              text: addon.price.toStringAsFixed(2),
-              width: 2,
-              styles: const PosStyles(align: PosAlign.right),
-            ),
-            PosColumn(
-              text: "0.00",
-              width: 2,
-              styles: const PosStyles(align: PosAlign.right),
-            ),
-            PosColumn(
-              text: addonTotal.toStringAsFixed(2),
-              width: 3,
-              styles: const PosStyles(align: PosAlign.right),
-            ),
-          ]);
+
+          if (addon.price > 0) {
+            bytes += generator.row([
+              PosColumn(text: " + ${addon.name}", width: 7),
+              PosColumn(
+                text: addon.price.toStringAsFixed(2),
+                width: 2,
+                styles: const PosStyles(align: PosAlign.right),
+              ),
+              PosColumn(
+                text: addonTotal.toStringAsFixed(2),
+                width: 3,
+                styles: const PosStyles(align: PosAlign.right),
+              ),
+            ]);
+          }
         }
       }
 
@@ -1852,25 +1890,23 @@ if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
       for (var addon in item.selectedAddons) {
         double addonTotal = addon.price * addon.quantity.value;
         calculatedSubTotal += addonTotal;
-        printer.row([
-          PosColumn(text: "", width: 1),
-          PosColumn(text: " + ${addon.name}", width: 4),
-          PosColumn(
-            text: addon.price.toStringAsFixed(2),
-            width: 2,
-            styles: const PosStyles(align: PosAlign.right),
-          ),
-          PosColumn(
-            text: "0.00",
-            width: 2,
-            styles: const PosStyles(align: PosAlign.right),
-          ),
-          PosColumn(
-            text: addonTotal.toStringAsFixed(2),
-            width: 3,
-            styles: const PosStyles(align: PosAlign.right),
-          ),
-        ]);
+
+        if (addon.price > 0) {
+          printer.row([
+            PosColumn(text: "", width: 1),
+            PosColumn(text: " + ${addon.name}", width: 4),
+            PosColumn(
+              text: addon.price.toStringAsFixed(2),
+              width: 2,
+              styles: const PosStyles(align: PosAlign.right),
+            ),
+            PosColumn(
+              text: addonTotal.toStringAsFixed(2),
+              width: 3,
+              styles: const PosStyles(align: PosAlign.right),
+            ),
+          ]);
+        }
       }
     }
 
@@ -2048,8 +2084,22 @@ if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
         for (var item in order.items)
           if (!item.isRemoved) itemKey(item): item,
       };
-
       final oldMap = {for (var item in oldItems) itemKey(item): item};
+
+// Re-link entries that differ only by unit id
+      for (final nk in newMap.keys.toList()) {
+        if (oldMap.containsKey(nk)) continue;
+        final pid = newMap[nk]!.product.id;
+        final ok = oldMap.keys.firstWhereOrNull(
+              (k) => !newMap.containsKey(k) && oldMap[k]!.product.id == pid,
+        );
+        if (ok != null) {
+          newMap[ok] = newMap.remove(nk)!;
+        }
+      }
+
+      debugPrint("OLD KEYS: ${oldMap.keys.toList()}");
+      debugPrint("NEW KEYS: ${newMap.keys.toList()}");
 
       Set<String> allKeys = {...oldMap.keys, ...newMap.keys};
 
@@ -2140,7 +2190,8 @@ if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
                 unit: newItem.unit,
                 unitId: newItem.unitId,
                 tokenPrinterId: newItem.tokenPrinterId,
-                selectedAddons: newItem.selectedAddons,
+                selectedAddons: _addonDelta(
+                    oldItem.selectedAddons, newItem.selectedAddons, removed: false),
                 isRemoved: false,
                 notes: newItem.notes,
               ),
@@ -2159,7 +2210,8 @@ if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
                 unit: oldItem.unit,
                 unitId: oldItem.unitId,
                 tokenPrinterId: oldItem.tokenPrinterId,
-                selectedAddons: oldItem.selectedAddons,
+                selectedAddons: _addonDelta(
+                    oldItem.selectedAddons, newItem.selectedAddons, removed: true),
                 isRemoved: true,
                 notes: oldItem.notes,
               ),
@@ -2416,45 +2468,58 @@ if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
   }
 
   Future<void> _printBluetoothKOT(
-    PrinterModel printer,
-    OrderModel order,
-    List<OrderItem> items,
-    CapabilityProfile profile, {
-    required String status,
-    required String invoiceLabel,
-  }) async {
+      PrinterModel printer,
+      OrderModel order,
+      List<OrderItem> items,
+      CapabilityProfile profile, {
+        required String status,
+        required String invoiceLabel,
+      }) async {
     try {
       debugPrint("🔵 _printBluetoothKOT called for ${printer.name}");
 
       bool connected = await PrintBluetoothThermal.connectionStatus;
+
       if (!connected) {
         debugPrint(
           "🔵 Not connected, attempting to connect to ${printer.address}",
         );
+
         bool res = await PrintBluetoothThermal.connect(
           macPrinterAddress: printer.address,
         );
+
         if (!res) {
           debugPrint("❌ Failed to connect to Bluetooth printer");
           return;
         }
+
         debugPrint("✅ Connected to Bluetooth printer");
       }
 
-      final generator = Generator(PaperSize.mm80, profile);
+      final generator = Generator(
+        PaperSize.mm80,
+        profile,
+      );
+
       List<int> bytes = [];
 
       final removedItems = items.where((i) => i.isRemoved).toList();
       final newItems = items.where((i) => !i.isRemoved).toList();
 
       debugPrint(
-        "🔵 Removed items: ${removedItems.length}, New items: ${newItems.length}",
+        "🔵 Removed items: ${removedItems.length}, "
+            "New items: ${newItems.length}",
       );
 
-      // Always print header
+      // ============================================================
+      // HEADER
+      // ============================================================
+
       bytes += generator.setGlobalFont(PosFontType.fontA);
+
       bytes += generator.text(
-        "Token No : $invoiceLabel", // was ${order.invNo}
+        "Token No : $invoiceLabel",
         styles: const PosStyles(
           align: PosAlign.center,
           height: PosTextSize.size2,
@@ -2462,70 +2527,113 @@ if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
           bold: false,
         ),
       );
+
       bytes += generator.text(
         "KITCHEN ORDER",
-        styles: const PosStyles(align: PosAlign.center),
+        styles: const PosStyles(
+          align: PosAlign.center,
+        ),
       );
+
       bytes += generator.text('-' * 48);
 
-      // Order info
+      // ============================================================
+      // ORDER INFORMATION
+      // ============================================================
+
       bytes += generator.row([
-        PosColumn(text: "Order No:", width: 6),
         PosColumn(
-          text: invoiceLabel, // was order.invNo
+          text: "Order No:",
           width: 6,
-          styles: const PosStyles(align: PosAlign.right),
+        ),
+        PosColumn(
+          text: invoiceLabel,
+          width: 6,
+          styles: const PosStyles(
+            align: PosAlign.right,
+          ),
         ),
       ]);
 
+      // Order Type
+      final selectedOrderTypeId =
+      GetStorage().read('selected_order_type_id');
+
+      final String orderType = selectedOrderTypeId == 0
+          ? 'Dine In'
+          : selectedOrderTypeId == 1
+          ? 'Delivery'
+          : selectedOrderTypeId == 2
+          ? 'Pick Up'
+          : '';
+
       bytes += generator.row([
-        PosColumn(text: "Order type:", width: 6),
         PosColumn(
-          // text: OrderType.values
-          //     .firstWhere(
-          //       (e) => e.id == order.sales_odr_order_type,
-          //       orElse: () => OrderType.dineIn,
-          //     )
-          //     .displayName,
-          text: (GetStorage().read('selected_order_type_id') == 0
-              ? 'Dine In'
-              : GetStorage().read('selected_order_type_id') == 1
-              ? 'Delivery'
-              : GetStorage().read('selected_order_type_id') == 2
-              ? 'Pick Up'
-              : ''),
+          text: "Order type:",
           width: 6,
-          styles: const PosStyles(align: PosAlign.right),
+        ),
+        PosColumn(
+          text: orderType,
+          width: 6,
+          styles: const PosStyles(
+            align: PosAlign.right,
+          ),
         ),
       ]);
-      if (order.captainName != null && order.captainName!.isNotEmpty) {
+
+      // Captain
+      if (order.captainName != null &&
+          order.captainName!.isNotEmpty) {
         bytes += generator.row([
-          PosColumn(text: "Captain:", width: 6),
+          PosColumn(
+            text: "Captain:",
+            width: 6,
+          ),
           PosColumn(
             text: order.captainName!,
             width: 6,
-            styles: const PosStyles(align: PosAlign.right),
+            styles: const PosStyles(
+              align: PosAlign.right,
+            ),
           ),
         ]);
       }
 
-      if (GetStorage().read('selected_order_type_id') == 0) {
+      // Table + Chairs only for Dine In
+      if (selectedOrderTypeId == 0) {
         bytes += generator.row([
-          PosColumn(text: "Table:", width: 6),
+          PosColumn(
+            text: "Table:",
+            width: 6,
+          ),
           PosColumn(
             text: "${order.tableName} (${order.chairNumber} Seats)",
             width: 6,
-            styles: const PosStyles(align: PosAlign.right),
+            styles: const PosStyles(
+              align: PosAlign.right,
+            ),
           ),
         ]);
       }
 
-      // ─── CANCELLED / REMOVED SECTION ───
-      if (removedItems.isNotEmpty) {
-        debugPrint("🔵 Printing ${removedItems.length} removed items");
-        bytes += generator.text('=' * 48, styles: const PosStyles(bold: true));
+      // ============================================================
+      // CANCELLED / REMOVED SECTION
+      // ============================================================
 
-        String sectionTitle = status == "CANCELLED"
+      if (removedItems.isNotEmpty) {
+        debugPrint(
+          "🔵 Printing ${removedItems.length} removed items",
+        );
+
+        bytes += generator.text(
+          '=' * 48,
+          styles: const PosStyles(
+            bold: true,
+          ),
+        );
+
+        final String sectionTitle =
+        status == "CANCELLED"
             ? "ORDER CANCELLED"
             : "QUANTITY DECREASED / REMOVED";
 
@@ -2537,67 +2645,124 @@ if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
             height: PosTextSize.size2,
           ),
         );
-        bytes += generator.text('=' * 48, styles: const PosStyles(bold: true));
+
+        bytes += generator.text(
+          '=' * 48,
+          styles: const PosStyles(
+            bold: true,
+          ),
+        );
+
         bytes += generator.row([
           PosColumn(
             text: "Item",
             width: 8,
-            styles: const PosStyles(bold: true),
+            styles: const PosStyles(
+              bold: true,
+            ),
           ),
           PosColumn(
-            text: status == "CANCELLED" ? "Qty" : "Qty Removed",
+            text: status == "CANCELLED"
+                ? "Qty"
+                : "Qty Removed",
             width: 4,
-            styles: const PosStyles(align: PosAlign.right, bold: true),
+            styles: const PosStyles(
+              align: PosAlign.right,
+              bold: true,
+            ),
           ),
         ]);
+
         bytes += generator.text('-' * 48);
+
+        // ------------------------------------------------------------
+        // REMOVED ITEMS
+        // ------------------------------------------------------------
 
         for (var item in removedItems) {
           debugPrint(
-            "🔵 Printing removed: ${item.product.name} x${item.quantity}",
+            "🔵 Printing removed item: "
+                "${item.product.name} x${item.quantity}",
           );
+
           bytes += generator.row([
             PosColumn(
-              text: status == "CANCELLED"
-                  ? item.product.name
-                  : "${item.product.name}",
+              text: item.product.name,
               width: 8,
-              styles: const PosStyles(bold: true),
+              styles: const PosStyles(
+                bold: true,
+              ),
             ),
             PosColumn(
-              text: "${item.quantity} ${item.unit.unitDisplay}",
+              text:
+              "${item.quantity} ${item.unit.unitDisplay}",
               width: 4,
-              styles: const PosStyles(align: PosAlign.right, bold: true),
+              styles: const PosStyles(
+                align: PosAlign.right,
+                bold: true,
+              ),
             ),
           ]);
 
-          // PRINT NOTES
+          // ----------------------------------------------------------
+          // ITEM NOTES
+          // ----------------------------------------------------------
+
           if (item.notes.isNotEmpty) {
             bytes += generator.text(
               "   NOTE: ${item.notes}",
-              styles: const PosStyles( bold: true),
+              styles: const PosStyles(
+                bold: true,
+              ),
             );
           }
 
+          // ----------------------------------------------------------
+          // CANCELLED / REMOVED ADDONS
+          // ----------------------------------------------------------
+
           for (var addon in item.selectedAddons) {
+            debugPrint(
+              "🔵 Printing removed addon: "
+                  "${addon.name} x${addon.quantity.value}",
+            );
+
             bytes += generator.row([
-              PosColumn(text: "  - ${addon.name}", width: 8),
               PosColumn(
-                text: "${addon.quantity.value} ${addon.unitDisplay}",
+                text: "  - ${addon.name}",
+                width: 8,
+              ),
+              PosColumn(
+                text:
+                "${addon.quantity.value} ${addon.unitDisplay}",
                 width: 4,
-                styles: const PosStyles(align: PosAlign.right),
+                styles: const PosStyles(
+                  align: PosAlign.right,
+                ),
               ),
             ]);
           }
         }
       }
 
-      // ─── NEW / UPDATED SECTION ───
-      if (newItems.isNotEmpty) {
-        debugPrint("🔵 Printing ${newItems.length} new/updated items");
-        bytes += generator.text('=' * 48, styles: const PosStyles(bold: true));
+      // ============================================================
+      // NEW / UPDATED SECTION
+      // ============================================================
 
-        String sectionTitle = status == "Modified"
+      if (newItems.isNotEmpty) {
+        debugPrint(
+          "🔵 Printing ${newItems.length} new/updated items",
+        );
+
+        bytes += generator.text(
+          '=' * 48,
+          styles: const PosStyles(
+            bold: true,
+          ),
+        );
+
+        final String sectionTitle =
+        status == "Modified"
             ? "QUANTITY INCREASED / NEW"
             : "ORDER ITEMS";
 
@@ -2605,72 +2770,133 @@ if (effectiveCustomerName != null && effectiveCustomerName.trim().isNotEmpty) {
           sectionTitle,
           styles: const PosStyles(
             align: PosAlign.center,
-            // bold: true,
             height: PosTextSize.size2,
           ),
         );
-        bytes += generator.text('=' * 48, styles: const PosStyles(bold: true));
+
+        bytes += generator.text(
+          '=' * 48,
+          styles: const PosStyles(
+            bold: true,
+          ),
+        );
+
         bytes += generator.row([
           PosColumn(
             text: "Item",
             width: 8,
-            // styles: const PosStyles(bold: true),
           ),
           PosColumn(
-            text: status == "Modified" ? "Qty Added" : "Qty",
+            text: status == "Modified"
+                ? "Qty Added"
+                : "Qty",
             width: 4,
-            styles: const PosStyles(align: PosAlign.right),
+            styles: const PosStyles(
+              align: PosAlign.right,
+            ),
           ),
         ]);
+
         bytes += generator.text('-' * 48);
 
+        // ------------------------------------------------------------
+        // NEW / UPDATED ITEMS
+        // ------------------------------------------------------------
+
         for (var item in newItems) {
-          debugPrint("🔵 Printing new: ${item.product.name} x${item.quantity}");
+          debugPrint(
+            "🔵 Printing new item: "
+                "${item.product.name} x${item.quantity}",
+          );
+
           bytes += generator.row([
             PosColumn(
-              text: "${item.product.name}",
+              text: item.product.name,
               width: 8,
-              // styles: const PosStyles(bold: true),
             ),
             PosColumn(
-              text: "${item.quantity} ${item.unit.unitDisplay}",
+              text:
+              "${item.quantity} ${item.unit.unitDisplay}",
               width: 4,
-              styles: const PosStyles(align: PosAlign.right),
+              styles: const PosStyles(
+                align: PosAlign.right,
+              ),
             ),
           ]);
 
-          // PRINT NOTES
+          // ----------------------------------------------------------
+          // ITEM NOTES
+          // ----------------------------------------------------------
+
           if (item.notes.isNotEmpty) {
             bytes += generator.text(
               "   NOTE: ${item.notes}",
-              // styles: const PosStyles(bold: true),
             );
           }
 
+          // ----------------------------------------------------------
+          // NEW / UPDATED ADDONS
+          // ----------------------------------------------------------
+
           for (var addon in item.selectedAddons) {
+            debugPrint(
+              "🔵 Printing new addon: "
+                  "${addon.name} x${addon.quantity.value}",
+            );
+
             bytes += generator.row([
-              PosColumn(text: "  + ${addon.name}", width: 8),
               PosColumn(
-                text: "${addon.quantity.value} ${addon.unitDisplay}",
+                text: "  + ${addon.name}",
+                width: 8,
+              ),
+              PosColumn(
+                text:
+                "${addon.quantity.value} ${addon.unitDisplay}",
                 width: 4,
-                styles: const PosStyles(align: PosAlign.right),
+                styles: const PosStyles(
+                  align: PosAlign.right,
+                ),
               ),
             ]);
           }
         }
       }
 
-      bytes += generator.text('=' * 48, styles: const PosStyles(bold: true));
-      bytes += generator.text("*** Kitchen Copy ***", styles: const PosStyles(align: PosAlign.center));
+      // ============================================================
+      // FOOTER
+      // ============================================================
+
+      bytes += generator.text(
+        '=' * 48,
+        styles: const PosStyles(
+          bold: true,
+        ),
+      );
+
+      bytes += generator.text(
+        "*** Kitchen Copy ***",
+        styles: const PosStyles(
+          align: PosAlign.center,
+        ),
+      );
+
       bytes += generator.feed(2);
+
       bytes += generator.cut();
 
-      debugPrint("🔵 Writing ${bytes.length} bytes to printer");
+      debugPrint(
+        "🔵 Writing ${bytes.length} bytes to printer",
+      );
+
       await PrintBluetoothThermal.writeBytes(bytes);
-      debugPrint("✅ KOT printed successfully to Bluetooth printer");
+
+      debugPrint(
+        "✅ KOT printed successfully to Bluetooth printer",
+      );
     } catch (e) {
-      debugPrint("❌ Bluetooth Print Error: $e");
-      // debugPrint("Stack trace: ${StackTrace.current}");
+      debugPrint(
+        "❌ Bluetooth Print Error: $e",
+      );
     }
   }
 

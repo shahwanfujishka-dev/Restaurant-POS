@@ -82,6 +82,8 @@ class LocalHubOrderService {
     };
   }
 
+
+
   Future<Map<String, dynamic>> createOrder({required Map<String, dynamic> payload}) async {
     debugPrint('[LocalHubOrderService] createOrder called for uuid: ${payload['uuid']}');
     final String uuid = (payload['uuid'] ?? '').toString().trim();
@@ -246,7 +248,7 @@ class LocalHubOrderService {
     if (createdAt != null) {
       orderRow['created_at'] = createdAt;
     }
-
+    await _db.saveSetting('sync_fail_$uuid', '0');
     await _db.saveOrderOffline(orderRow, items);
 
     if (Get.isRegistered<OrdersController>()) {

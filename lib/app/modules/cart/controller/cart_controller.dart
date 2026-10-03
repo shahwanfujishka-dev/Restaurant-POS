@@ -391,7 +391,6 @@ class CartController extends GetxController {
         ),
       );
     }
-
     cartItems.refresh();
   }
 
@@ -799,7 +798,14 @@ class CartController extends GetxController {
         }
 
         if (totalQty <= 0) continue;
-        int freeQtyLimit = addon.freeQty * item.quantity.value;
+        int freeQtyLimit;
+        if (resolvedFreeQty > 0) {
+          freeQtyLimit = resolvedFreeQty * item.quantity.value;
+        } else if (addon.price == 0) {
+          freeQtyLimit = totalQty;   // pure free addon: everything is free
+        } else {
+          freeQtyLimit = 0;
+        }
         int freePart = totalQty < freeQtyLimit ? totalQty : freeQtyLimit;
         int paidPart = totalQty - freePart;
         // final existSource = item.unit.existAddOns.firstWhereOrNull((ea) => ea.prdId == addon.prdId);
@@ -1559,10 +1565,17 @@ class CartController extends GetxController {
           if (processedPrdIds.contains(addon.prdId)) continue;
           processedPrdIds.add(addon.prdId);
 
+          final AddonModel? originalAddon = originalByPrdId[addon.prdId];
+
           final bool userTouched = item.selectedAddons.any(
                 (sa) => sa.prdId == addon.prdId,
           );
 
+          final int originalAddonQty = originalAddon?.initialQty ?? 0;
+
+          final bool addonQtyManuallyChanged =
+              originalAddon != null &&
+                  addon.quantity.value != originalAddonQty;
           // ── Resolve selected version ─────────────────────────────────────────
           final AddonModel? selectedVersion = item.selectedAddons
               .firstWhereOrNull((sa) => sa.prdId == addon.prdId);
@@ -1594,14 +1607,17 @@ class CartController extends GetxController {
 
           // ── Current qty ──────────────────────────────────────────────────────
           int currentQty;
-          if (!userTouched && resolvedFreeQty > 0) {
-            currentQty = newQty * resolvedFreeQty; // mirrors parent qty
+
+          final bool shouldMirrorParentQty =
+              resolvedFreeQty > 0 &&
+                  !addonQtyManuallyChanged;
+
+          if (shouldMirrorParentQty) {
+            currentQty = newQty * resolvedFreeQty;
           } else {
             currentQty = addon.quantity.value;
           }
-
           // ── Old qty from initialQty snapshot ─────────────────────────────────
-          final originalAddon = originalByPrdId[addon.prdId];
           final int oldQtySnapshot = unitChanged
               ? 0
               : (originalAddon?.initialQty ?? 0);
@@ -2183,7 +2199,7 @@ class CartController extends GetxController {
         "sales_ord_sub_tax_per": item["salesub_tax_per"],
         "sales_ord_sub_taxcat_id": item["prd_tax_cat_id"],
         "sales_ord_sub_tax_rate": item["salesub_tax"],
-        "sales_odr_sub_is_addon": item["is_addon"],
+        "sales_odr_sub_is_addon": item["addon_parent_prd_id"] != null ? 1 : 0,
         "sales_odr_sub_is_compliment": 0,
         "sales_ord_sub_is_kot_printed": 0,
         "sales_odr_sub_addon_parent_prd_id": item["addon_parent_prd_id"] ?? 0,
@@ -2299,7 +2315,7 @@ class CartController extends GetxController {
         "sales_ord_sub_tax_per": si['salesub_tax_per'],
         "sales_ord_sub_taxcat_id": si['prd_tax_cat_id'],
         "sales_ord_sub_tax_rate": si['salesub_tax'],
-        "sales_odr_sub_is_addon": isAddon,
+        "sales_odr_sub_is_addon": si['addon_parent_prd_id'] != null ? 1 : 0,
         "sales_odr_sub_is_compliment": 0,
         "sales_ord_sub_is_kot_printed": 0,
         "sales_odr_sub_addon_parent_prd_id": si['addon_parent_prd_id'] ?? 0,

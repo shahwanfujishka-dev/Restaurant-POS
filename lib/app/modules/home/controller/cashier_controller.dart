@@ -620,10 +620,10 @@ class CashierController extends GetxController {
       }
       Get.offAllNamed(ScreenType.isMobile() ? Routes.ORDER_TYPE : Routes.HOME);
       showSafeSnackbar(
-        isComp ? "Compliment" : "Offline",
+        isComp ? "Compliment" : "Paid",
         isComp
             ? "Order complimented (saved locally)."
-            : "Payment saved locally. It will sync automatically.",
+            : "Payment Completed",
       );
     } catch (e) {
       log("Local Settle Error: $e");
