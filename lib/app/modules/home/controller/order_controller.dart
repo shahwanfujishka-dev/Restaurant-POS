@@ -349,6 +349,13 @@ class OrdersController extends GetxController {
     }
   }
 
+  bool _isAddonRow(dynamic i) {
+    final flag = int.tryParse((i['is_addon'] ?? i['sales_odr_sub_is_addon'] ?? 0).toString()) ?? 0;
+    final parent = int.tryParse(
+        (i['addon_parent_prd_id'] ?? i['sales_odr_sub_addon_parent_prd_id'] ?? 0).toString()) ?? 0;
+    return flag == 1 || parent > 0;
+  }
+
   Future<void> _fetchSoldOrders() async {
     try {
       final cachedSoldData = await _dbHelper.getOrdersByStatus(['paid']);
@@ -581,15 +588,8 @@ class OrdersController extends GetxController {
 
           final List<dynamic> saleItems = payload['sale_items'] ?? payload['sales_order_sub'] ?? [];
 
-          final mainItems = saleItems.where((i) {
-            final isAddon = (i['is_addon'] ?? i['sales_odr_sub_is_addon'] as num? ?? 0).toInt();
-            return isAddon == 0; // Removed: && (i['is_deleted'] ?? 0) != 1
-          }).toList();
-
-          final addonItems = saleItems.where((i) {
-            final isAddon = (i['is_addon'] ?? i['sales_odr_sub_is_addon'] as num? ?? 0).toInt();
-            return isAddon == 1; // Removed: && (i['is_deleted'] ?? 0) != 1
-          }).toList();
+          final mainItems  = saleItems.where((i) => !_isAddonRow(i)).toList();
+          final addonItems = saleItems.where((i) => _isAddonRow(i)).toList();
 
           for (final si in mainItems) {
             final prdId = (si['salesub_prd_id'] ?? si['sales_ord_sub_prod_id'])?.toString() ?? '';
@@ -1058,15 +1058,10 @@ class OrdersController extends GetxController {
         final List<dynamic> subItems = preview['sales_order_sub'] ?? [];
         List<OrderItem> items = [];
 
-        final mainItems = subItems.where((item) {
-          final isAddon = int.tryParse(item['sales_odr_sub_is_addon']?.toString() ?? '0') ?? 0;
-          return isAddon == 0;
-        }).toList();
+        final mainItems  = subItems.where((i) => !_isAddonRow(i)).toList();
 
-        final addonItems = subItems.where((item) {
-          final isAddon = int.tryParse(item['sales_odr_sub_is_addon']?.toString() ?? '0') ?? 0;
-          return isAddon == 1;
-        }).toList();
+
+        final addonItems = subItems.where((i) => _isAddonRow(i)).toList();
 
         for (var productJson in mainItems) {
           final double quantity = (productJson['salesub_qty'] ?? productJson['sales_ord_sub_qty'] as num? ?? 1).toDouble();
@@ -1276,15 +1271,8 @@ class OrdersController extends GetxController {
     final cartController = Get.find<CartController>();
     List<OrderItem> items = [];
 
-    final mainItemsJson = subItemsJson.where((item) {
-      final isAddon = int.tryParse(item['sales_odr_sub_is_addon']?.toString() ?? '0') ?? 0;
-      return isAddon == 0;
-    }).toList();
-
-    final addonItemsJson = subItemsJson.where((item) {
-      final isAddon = int.tryParse(item['sales_odr_sub_is_addon']?.toString() ?? '0') ?? 0;
-      return isAddon == 1;
-    }).toList();
+    final mainItemsJson  = subItemsJson.where((i) => !_isAddonRow(i)).toList();
+    final addonItemsJson = subItemsJson.where((i) => _isAddonRow(i)).toList();
 
     for (var sub in mainItemsJson) {
       final String prdId = (sub['sales_ord_sub_prod_id'] ?? 0).toString();
