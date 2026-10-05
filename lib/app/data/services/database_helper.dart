@@ -25,6 +25,7 @@ class DatabaseHelper {
       version: 22, // bumped from 21 → 22 for order_inv_issue in local server
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
+      onOpen: _ensureOrderColumns,
     );
   }
 
@@ -39,6 +40,18 @@ class DatabaseHelper {
     if (value == null) return defaultValue;
     if (value is num) return value.toInt();
     return int.tryParse(value.toString()) ?? defaultValue;
+  }
+
+  Future<void> _ensureOrderColumns(Database db) async {
+    final cols = (await db.rawQuery('PRAGMA table_info(orders)'))
+        .map((c) => c['name'].toString())
+        .toSet();
+    if (!cols.contains('create_payload')) {
+      await db.execute('ALTER TABLE orders ADD COLUMN create_payload TEXT');
+    }
+    if (!cols.contains('hub_synced')) {
+      await db.execute('ALTER TABLE orders ADD COLUMN hub_synced INTEGER DEFAULT 1');
+    }
   }
 
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -371,25 +384,27 @@ class DatabaseHelper {
     ''');
 
     await db.execute('''
-  CREATE TABLE orders (
-    local_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    uuid TEXT UNIQUE,
-    server_id TEXT,
-    inv_no TEXT,
-    branch_inv TEXT,
-    created_by_device_id TEXT,
-    order_type_id INTEGER,
-    table_id INTEGER,
-    customer_name TEXT,
-    customer_phone TEXT,
-    total_amount REAL,
-    total_tax REAL,
-    status TEXT, 
-    is_synced INTEGER DEFAULT 0,
-    payload TEXT,
-    offline_seq INTEGER,
-    created_at TEXT
-  )
+CREATE TABLE orders (
+  local_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT UNIQUE,
+  server_id TEXT,
+  inv_no TEXT,
+  branch_inv TEXT,
+  created_by_device_id TEXT,
+  order_type_id INTEGER,
+  table_id INTEGER,
+  customer_name TEXT,
+  customer_phone TEXT,
+  total_amount REAL,
+  total_tax REAL,
+  status TEXT,
+  is_synced INTEGER DEFAULT 0,
+  hub_synced INTEGER DEFAULT 1,
+  payload TEXT,
+  create_payload TEXT,
+  offline_seq INTEGER,
+  created_at TEXT
+)
 ''');
 
     await db.execute('''

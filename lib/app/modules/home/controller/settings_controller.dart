@@ -61,9 +61,7 @@ class SettingsController extends GetxController {
     });
 
     // Enforce no-sync for clients in local mode on start
-    if (isLocalMode && isClient) {
-      toggleBackgroundSync(false);
-    }
+    if (isLocalMode) toggleBackgroundSync(false);
   }
 
   /// Starts a timer to refresh the pending count and check client connection
@@ -193,8 +191,8 @@ class SettingsController extends GetxController {
       if (isHost) {
         await startLocalServer();
       } else {
-        // Automatically disable live sync when switching to client local mode
         toggleBackgroundSync(false);
+        if (isHost) await startLocalServer();
       }
     } else {
       if (LocalHubServer.instance.isRunning) {

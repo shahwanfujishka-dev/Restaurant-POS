@@ -117,6 +117,7 @@ class PrintersPage extends GetView<PrinterController> {
                     onPressed: () {
                       controller.scanBluetoothPrinters();
                       controller.scanWifiPrinters();
+                      controller.scanWindowsPrinters();
                     },
                     isPrimary: true,
                   ),
@@ -246,6 +247,8 @@ class PrintersPage extends GetView<PrinterController> {
             _buildPrinterStatusRow(context, "Bluetooth", controller.bluetoothPrinters.length, Colors.blue),
             SizedBox(height: 4.h),
             _buildPrinterStatusRow(context, "WiFi", controller.wifiPrinters.length, Colors.orange),
+            SizedBox(height: 4.h),
+            _buildPrinterStatusRow(context, "Windows", controller.windowsPrinters.length, Colors.purple),
             if (controller.scanningBluetooth.value || controller.scanningWifi.value)
               const Padding(
                 padding: EdgeInsets.only(top: 16),
@@ -405,22 +408,58 @@ class PrintersPage extends GetView<PrinterController> {
               ),
               SizedBox(height: 8.h),
               Obx(() {
-                final allPrinters = [...controller.bluetoothPrinters, ...controller.wifiPrinters];
+                final allPrinters = controller.allPrinters;
+
                 return DropdownButtonFormField<PrinterModel>(
+                  isExpanded: true,
                   dropdownColor: colors.card,
                   decoration: InputDecoration(
                     labelText: "Choose Printer",
-                    labelStyle: TextStyle(color: colors.subtext),
+                    labelStyle: TextStyle(
+                      color: colors.subtext,
+                    ),
                   ),
-                  style: TextStyle(color: colors.text),
+                  style: TextStyle(
+                    color: colors.text,
+                  ),
                   value: selectedPrinter,
-                  items: allPrinters.map((p) => DropdownMenuItem(
-                    value: p,
-                    child: Text("${p.name} (${p.type})", style: TextStyle(color: colors.text)),
-                  )).toList(),
-                  onChanged: (val) => selectedPrinter = val,
+                  items: allPrinters.map((printer) {
+                    return DropdownMenuItem<PrinterModel>(
+                      value: printer,
+                      child: Row(
+                        children: [
+                          Icon(
+                            printer.type == "bluetooth" ? Icons.bluetooth
+                                : printer.type == "windows" ? Icons.usb
+                                : Icons.wifi,
+                            size: 18,
+                            color: printer.type == "bluetooth" ? Colors.blue
+                                : printer.type == "windows" ? Colors.purple
+                                : Colors.green,
+                          ),
+                          SizedBox(width: 8.w),
+                          Flexible(
+                            child: Text(
+                              "${printer.name} (${printer.type.toUpperCase()})",
+                              style: TextStyle(
+                                color: colors.text,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (printer) {
+                    selectedPrinter = printer;
+
+                    if (printer != null) {
+                      controller.selectPrinter(printer);
+                    }
+                  },
                 );
-              }),
+              })
             ],
           ),
           actions: [

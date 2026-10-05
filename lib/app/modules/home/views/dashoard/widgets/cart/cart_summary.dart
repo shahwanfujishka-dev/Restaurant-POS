@@ -5,6 +5,7 @@ import 'package:get/get.dart' hide ScreenType;
 import '../../../../../../../helper/snackbar_helper.dart';
 import '../../../../../../data/Device_Roles/device_roles.dart';
 import '../../../../../../data/models/order_model.dart';
+import '../../../../../../data/services/local_hub_client.dart';
 import '../../../../../../routes/app_pages.dart';
 import '../../../../../../theme/app_theme.dart';
 import '../../../../../../theme/app_typography.dart';
@@ -20,6 +21,39 @@ class CartSummary extends StatelessWidget {
   final CartController controller;
 
   const CartSummary({super.key, required this.controller});
+
+  bool get _isLocalClient =>
+      DeviceConfig.operationMode == OperationMode.local &&
+          DeviceConfig.role == DeviceRole.client;
+
+  Future<bool> _validateClientReady() async {
+    if (!_isLocalClient) return true; // host / online: nothing to check
+
+    final ip = DeviceConfig.hostIp;
+    if (ip == null || ip.trim().isEmpty) {
+      showSafeSnackbar("Main Cashier Not Set", "Enter the Main Cashier IP in Settings first.");
+      return false;
+    }
+
+    if (!DeviceConfig.hasAuthToken) {
+      showSafeSnackbar("Device Not Registered", "Connect to the Main Cashier from Settings before placing orders.");
+      return false;
+    }
+
+    try {
+      await LocalHubClient.instance
+          .testConnection(hostIp: ip, port: DeviceConfig.hostPort)
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // Warn but allow: placeOrder saves locally and SyncService retries later
+      showSafeSnackbar(
+        "Main Cashier Unreachable",
+        "Order will be saved on this device and sent when the Main Cashier is back.",
+      );
+    }
+    return true;
+  }
+
   Future<bool> _validatePrinterReady() async {
     final printerController = Get.find<PrinterController>();
 
@@ -403,6 +437,7 @@ class CartSummary extends StatelessWidget {
                     child: PrimaryButton(
                       isLoading: controller.isProcessing.value,
                       onPressed: () async {
+                        if (!await _validateClientReady()) return;
                         final ready = await _validatePrinterReady();
                         if (!ready) return;
                         _handlePlaceOrUpdateOrder(isDraft: false);
