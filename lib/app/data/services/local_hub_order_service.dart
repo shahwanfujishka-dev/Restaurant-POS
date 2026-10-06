@@ -95,7 +95,23 @@ class LocalHubOrderService {
     };
   }
 
+  /// Returns the sale invoice number reserved for this order, creating it once.
+  Future<String> reserveInvoiceNumber(String orderId) async {
+    final rows = await _findOrder(orderId);
+    final String uuid = rows.isNotEmpty ? rows.first['uuid'].toString() : orderId;
 
+    // Already carries a real invoice number (not an SO number): reuse it
+    final String current = rows.isNotEmpty ? (rows.first['branch_inv']?.toString() ?? '') : '';
+    if (current.isNotEmpty && !current.contains('/SO/')) return current;
+
+    final key = 'reserved_inv_$uuid';
+    final existing = await _db.getSetting(key);
+    if (existing != null && existing.isNotEmpty) return existing;
+
+    final n = await _db.generateLocalInvoiceNumber(AppState.branchDisName);
+    await _db.saveSetting(key, n);
+    return n;
+  }
 
   Future<Map<String, dynamic>> createOrder({required Map<String, dynamic> payload}) async {
     debugPrint('[LocalHubOrderService] createOrder called for uuid: ${payload['uuid']}');
@@ -222,7 +238,7 @@ class LocalHubOrderService {
     if (resStatus == 3) {
       resolvedBranchInv = (candidate.isNotEmpty && !candidate.contains('/SO/'))
           ? candidate
-          : await _db.generateLocalInvoiceNumber(AppState.branchDisName);
+          : await reserveInvoiceNumber(uuid);
     } else {
       resolvedBranchInv = candidate.isNotEmpty
           ? candidate

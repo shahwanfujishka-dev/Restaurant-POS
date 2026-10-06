@@ -200,6 +200,9 @@ class SettingsController extends GetxController {
         isHubServerRunning.value = false;
       }
     }
+    
+    // Auto-refresh controllers after mode change
+    _refreshControllers();
   }
 
   Future<Map<String, String>?> _scanSubnetForHost({
@@ -291,6 +294,8 @@ class SettingsController extends GetxController {
         await startLocalServer();
         _startConnectedDevicesPolling();
       }
+      
+      _refreshControllers();
 
       Get.snackbar('Host Mode Enabled', 'This device is now the Main Cashier.', snackPosition: SnackPosition.BOTTOM);
     } finally {
@@ -336,6 +341,8 @@ class SettingsController extends GetxController {
       if (isLocalMode) {
         toggleBackgroundSync(false);
       }
+      
+      _refreshControllers();
 
       Get.snackbar('Client Mode Enabled', 'Enter the Main Cashier IP below to connect.', snackPosition: SnackPosition.BOTTOM);
     } finally {
@@ -388,6 +395,12 @@ class SettingsController extends GetxController {
     hostIp.value = ip.trim();
     await DeviceConfig.setHostIp(ip.trim());
     isHubConnected.value = false;
+    // Auto-verify and refresh when IP is set
+    verifyConnection().then((connected) {
+      if (connected) {
+        testHubConnection(); // This will register and refresh data
+      }
+    });
   }
 
   Future<void> setHostPort(int port) async {

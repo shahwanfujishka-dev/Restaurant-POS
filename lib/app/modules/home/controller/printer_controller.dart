@@ -24,6 +24,7 @@ import '../../../data/models/order_model.dart';
 import '../../../data/models/order_type.dart';
 import '../../../data/services/database_helper.dart';
 import '../../../data/services/local_hub_client.dart';
+import '../../../data/services/local_hub_order_service.dart';
 import '../../../data/utils/AppState.dart';
 import '../views/dashoard/models/dashboard_models.dart';
 import 'dashboard_controller.dart';
@@ -225,6 +226,12 @@ class PrinterController extends GetxController {
       selectedWifiPrinter.value = printer;
       selectedBluetoothPrinter.value = null;
     }
+  }
+
+  String _toInvoiceStyle(String label) {
+    final m = RegExp(r'^(.*?)/SO/(\d+)$').firstMatch(label);
+    if (m == null) return label;
+    return '${m.group(1)}${m.group(2)}';
   }
 
   Future<void> _loadSavedMappings() async {
@@ -716,7 +723,13 @@ class PrinterController extends GetxController {
     }
 
     final profile = await CapabilityProfile.load();
-    final invoiceLabel = await _resolveInvoiceLabel(order);
+    String invoiceLabel = await _resolveInvoiceLabel(order);
+    if (isBill &&
+        DeviceConfig.isLocal &&
+        DeviceConfig.role == DeviceRole.server &&
+        order.status.value != OrderStatus.paid) {
+      invoiceLabel = await LocalHubOrderService.instance.reserveInvoiceNumber(order.id);
+    }
     final bool resolvedIsSale = isSale ?? (order.status.value == OrderStatus.paid);
 
     if (type == 'wifi') {

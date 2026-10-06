@@ -17,6 +17,10 @@ class CaptainDropdown extends StatelessWidget {
 
     return Obx(() {
       final captains = controller.captainsList;
+      final selectedId = controller.selectedCaptainId.value;
+      final safeValue = captains.any((c) => c['ledger_id'] == selectedId)
+          ? selectedId
+          : null;
 
       // ✅ Empty state
       if (captains.isEmpty) {
@@ -34,8 +38,11 @@ class CaptainDropdown extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(Icons.person_outline,
-                  color: colors.subtext, size: AppTypography.cardTitle.fontSize),
+              Icon(
+                Icons.person_outline,
+                color: colors.subtext,
+                size: AppTypography.cardTitle.fontSize,
+              ),
               SizedBox(width: 8.w),
               Text(
                 "Add New Captain",
@@ -84,8 +91,14 @@ class CaptainDropdown extends StatelessWidget {
               Expanded(
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<int?>(
+                    value: safeValue,
+                    hint: Text(
+                      "Select Captain",
+                      style: AppTypography.cardSubtitle.copyWith(
+                        color: colors.subtext,
+                      ),
+                    ),
                     padding: EdgeInsets.zero,
-                    value: controller.selectedCaptainId.value,
                     isExpanded: true,
                     dropdownColor: colors.card,
                     // ✅ No hint needed — first captain is always pre-selected
@@ -101,7 +114,8 @@ class CaptainDropdown extends StatelessWidget {
                     items: captains.map((captain) {
                       final int id = captain['ledger_id'] as int;
                       final String name =
-                      (captain['ledg_name_only'] as String?)?.isNotEmpty == true
+                          (captain['ledg_name_only'] as String?)?.isNotEmpty ==
+                              true
                           ? captain['ledg_name_only'] as String
                           : captain['ledger_name'] as String? ?? '';
                       return DropdownMenuItem<int?>(
@@ -118,10 +132,12 @@ class CaptainDropdown extends StatelessWidget {
                     }).toList(),
                     onChanged: (value) {
                       if (value == null) return;
-                      final captain =
-                      captains.firstWhere((c) => c['ledger_id'] == value);
+                      final captain = captains.firstWhere(
+                        (c) => c['ledger_id'] == value,
+                      );
                       final String name =
-                      (captain['ledg_name_only'] as String?)?.isNotEmpty == true
+                          (captain['ledg_name_only'] as String?)?.isNotEmpty ==
+                              true
                           ? captain['ledg_name_only'] as String
                           : captain['ledger_name'] as String? ?? '';
                       controller.setCaption(value, name);

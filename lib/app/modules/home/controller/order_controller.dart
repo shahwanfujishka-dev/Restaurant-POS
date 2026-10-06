@@ -1070,7 +1070,10 @@ class OrdersController extends GetxController {
           final double cgstRate = (productJson['sales_ord_sub_cgst_rate'] as num? ?? 0.0).toDouble();
           final double sgstRate = (productJson['sales_ord_sub_sgst_rate'] as num? ?? 0.0).toDouble();
 
+
           double price = baseRate;
+          final double unitBase = (productJson['base_qty'] ?? productJson['unit_base_qty'] as num? ?? 1.0).toDouble();
+          final double basePrice = unitBase > 1.0 ? price / unitBase : price;
           // if (Get.isRegistered<DashboardController>()) {
           //   final dashboardController = Get.find<DashboardController>();
           //   price = dashboardController.vatType.value == 0 ? baseRate + taxAmt : baseRate;
@@ -1118,7 +1121,7 @@ class OrdersController extends GetxController {
               id: prdId,
               name: productJson['prd_name']?.toString() ?? '',
               categoryId: (productJson['prd_cat_id'] ?? '').toString(),
-              price: price,
+                price: basePrice,
               prd_tax: (productJson['sales_ord_sub_tax_per'] as num? ?? 0.0).toDouble(),
               image: fullImgPath,
               unitDisplay: (productJson['prd_unit_name'] ?? productJson['unit_display'] ?? '').toString(),
@@ -1130,7 +1133,7 @@ class OrdersController extends GetxController {
               unitName: (productJson['prd_unit_name'] ?? productJson['unit_display'] ?? '').toString(),
               unitDisplay: (productJson['prd_unit_name'] ?? productJson['unit_display'] ?? '').toString(),
               rate: price,
-              unitBaseQty: (productJson['base_qty'] ?? productJson['unit_base_qty'] as num? ?? 1.0).toDouble(),
+              unitBaseQty: unitBase,
               existAddOns: [],
             ),
             selectedAddons: selectedAddons,

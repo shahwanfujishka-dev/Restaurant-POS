@@ -42,7 +42,6 @@ class CashierWidgets {
             style: AppTypography.cardSubtitle.copyWith(
               color: isSelected ? AppTheme.primaryGreen : colors.text,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-              fontSize: 7.sp
             ),
           ),
         ),
@@ -131,7 +130,7 @@ class CashierWidgets {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.person_outline, size: AppTypography.sizeText, color: colors.subtext),
+                      Icon(Icons.person_outline, size: AppTypography.sizeCategory, color: colors.subtext),
                       SizedBox(width: 6.w),
                       Text(
                         "Customer Info",
@@ -139,7 +138,7 @@ class CashierWidgets {
                           color: colors.subtext,
                           fontWeight: FontWeight.w600,
                           letterSpacing: 0.5,
-                          fontSize: AppTypography.sizeText
+                          fontSize: AppTypography.sizeCategory
                         ),
                       ),
                     ],
@@ -216,18 +215,18 @@ class CashierWidgets {
         ),
         child: Row(
           children: [
-            Icon(Icons.search, size: AppTypography.sizeText, color: colors.subtext),
+            Icon(Icons.search, size: AppTypography.sizeCategory, color: colors.subtext),
             SizedBox(width: 8.w),
             Expanded(
               child: Obx(() => Text(
                 selectedCustomer.value?['name'] ?? "Select Customer",
                 style: AppTypography.cardSubtitle.copyWith(
                   color: selectedCustomer.value != null ? colors.text : colors.subtext,
-                  fontWeight: FontWeight.w500,fontSize: AppTypography.sizeText
+                  fontWeight: FontWeight.w500,fontSize: AppTypography.sizeCategory
                 ),
               )),
             ),
-            Icon(Icons.arrow_drop_down, size: AppTypography.sizeText, color: colors.subtext),
+            Icon(Icons.arrow_drop_down, size: AppTypography.sizeCategory, color: colors.subtext),
           ],
         ),
       ),
@@ -259,7 +258,7 @@ class CashierWidgets {
               label,
               style: AppTypography.cardInfo.copyWith(
                 color: colors.subtext,
-                  fontSize: AppTypography.sizeText
+                  fontSize: AppTypography.sizeCategory
               ),
             ),
           ),
@@ -271,14 +270,14 @@ class CashierWidgets {
               keyboardType: Keyboard,
               style: AppTypography.cardSubtitle.copyWith(
                 color: colors.text,
-                  fontSize: AppTypography.sizeText
+                  fontSize: AppTypography.sizeCategory
               ),
               decoration: InputDecoration(
                 isDense: true,
                 contentPadding: EdgeInsets.symmetric(vertical: 8.h),
                 border: InputBorder.none,
                 hintText: isReadOnly ? "Cash Customer" : "Enter $label",
-                hintStyle: AppTypography.cardInfo.copyWith(color: colors.subtext.withOpacity(0.5),fontSize: AppTypography.sizeText),
+                hintStyle: AppTypography.cardInfo.copyWith(color: colors.subtext.withOpacity(0.5),fontSize: AppTypography.sizeCategory),
               ),
             ),
           ),
@@ -302,19 +301,19 @@ class CashierWidgets {
         Text(
           label,
           style: isTotal
-              ? AppTypography.cardTitle.copyWith(color: colors.text,fontSize: AppTypography.sizeText)
-              : AppTypography.cardSubtitle.copyWith(color: colors.subtext,fontSize: AppTypography.sizeText),
+              ? AppTypography.cardTitle.copyWith(color: colors.text,fontSize: AppTypography.sizeCategory)
+              : AppTypography.cardSubtitle.copyWith(color: colors.subtext,fontSize: AppTypography.sizeCategory),
         ),
         Text(
           value,
           style: isTotal
               ? AppTypography.headline2.copyWith(
             color: AppTheme.primaryGreen,
-            fontSize: AppTypography.sizeText,
+            fontSize: AppTypography.sizeCategory,
           )
               : AppTypography.cardSubtitle.copyWith(
             color: colors.text,
-            fontWeight: FontWeight.w600,fontSize: AppTypography.sizeText
+            fontWeight: FontWeight.w600,fontSize: AppTypography.sizeCategory
           ),
         ),
       ],
@@ -334,7 +333,7 @@ class CashierWidgets {
       children: [
         Text(
           "Discount",
-          style: AppTypography.cardSubtitle.copyWith(color: colors.subtext,fontSize: AppTypography.sizeText),
+          style: AppTypography.cardSubtitle.copyWith(color: colors.subtext,fontSize: AppTypography.sizeCategory),
         ),
         SizedBox(width: ScreenType.isMobile() ? 8.w: 120.w),
         Expanded(
@@ -352,7 +351,7 @@ class CashierWidgets {
               textAlign: TextAlign.right,
               style: AppTypography.cardSubtitle.copyWith(
                 color: colors.text,
-                fontWeight: FontWeight.bold,fontSize: AppTypography.sizeText
+                fontWeight: FontWeight.bold,fontSize: AppTypography.sizeCategory
               ),
               decoration: InputDecoration(
                 hintText: "0.00",
@@ -393,7 +392,7 @@ class CashierWidgets {
       children: [
         Text(
           "Round Off",
-          style: AppTypography.cardSubtitle.copyWith(color: colors.subtext,fontSize: AppTypography.sizeText),
+          style: AppTypography.cardSubtitle.copyWith(color: colors.subtext,fontSize: AppTypography.sizeCategory),
         ),
         SizedBox(width: 8.w),
         Expanded(
@@ -415,7 +414,7 @@ class CashierWidgets {
                     textAlign: TextAlign.center,
                     style: AppTypography.cardSubtitle.copyWith(
                       color: colors.text,
-                      fontWeight: FontWeight.bold,fontSize: AppTypography.sizeText
+                      fontWeight: FontWeight.bold,fontSize: AppTypography.sizeCategory
                     ),
                     decoration: InputDecoration(
                       hintText: "0.00",
@@ -458,7 +457,7 @@ class CashierWidgets {
           borderRadius: BorderRadius.circular(6.r),
           border: Border.all(color: colors.border),
         ),
-        child: Icon(icon, size: AppTypography.sizeText, color: colors.text),
+        child: Icon(icon, size: AppTypography.sizeCategory, color: colors.text),
       ),
     );
   }
@@ -487,7 +486,7 @@ class CashierWidgets {
           color: sufficient
               ? AppTheme.primaryGreen.withOpacity(0.1)
               : Colors.red.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8.r),
+          borderRadius: BorderRadius.circular(4.r),
           border: Border.all(
             color: sufficient ? AppTheme.primaryGreen : Colors.red,
           ),
@@ -502,12 +501,11 @@ class CashierWidgets {
                   style: AppTypography.cardSubtitle.copyWith(
                     fontWeight: FontWeight.bold,
                     color: colors.text,
-                    fontSize: AppTypography.sizeText
+                    fontSize: AppTypography.sizeCategory
                   ),
                 ),
                 SizedBox(
-                  width: 120.w,
-                  height: 28.h,
+                  width: AppTypography.foodIcon,
                   child: TextField(
                     controller: ctrl,
                     readOnly: readOnly,
@@ -516,7 +514,7 @@ class CashierWidgets {
                     textAlign: TextAlign.right,
                     style: AppTypography.cardSubtitle.copyWith(
                       color: sufficient ? AppTheme.primaryGreen : Colors.red,
-                      fontWeight: FontWeight.bold,fontSize: AppTypography.sizeText
+                      fontWeight: FontWeight.bold,fontSize: AppTypography.sizeCategory
                     ),
                     decoration: const InputDecoration(
                       isDense: true,
@@ -538,14 +536,14 @@ class CashierWidgets {
                     "Change",
                     style: AppTypography.cardSubtitle.copyWith(
                       fontWeight: FontWeight.bold,
-                      color: AppTheme.primaryGreen,fontSize: AppTypography.sizeText
+                      color: AppTheme.primaryGreen,fontSize: AppTypography.sizeCategory
                     ),
                   ),
                   Text(
                     change.toStringAsFixed(2),
                     style: AppTypography.cardSubtitle.copyWith(
                       fontWeight: FontWeight.bold,
-                      color: AppTheme.primaryGreen,fontSize: AppTypography.sizeText
+                      color: AppTheme.primaryGreen,fontSize: AppTypography.sizeCategory
                     ),
                   ),
                 ],
@@ -633,7 +631,7 @@ class CashierWidgets {
           label,
           style: AppTypography.cardSubtitle.copyWith(
             color: colors.subtext,
-            fontWeight: FontWeight.w500,fontSize: AppTypography.sizeText
+            fontWeight: FontWeight.w500,fontSize: AppTypography.sizeCategory
           ),
         ),
         SizedBox(height: 6.h),
@@ -654,7 +652,7 @@ class CashierWidgets {
               dropdownColor: colors.card,
               icon: Icon(
                 Icons.expand_more,
-                size: AppTypography.sizeText,
+                size: AppTypography.sizeCategory,
                 color: colors.subtext,
               ),
               items: items
@@ -664,7 +662,7 @@ class CashierWidgets {
                   acc['ledger_name'] ?? "",
                   style: AppTypography.cardSubtitle.copyWith(
                     color: colors.text,
-                    fontWeight: FontWeight.w500,fontSize: AppTypography.sizeText
+                    fontWeight: FontWeight.w500,fontSize: AppTypography.sizeCategory
                   ),
                 ),
               ))
@@ -696,7 +694,7 @@ class CashierWidgets {
             label,
             style: AppTypography.cardSubtitle.copyWith(
               color: readOnly ? colors.subtext : colors.text,
-              fontWeight: FontWeight.w600,fontSize: AppTypography.sizeText
+              fontWeight: FontWeight.w600,fontSize: AppTypography.sizeCategory
             ),
           ),
         ),
@@ -712,7 +710,7 @@ class CashierWidgets {
               textAlign: TextAlign.right,
               style: AppTypography.cardSubtitle.copyWith(
                 color: readOnly ? colors.subtext : highlightColor,
-                fontWeight: FontWeight.bold,fontSize: AppTypography.sizeText
+                fontWeight: FontWeight.bold,fontSize: AppTypography.sizeCategory
               ),
               decoration: InputDecoration(
                 hintText: "0.00",
@@ -787,7 +785,7 @@ class CashierWidgets {
               isValid ? "Change" : "Remaining",
               style: AppTypography.cardSubtitle.copyWith(
                 color: isValid ? AppTheme.primaryGreen : Colors.orange.shade800,
-                fontWeight: FontWeight.w600,fontSize: AppTypography.sizeText
+                fontWeight: FontWeight.w600,fontSize: AppTypography.sizeCategory
               ),
             ),
             Text(
@@ -796,7 +794,7 @@ class CashierWidgets {
                   : remaining.toStringAsFixed(2),
               style: AppTypography.cardSubtitle.copyWith(
                 color: isValid ? AppTheme.primaryGreen : Colors.orange.shade800,
-                fontWeight: FontWeight.bold,fontSize: AppTypography.sizeText
+                fontWeight: FontWeight.bold,fontSize: AppTypography.sizeCategory
               ),
             ),
           ],
@@ -966,7 +964,7 @@ class CashierWidgets {
                     leading: CircleAvatar(
                       radius: 18.r,
                       backgroundColor: AppTheme.primaryGreen.withOpacity(0.1),
-                      child: Icon(Icons.person, size: AppTypography.sizeText, color: AppTheme.primaryGreen),
+                      child: Icon(Icons.person, size: AppTypography.sizeCategory, color: AppTheme.primaryGreen),
                     ),
                     title: Text(
                       customer['name'] ?? "",
