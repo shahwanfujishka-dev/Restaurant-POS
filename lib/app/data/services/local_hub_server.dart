@@ -310,7 +310,7 @@ class LocalHubServer {
       });
 
       final handler = const Pipeline().addMiddleware(logRequests()).addHandler(router.call);
-      _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, defaultPort, shared: true);
+      _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, defaultPort,);
       lanIp = await LocalHubNetwork.getLocalIp();
 
       debugPrint('LOCAL HUB SERVER STARTED ON $serverUrl');

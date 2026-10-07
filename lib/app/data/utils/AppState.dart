@@ -2,7 +2,6 @@ import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_navigation/src/extension_navigation.dart';
 import 'package:get_storage/get_storage.dart';
-
 import '../../modules/cart/controller/cart_controller.dart';
 import '../../modules/home/controller/dashboard_controller.dart';
 import '../../modules/home/controller/order_controller.dart';
@@ -30,13 +29,12 @@ class AppState {
   static String get userId => _storage.read('usr_id')?.toString() ?? '';
   static String get serverUrl => _storage.read('base_url') ?? '';
   static String get ledgerId => _storage.read('ledger_id')?.toString() ?? '0';
-  static String get cashLedgerId =>
-      _storage.read('usr_cash_ledger_id')?.toString() ?? '0';
-  static String get bankLedgerId =>
-      _storage.read('usr_bank_ledger_id')?.toString() ?? '0';
+  static String get cashLedgerId => _storage.read('usr_cash_ledger_id')?.toString() ?? '0';
+  static String get bankLedgerId => _storage.read('usr_bank_ledger_id')?.toString() ?? '0';
   static int get cmpTaxType => _storage.read('cmp_tax_type') ?? 1;
   static String get upiId => _storage.read('as_upi_id') ?? '';
   static bool get isUpiEnabled => (_storage.read('as_upi_enable') ?? 0) == 1;
+
   static OrderType get orderType {
     final int? id = _storage.read('selected_order_type_id');
     if (id == null) return OrderType.dineIn;
@@ -90,11 +88,13 @@ class AppState {
     if (companyCode != null) _storage.write('company_code', companyCode);
     if (branchId != null) _storage.write('branch_id', branchId);
     if (branchToken != null) _storage.write('branch_token', branchToken);
-    if (mobileAppToken != null)
+    if (mobileAppToken != null) {
       _storage.write('mobileapptoken', mobileAppToken);
+    }
     if (branchName != null) _storage.write('branch_name', branchName);
-    if (branchDisName != null)
+    if (branchDisName != null) {
       _storage.write('branch_display_name', branchDisName);
+    }
     if (branchAddress != null) _storage.write('branch_address', branchAddress);
     if (branchPhone != null) _storage.write('branch_phone', branchPhone);
     if (branchMob != null) _storage.write('branch_mob', branchMob);
@@ -122,20 +122,27 @@ class AppState {
     }
 
     try {
-      if (Get.isRegistered<CartController>())
+      if (Get.isRegistered<CartController>()) {
         Get.delete<CartController>(force: true);
-      if (Get.isRegistered<OrdersController>())
+      }
+      if (Get.isRegistered<OrdersController>()) {
         Get.delete<OrdersController>(force: true);
-      if (Get.isRegistered<DashboardController>())
+      }
+      if (Get.isRegistered<DashboardController>()) {
         Get.delete<DashboardController>(force: true);
-      if (Get.isRegistered<TablesController>())
+      }
+      if (Get.isRegistered<TablesController>()) {
         Get.delete<TablesController>(force: true);
-      if (Get.isRegistered<PrinterController>())
+      }
+      if (Get.isRegistered<PrinterController>()) {
         Get.delete<PrinterController>(force: true);
-      if (Get.isRegistered<OrderTypeController>())
+      }
+      if (Get.isRegistered<OrderTypeController>()) {
         Get.delete<OrderTypeController>(force: true);
-      if (Get.isRegistered<HomeController>())
+      }
+      if (Get.isRegistered<HomeController>()) {
         Get.delete<HomeController>(force: true);
+      }
     } catch (e) {
       print("Error deleting controllers: $e");
     }

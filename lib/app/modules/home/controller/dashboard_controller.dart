@@ -16,6 +16,7 @@ import '../../../routes/app_pages.dart';
 import '../../cart/controller/cart_controller.dart';
 import '../views/dashoard/models/dashboard_models.dart';
 import '../views/dashoard/widgets/product_details_dialog.dart';
+import 'settings_controller.dart';
 
 class DashboardController extends GetxController {
 
@@ -71,6 +72,15 @@ class DashboardController extends GetxController {
     searchController = TextEditingController();
     searchFocusNode = FocusNode();
     debounce(searchKeyword, (_) => fetchProducts(), time: const Duration(milliseconds: 350));
+
+    // Auto-refresh when settings change
+    if (Get.isRegistered<SettingsController>()) {
+      final settings = Get.find<SettingsController>();
+      ever(settings.operationMode, (_) => refreshDashboardData());
+      ever(settings.hostIp, (_) => refreshDashboardData());
+      ever(settings.deviceRoleRx, (_) => refreshDashboardData());
+    }
+
     refreshDashboardData();
   }
 
@@ -116,8 +126,8 @@ class DashboardController extends GetxController {
       final localFavs = await _dbHelper.getFavorites();
       if (localFavs.isNotEmpty) {
         favorites.assignAll(localFavs.map((f) => FavoriteModel.fromJson(f)).toList());
-      } 
-      
+      }
+
       if (DeviceConfig.operationMode != OperationMode.local || DeviceConfig.role == DeviceRole.server) {
         final response = await _apiService.post("mobileapp/pos/list_favorite", data: {
           "usr_id": int.tryParse(AppState.userId) ?? 0,
@@ -187,6 +197,32 @@ class DashboardController extends GetxController {
             })));
           }
         }
+      } else if (DeviceConfig.operationMode == OperationMode.online || DeviceConfig.role == DeviceRole.server) {
+        // Online/Server: If local data is empty, try a one-time fetch from API
+        if (fetchedCategories.isEmpty) {
+          final response = await _apiService.post("mobileapp/category/download", data: {
+            "part_no": 0,
+            "limit": 1000,
+            "sync_time": "",
+          });
+          if (response.statusCode == 200) {
+            final List<dynamic> data = response.data['data'] ?? [];
+            final List<Map<String, dynamic>> mapped = data.map((json) => {
+              'id': (json['cat_id'] ?? '').toString(),
+              'name': (json['cat_name'] ?? '').toString(),
+              'cat_pos': (json['cat_pos'] ?? '').toString(),
+              'token_printer_id': (json['cat_token_printer'] as num? ?? 0).toInt(),
+              'sort_order': 0,
+            }).toList();
+            await _dbHelper.insertCategories(mapped);
+            fetchedCategories.assignAll(mapped.map((json) => CategoryModel.fromJson({
+              'cat_id': json['id'],
+              'cat_name': json['name'],
+              'cat_pos': json['cat_pos'],
+              'cat_token_printer': json['token_printer_id'],
+            })));
+          }
+        }
       }
 
       final posCategories = fetchedCategories.where((cat) => cat.cat_pos == "1").toList();
@@ -243,7 +279,7 @@ class DashboardController extends GetxController {
           'cat_token_printer': json['cat_token_printer'],
           'prd_is_veg': json['is_veg'],
         })).toList();
-        
+
         filteredFoodItems.assignAll(mappedProducts);
       }
 
@@ -253,7 +289,7 @@ class DashboardController extends GetxController {
         final hostIp = DeviceConfig.hostIp;
         if (hostIp != null && hostIp.isNotEmpty && DeviceConfig.hasAuthToken) {
           final hubResult = await LocalHubClient.instance.fetchMasterProducts(
-            hostIp: hostIp, 
+            hostIp: hostIp,
             port: DeviceConfig.hostPort,
             categoryId: selectedCategoryId.value.isNotEmpty ? selectedCategoryId.value : null,
             priceGroupId: pgId,
@@ -263,6 +299,41 @@ class DashboardController extends GetxController {
             await _dbHelper.insertProducts(data.cast<Map<String, dynamic>>());
             await loadLocalProducts();
           }
+        }
+      } else if ((DeviceConfig.operationMode == OperationMode.online || DeviceConfig.role == DeviceRole.server) && filteredFoodItems.isEmpty) {
+        // Online fallback: fetch current category/favorites if local DB is empty
+        final response = await _apiService.post("mobileapp/pos/get_product_list", data: {
+          "usr_id": int.tryParse(AppState.userId) ?? 0,
+          "price_group_id": pgId,
+          "category_id": selectedCategoryId.value.isNotEmpty ? int.tryParse(selectedCategoryId.value) : 0,
+          "fav_id": selectedFavoriteId.value ?? 0,
+          "keyword": searchKeyword.value,
+        });
+        if (response.statusCode == 200) {
+          final List<dynamic> data = response.data['data'] ?? [];
+          final String baseUrl = response.data['url']?.toString() ?? "";
+          final mapped = data.map((json) {
+             String imgUrl = json['prd_img_url']?.toString() ?? '';
+             if (imgUrl.isNotEmpty && baseUrl.isNotEmpty && !imgUrl.startsWith('http')) {
+               imgUrl = baseUrl + imgUrl;
+             }
+             return {
+              'id': (json['prd_id'] ?? '').toString(),
+              'price_group_id': pgId,
+              'name': (json['prd_name'] ?? '').toString(),
+              'category_id': (json['prd_cat_id'] ?? '').toString(),
+              'price': (json['sale_rate'] as num? ?? 0.0).toDouble(),
+              'prd_tax': (json['prd_tax'] as num? ?? 0.0).toDouble(),
+              'image': imgUrl,
+              'unit_display': (json['unit_display'] ?? '').toString(),
+              'tax_cat_id': (json['prd_tax_cat_id'] as num? ?? 0).toInt(),
+              'tax_per': (json['tax_per'] as num? ?? 0.0).toDouble(),
+              'is_veg': int.tryParse(json['prd_is_veg']?.toString() ?? "0") ?? 0,
+              'sort_order': 0,
+            };
+          }).toList();
+          await _dbHelper.insertProducts(mapped);
+          await loadLocalProducts();
         }
       }
     } catch (e) {
@@ -426,7 +497,7 @@ class DashboardController extends GetxController {
   void updateSearch(String value) {
     String trimmed = value.trim();
     if (searchKeyword.value == trimmed) return;
-    
+
     searchKeyword.value = trimmed;
     if (trimmed.isEmpty) {
       fetchProducts();

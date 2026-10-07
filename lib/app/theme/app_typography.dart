@@ -74,7 +74,7 @@ class AppTypography {
   static double get sizeTable =>
       ScreenType.isMobile() ? 20.sp : 5.sp;
   static double get sizeCategory =>
-      ScreenType.isMobile() ? 12.sp : 6.sp;
+      ScreenType.isMobile() ? 12.sp : 5.sp;
 
   static double get sizeText =>
       ScreenType.isMobile() ? 18.sp : 5.sp;

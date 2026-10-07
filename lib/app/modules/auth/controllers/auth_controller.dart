@@ -149,6 +149,7 @@ class AuthController extends GetxController {
     }
   }
   String AppstateServerUrl = AppState.serverUrl;
+
   Future<void> updateBranchConfig(Map<String, dynamic> config) async {
     final String url = (config['server_url'] ?? config['servel_url'] ?? '').toString().trim();
     final String code = (config['company_code'] ?? '').toString().trim();

@@ -161,7 +161,7 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
           SizedBox(width: 2.w),
           productDetails(),
           quantityControls(),
-          SizedBox(width: 2.w),
+          // SizedBox(width: 2.w),
           priceDisplay(),
         ],
       ),
@@ -199,7 +199,7 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
           Text(
             widget.cartItem.product.name,
             style: AppTypography.cardTitle.copyWith(
-              fontSize: 4.sp,
+              fontSize: AppTypography.smallText,
               fontWeight: FontWeight.w600,
               color: colors.text,
             ),
@@ -287,16 +287,13 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
           ),
           InkWell(
             onTap: () => QuantityDialog.show(widget.cartItem, widget.controller),
-            child: Container(
-              // padding: EdgeInsets.symmetric(horizontal: 1.w),
-              child: Obx(() => Text(
-                '${widget.cartItem.quantity.value}',
-                style: AppTypography.cardSubtitle.copyWith(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 4.sp,
-                    color: colors.text),
-              )),
-            ),
+            child: Obx(() => Text(
+              '${widget.cartItem.quantity.value}',
+              style: AppTypography.cardSubtitle.copyWith(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 4.sp,
+                  color: colors.text),
+            )),
           ),
           quantityButton(
             icon: Icons.add,
@@ -319,7 +316,7 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
         style: AppTypography.cardTitle.copyWith(
           color: colors.text,
           fontWeight: FontWeight.bold,
-          fontSize: 3.5.sp,
+          fontSize: AppTypography.smallText,
         ),
       )),
     );

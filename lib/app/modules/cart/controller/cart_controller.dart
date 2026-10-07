@@ -207,36 +207,45 @@ class CartController extends GetxController {
     final list = await _dbHelper.getCaptains();
     final storedLedgerId = GetStorage().read('ledger_id');
     final int? currentCaptainId = int.tryParse(storedLedgerId?.toString() ?? "");
-    final List<Map<String, dynamic>> sortedList = List.from(list);
+    final sortedList = List<Map<String, dynamic>>.from(list);
     if (currentCaptainId != null) {
-      final index = sortedList.indexWhere((c) => c['ledger_id'].toString() == currentCaptainId.toString(),);
-      if (index != -1) {
-        final captain = sortedList.removeAt(index);
-        sortedList.insert(0, captain);
-      }
+      final index = sortedList.indexWhere(
+              (c) => c['ledger_id'].toString() == currentCaptainId.toString());
+      if (index != -1) sortedList.insert(0, sortedList.removeAt(index));
     }
-
     captainsList.assignAll(sortedList);
-    if (selectedCaptainId.value == null && sortedList.isNotEmpty) {
-      final first = sortedList.first;
-      setCaption(
-        first['ledger_id'] as int,
-        (first['ledg_name_only'] as String?)?.isNotEmpty == true
-            ? first['ledg_name_only'] as String
-            : first['ledger_name'] as String? ?? '',
-      );
-    }
-    print("🎯 CAPTAINS LOADED: ${captainsList.length} → $captainsList");
+    _ensureCaptainSelected();
   }
 
-  void setCaption(int? ledgerId, String name) {
-    selectedCaptainId.value = ledgerId;
-    selectedCaptainName.value = name;
+  /// Selects the default (logged-in user, else first) if nothing valid is selected.
+  void _ensureCaptainSelected() {
+    if (captainsList.isEmpty) return;
+    final current = selectedCaptainId.value;
+    final stillValid =
+        current != null && captainsList.any((c) => c['ledger_id'] == current);
+    if (stillValid) return;
+
+    final first = captainsList.first;
+    setCaption(
+      first['ledger_id'] as int,
+      (first['ledg_name_only'] as String?)?.isNotEmpty == true
+          ? first['ledg_name_only'] as String
+          : first['ledger_name'] as String? ?? '',
+    );
   }
 
   void clearCaptain() {
     selectedCaptainId.value = null;
     selectedCaptainName.value = "";
+    if (captainsList.isEmpty) {
+      loadCaptains(); // list was empty/stale, reload then default
+    } else {
+      _ensureCaptainSelected(); // reset to default immediately
+    }
+  }
+  void setCaption(int? ledgerId, String name) {
+    selectedCaptainId.value = ledgerId;
+    selectedCaptainName.value = name;
   }
 
   void setTable({
@@ -392,6 +401,7 @@ class CartController extends GetxController {
       );
     }
     cartItems.refresh();
+    _rehydrateUnits();
   }
 
   void stopEditing() {
@@ -523,6 +533,22 @@ class CartController extends GetxController {
       if (sorted1[i].quantity.value != sorted2[i].quantity.value) return false;
     }
     return true;
+  }
+
+  Future<void> _rehydrateUnits() async {
+    for (final ci in cartItems.toList()) {
+      final prdId = int.tryParse(ci.product.id) ?? 0;
+      if (prdId == 0) continue;
+      final rows = await _dbHelper.getBulkProductUnits(prdId);
+      final row = rows.firstWhereOrNull(
+            (r) => (r['produnit_unit_id'] as num?)?.toInt() == ci.unit.unitId,
+      );
+      if (row == null) continue;
+      final cat = ProductUnit.fromJson(Map<String, dynamic>.from(row));
+      // keep the rate that was actually charged; take everything else from the catalog
+      ci.unit = cat.copyWith(rate: ci.priceAtAdd.value);
+    }
+    cartItems.refresh();
   }
 
   void updateItemDetails(
@@ -925,8 +951,22 @@ class CartController extends GetxController {
         }
       }
     }
-
     return (saleItems: saleItems, localItems: localItems, totalTax: totalTax, totalWithTax: totalWithTax);
+  }
+
+  List<Map<String, dynamic>> _customerArray(Map<String, dynamic>? c) {
+    if (c == null) return [];
+    return [
+      {
+        "cust_id": c['cust_id'],
+        "ledger_id": c['ledger_id'],
+        "name": c['name'],
+        "mobile": c['mobile'],
+        "address": c['address'] ?? c['cust_home_addr'] ?? c['dflt_delvry_addr'],
+        "vat_no": c['vat_no'],
+        "email": c['email'],
+      }
+    ];
   }
 
   Future<Map<String, dynamic>?> placeOrder({
@@ -1975,7 +2015,7 @@ class CartController extends GetxController {
         "usr_id": int.tryParse(AppState.userId) ?? 0,
         "sales_cust_type" : (registerCustEnabled == true) ? 1 :0,
         "cust_type": customerData != null ? "0" : "1",
-        // "cust_id": customerData?['id'],
+        "cust_id": customerData,
         "cust_name": customerData?['name'] ?? customerName ?? "Cash Customer",
         "saleqt_date": dateStr,
         "sale_items": saleItems,

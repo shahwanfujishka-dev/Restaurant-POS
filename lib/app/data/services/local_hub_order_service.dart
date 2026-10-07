@@ -12,10 +12,23 @@ class LocalHubOrderService {
 
   final DatabaseHelper _db = DatabaseHelper.instance;
 
+
+  Future<T> _step<T>(String name, Future<T> Function() fn) async {
+    debugPrint('[LocalHubOrderService] → $name');
+    try {
+      final r = await fn().timeout(const Duration(seconds: 10));
+      debugPrint('[LocalHubOrderService] ✓ $name');
+      return r;
+    } catch (e, st) {
+      debugPrint('[LocalHubOrderService] ✗ $name: $e\n$st');
+      rethrow;
+    }
+  }
+
   Map<String, dynamic> _buildPreviewMap(String uuid, Map<String, dynamic> payload) {
     final List<dynamic> saleItems = payload['sale_items'] ?? payload['sales_order_sub'] ?? [];
     List<Map<String, dynamic>> salesOrderSub = [];
-    
+
     for (var item in saleItems) {
       if (item is Map) {
         final itemMap = Map<String, dynamic>.from(item);
@@ -82,23 +95,40 @@ class LocalHubOrderService {
     };
   }
 
+  /// Returns the sale invoice number reserved for this order, creating it once.
+  Future<String> reserveInvoiceNumber(String orderId) async {
+    final rows = await _findOrder(orderId);
+    final String uuid = rows.isNotEmpty ? rows.first['uuid'].toString() : orderId;
 
+    // Already carries a real invoice number (not an SO number): reuse it
+    final String current = rows.isNotEmpty ? (rows.first['branch_inv']?.toString() ?? '') : '';
+    if (current.isNotEmpty && !current.contains('/SO/')) return current;
+
+    final key = 'reserved_inv_$uuid';
+    final existing = await _db.getSetting(key);
+    if (existing != null && existing.isNotEmpty) return existing;
+
+    final n = await _db.generateLocalInvoiceNumber(AppState.branchDisName);
+    await _db.saveSetting(key, n);
+    return n;
+  }
 
   Future<Map<String, dynamic>> createOrder({required Map<String, dynamic> payload}) async {
     debugPrint('[LocalHubOrderService] createOrder called for uuid: ${payload['uuid']}');
     final String uuid = (payload['uuid'] ?? '').toString().trim();
     if (uuid.isEmpty) throw Exception('Order UUID is required');
 
-    final existingOrders = await _findOrder(uuid);
+    final existingOrders = await _step('findOrder', () => _findOrder(uuid));
+
     if (existingOrders.isNotEmpty) {
       debugPrint('[LocalHubOrderService] createOrder: order already exists for uuid: $uuid');
       return {'success': true, 'duplicate': true, 'message': 'Order already exists', 'order': _injectStatus(existingOrders.first)};
     }
 
     final int resStatus = _toInt(payload['res_status']);
-    final String branchInv = resStatus == 3
-        ? await _db.generateLocalInvoiceNumber(AppState.branchDisName) // M-BR0001
-        : await _db.generateLocalSoNumber(AppState.branchDisName);     // M-BR/SO/0001
+    final branchInv = await _step('branchNumber', () => resStatus == 3
+        ? _db.generateLocalInvoiceNumber(AppState.branchDisName)
+        : _db.generateLocalSoNumber(AppState.branchDisName));
     payload = {...payload, 'branch_inv': branchInv, 'branch_ref_no': branchInv, 'is_mob_restaurant': 1};
     final List<dynamic> rawItems = payload['items'] is List ? payload['items'] as List : [];
     final List<Map<String, dynamic>> items = rawItems.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).map((item) => {...item, 'order_uuid': uuid}).toList();
@@ -123,17 +153,20 @@ class LocalHubOrderService {
       'created_at': payload['created_at'] ?? now,
     };
 
-    await _db.saveOrderOffline(order, items);
-    final int offlineSeq = await _db.assignOfflineSeqForOrder(uuid);
-    
-    if (Get.isRegistered<OrdersController>()) {
-      final oc = Get.find<OrdersController>();
-      final previewMap = _buildPreviewMap(uuid, payload);
-      oc.updateExistingOrder(oc.parseOrderResponse({'preview': previewMap, 'offline': true}));
-    }
+    await _step('saveOrderOffline', () => _db.saveOrderOffline(order, items));
 
-    if (Get.isRegistered<TablesController>()) {
-       Get.find<TablesController>().fetchTables(silent: true);
+    final offlineSeq = await _step('offlineSeq', () => _db.assignOfflineSeqForOrder(uuid));
+
+    try {
+      if (Get.isRegistered<OrdersController>()) {
+        final oc = Get.find<OrdersController>();
+        oc.updateExistingOrder(oc.parseOrderResponse({'preview': _buildPreviewMap(uuid, payload), 'offline': true}));
+      }
+      if (Get.isRegistered<TablesController>()) {
+        Get.find<TablesController>().fetchTables(silent: true);
+      }
+    } catch (e, st) {
+      debugPrint('[LocalHubOrderService] UI refresh failed (order already saved): $e\n$st');
     }
 
     debugPrint('[LocalHubOrderService] createOrder success for uuid: $uuid');
@@ -205,7 +238,7 @@ class LocalHubOrderService {
     if (resStatus == 3) {
       resolvedBranchInv = (candidate.isNotEmpty && !candidate.contains('/SO/'))
           ? candidate
-          : await _db.generateLocalInvoiceNumber(AppState.branchDisName);
+          : await reserveInvoiceNumber(uuid);
     } else {
       resolvedBranchInv = candidate.isNotEmpty
           ? candidate
