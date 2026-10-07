@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:developer';
-
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -52,6 +51,25 @@ class DatabaseHelper {
     if (!cols.contains('hub_synced')) {
       await db.execute('ALTER TABLE orders ADD COLUMN hub_synced INTEGER DEFAULT 1');
     }
+  }
+
+  Future<void> mergeTokenPrinterAssignments(List<Map<String, dynamic>> assignments) async {
+    if (assignments.isEmpty) return; // never wipe on empty
+    final db = await instance.database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (var a in assignments) {
+        final addr = a['printer_address']?.toString() ?? '';
+        if (addr.isEmpty) continue; // don't overwrite with a blank assignment
+        batch.insert('token_printer_assignments', {
+          'token_printer_id': _toInt(a['token_printer_id']),
+          'printer_address': addr,
+          'printer_name': a['printer_name']?.toString() ?? '',
+          'printer_type': a['printer_type']?.toString() ?? '',
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -1357,22 +1375,22 @@ CREATE TABLE orders (
     }
   }
 
-  Future<void> replaceAllTokenPrinterAssignments(List<Map<String, dynamic>> assignments) async {
-    final db = await instance.database;
-    await db.transaction((txn) async {
-      await txn.delete('token_printer_assignments');
-      final batch = txn.batch();
-      for (var a in assignments) {
-        batch.insert('token_printer_assignments', {
-          'token_printer_id': _toInt(a['token_printer_id']),
-          'printer_address': a['printer_address']?.toString() ?? '',
-          'printer_name': a['printer_name']?.toString() ?? '',
-          'printer_type': a['printer_type']?.toString() ?? '',
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-      await batch.commit(noResult: true);
-    });
-  }
+  // Future<void> replaceAllTokenPrinterAssignments(List<Map<String, dynamic>> assignments) async {
+  //   final db = await instance.database;
+  //   await db.transaction((txn) async {
+  //     await txn.delete('token_printer_assignments');
+  //     final batch = txn.batch();
+  //     for (var a in assignments) {
+  //       batch.insert('token_printer_assignments', {
+  //         'token_printer_id': _toInt(a['token_printer_id']),
+  //         'printer_address': a['printer_address']?.toString() ?? '',
+  //         'printer_name': a['printer_name']?.toString() ?? '',
+  //         'printer_type': a['printer_type']?.toString() ?? '',
+  //       }, conflictAlgorithm: ConflictAlgorithm.replace);
+  //     }
+  //     await batch.commit(noResult: true);
+  //   });
+  // }
 
   Future<Map<String, double>?> getStockUnitRate(int prdId, int unitId, int priceGroupId) async {
     final db = await instance.database;

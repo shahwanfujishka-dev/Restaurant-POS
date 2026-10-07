@@ -642,7 +642,7 @@ class PrinterController extends GetxController {
       );
       if (result['success'] == true) {
         final List<dynamic> data = result['data'] ?? [];
-        await DatabaseHelper.instance.replaceAllTokenPrinterAssignments(
+        await DatabaseHelper.instance.mergeTokenPrinterAssignments(
           data.cast<Map<String, dynamic>>(),
         );
         await _loadSavedMappings(); // refresh in-memory Rx list from the DB

@@ -199,35 +199,35 @@ class LocalHubOrderService {
     // ── Settle-only path: the server already has this order ─────────────────
     // Don't overwrite the stored payload or mark it unsynced. _syncPayment will
     // call settle_sales_order using the saved payments row.
-    if (alreadySynced && resStatus == 3) {
-      final String realUuid = ex!['uuid'].toString();
-      await _db.updateOrderStatusByUuid(realUuid, 'paid', isSynced: 1);
-
-      if (Get.isRegistered<OrdersController>()) {
-        final oc = Get.find<OrdersController>();
-        Map<String, dynamic> stored = {};
-        try {
-          stored = Map<String, dynamic>.from(jsonDecode(ex['payload']?.toString() ?? '{}'));
-        } catch (_) {}
-        final previewMap = _buildPreviewMap(realUuid, {
-          ...stored,
-          'res_status': 3,
-          'status': 'paid',
-          'inv_no': ex['inv_no'],
-          'branch_inv': ex['branch_inv'],
-        });
-        oc.updateExistingOrder(oc.parseOrderResponse({'preview': previewMap, 'offline': true}));
-      }
-      if (Get.isRegistered<TablesController>()) {
-        Get.find<TablesController>().fetchTables(silent: true);
-      }
-      debugPrint('[LocalHubOrderService] updateOrder settle-only for synced order: $realUuid');
-      return {
-        'success': true,
-        'message': 'Order settled locally, payment pending sync',
-        'branch_inv': ex['branch_inv']?.toString() ?? '',
-      };
-    }
+    // if (alreadySynced && resStatus == 3) {
+    //   final String realUuid = ex!['uuid'].toString();
+    //   await _db.updateOrderStatusByUuid(realUuid, 'paid', isSynced: 1);
+    //
+    //   if (Get.isRegistered<OrdersController>()) {
+    //     final oc = Get.find<OrdersController>();
+    //     Map<String, dynamic> stored = {};
+    //     try {
+    //       stored = Map<String, dynamic>.from(jsonDecode(ex['payload']?.toString() ?? '{}'));
+    //     } catch (_) {}
+    //     final previewMap = _buildPreviewMap(realUuid, {
+    //       ...stored,
+    //       'res_status': 3,
+    //       'status': 'paid',
+    //       'inv_no': ex['inv_no'],
+    //       'branch_inv': ex['branch_inv'],
+    //     });
+    //     oc.updateExistingOrder(oc.parseOrderResponse({'preview': previewMap, 'offline': true}));
+    //   }
+    //   if (Get.isRegistered<TablesController>()) {
+    //     Get.find<TablesController>().fetchTables(silent: true);
+    //   }
+    //   debugPrint('[LocalHubOrderService] updateOrder settle-only for synced order: $realUuid');
+    //   return {
+    //     'success': true,
+    //     'message': 'Order settled locally, payment pending sync',
+    //     'branch_inv': ex['branch_inv']?.toString() ?? '',
+    //   };
+    // }
 
     // ── Branch number: SO format until paid, invoice format once paid ───────
     final String candidate = (existingBranchInv != null && existingBranchInv.isNotEmpty)
