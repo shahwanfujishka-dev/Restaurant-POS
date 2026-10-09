@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_navigation/src/extension_navigation.dart';
@@ -11,6 +12,7 @@ import '../../modules/order_type/controller/order_type_controller.dart';
 import '../../modules/home/controller/home_controller.dart';
 import '../models/order_type.dart';
 import '../services/database_helper.dart';
+import '../services/sync_service.dart';
 
 class AppState {
   static final GetStorage _storage = GetStorage();
@@ -65,6 +67,11 @@ class AppState {
     _storage.write('usr_cash_ledger_id', profile['usr_cash_ledger_id']);
     _storage.write('usr_bank_ledger_id', profile['usr_bank_ledger_id']);
   }
+  static bool _isSeqKey(String k) =>
+      k.startsWith('local_inv_seq_') ||
+          k.startsWith('local_so_seq_') ||
+          k == 'offline_order_seq';
+
 
   static Future<void> clearAllData() async {
     // Keep essential branch config before erasing
@@ -80,7 +87,10 @@ class AppState {
     final branchMob = _storage.read('branch_mob');
     final branchTin = _storage.read('branch_tin');
     final taxType = _storage.read('cmp_tax_type');
-
+    final seqBackup = <String, dynamic>{
+      for (final k in _storage.getKeys<Iterable<String>>())
+        if (_isSeqKey(k)) k: _storage.read(k),
+    };
     await _storage.erase();
 
     // Restore branch config
@@ -100,8 +110,7 @@ class AppState {
     if (branchMob != null) _storage.write('branch_mob', branchMob);
     if (branchTin != null) _storage.write('branch_tin', branchTin);
     if (taxType != null) _storage.write('cmp_tax_type', taxType);
-
-    // Explicitly reset order type to Dine In
+    seqBackup.forEach((k, v) => _storage.write(k, v));
     orderType = OrderType.dineIn;
 
     try {
@@ -149,6 +158,42 @@ class AppState {
   }
 
   static Future<void> logout() async {
+    final pending = await DatabaseHelper.instance.getPendingSyncTotal();
+    if (pending > 0) {
+      await Get.dialog(
+        AlertDialog(
+          title: const Text('Cannot log out'),
+          content: Text(
+            '$pending order/payment(s) are not synced yet. '
+                'Logging out now would lose them. Sync first, then log out.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Get.back(),
+              child: const Text('OK'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Get.back();
+                try {
+                  await Get.find<SyncService>().syncPendingOrders();
+                } catch (_) {}
+                final left = await DatabaseHelper.instance.getPendingSyncTotal();
+                if (left == 0) {
+                  await logout(); // safe now, re-runs the check
+                } else {
+                  Get.snackbar('Sync incomplete',
+                      '$left item(s) still pending. Check the connection and try again.');
+                }
+              },
+              child: const Text('Sync now'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     await clearAllData();
     Get.offAllNamed('/auth');
   }

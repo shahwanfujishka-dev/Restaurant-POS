@@ -1,5 +1,8 @@
 import 'dart:convert';
 import 'dart:developer';
+import 'dart:math' as math;
+import 'package:flutter/cupertino.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -54,7 +57,7 @@ class DatabaseHelper {
   }
 
   Future<void> mergeTokenPrinterAssignments(List<Map<String, dynamic>> assignments) async {
-    if (assignments.isEmpty) return; // never wipe on empty
+    if (assignments.isEmpty) return;
     final db = await instance.database;
     await db.transaction((txn) async {
       final batch = txn.batch();
@@ -733,29 +736,18 @@ CREATE TABLE orders (
     await db.transaction((txn) async {
       for (var json in serverOrders) {
         final serverId = (json['sales_odr_id'] ?? '').toString();
+        if (serverId.isEmpty) continue;
         final invNo = (json['sales_odr_inv_no'] ?? '').toString();
-        final branchInv = (json['sales_odr_branch_inv'] ?? json['sales_branch_inv'] ?? '').toString();
-
-        // Check if we have an unsynced local version first
-        final List<Map<String, dynamic>> existing = await txn.query(
-          'orders',
-          where: '(server_id = ? OR inv_no = ?) AND is_synced = 0',
-          whereArgs: [serverId, invNo],
-          limit: 1,
-        );
-
-        if (existing.isNotEmpty) {
-          continue;
-        }
+        final branchInv = (json['sales_odr_branch_inv'] ?? json['sales_branch_inv'] ?? json['sales_odr_sales_branch_inv'] ?? '').toString();
 
         int posStatus = (json['sales_odr_pos_status'] as num? ?? (isSold ? 3 : 1)).toInt();
         String status = 'pending';
         if (posStatus == 0) status = 'draft';
+        if (posStatus == 2) status = 'billed';
         if (posStatus == 3) status = 'paid';
         if (posStatus == 4) status = 'cancelled';
 
-        await txn.insert('orders', {
-          'uuid': serverId,
+        final values = {
           'server_id': serverId,
           'inv_no': invNo,
           'branch_inv': branchInv,
@@ -766,12 +758,44 @@ CREATE TABLE orders (
           'total_tax': _toDouble(json['sales_odr_tax'] ?? json['tot_tax'] ?? json['total_tax']),
           'status': status,
           'is_synced': 1,
-          'created_at': DateTime.tryParse(json['sales_odr_datetime'] ?? '')?.toIso8601String() ?? DateTime.now().toIso8601String(),
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        };
+
+        final existing = await txn.query(
+          'orders',
+          columns: ['uuid', 'is_synced'],
+          where: "server_id = ? OR uuid = ? OR (inv_no = ? AND inv_no != '')",
+          whereArgs: [serverId, serverId, invNo],
+          limit: 1,
+        );
+
+        if (existing.isNotEmpty) {
+          if ((existing.first['is_synced'] as int? ?? 0) == 0) continue; // local edits win
+          await txn.update('orders', values, where: 'uuid = ?', whereArgs: [existing.first['uuid']]);
+        } else {
+          await txn.insert('orders', {
+            ...values,
+            'uuid': serverId,
+            'created_at': DateTime.tryParse(json['sales_odr_datetime'] ?? '')?.toIso8601String() ??
+                DateTime.now().toIso8601String(),
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
+        }
       }
     });
   }
 
+  /// Remove synced, still-open orders that the server no longer lists (paid or cancelled elsewhere).
+  Future<void> pruneSyncedActiveOrders(Set<String> liveServerIds) async {
+    final db = await instance.database;
+    final rows = await db.query('orders',
+        columns: ['uuid', 'server_id'],
+        where: "is_synced = 1 AND status NOT IN ('paid','cancelled')");
+    for (final r in rows) {
+      final sid = r['server_id']?.toString() ?? '';
+      if (sid.isNotEmpty && !liveServerIds.contains(sid)) {
+        await deleteOrder(r['uuid'].toString());
+      }
+    }
+  }
   Future<void> updateOrderStatusByUuid(String uuid, String status, {int? isSynced, String? serverId, String? invNo, String? branchInv, String? payload, double? total, double? tax}) async {
     final db = await instance.database;
     final Map<String, dynamic> values = {'status': status};
@@ -884,40 +908,91 @@ CREATE TABLE orders (
     );
   }
 
+  Future<int> _maxUsedSeq(
+      DatabaseExecutor ex,
+      RegExp re, {
+        bool includeReserved = false,
+      }) async {
+    int max = 0;
+
+    final rows = await ex.rawQuery(
+      "SELECT branch_inv AS v FROM orders WHERE branch_inv IS NOT NULL AND branch_inv != ''",
+    );
+    for (final r in rows) {
+      final m = re.firstMatch(r['v'].toString());
+      if (m != null) {
+        final n = int.parse(m.group(1)!);
+        if (n > max) max = n;
+      }
+    }
+
+    if (includeReserved) {
+      final res = await ex.rawQuery(
+        "SELECT value AS v FROM app_settings WHERE key LIKE 'reserved_inv_%'",
+      );
+      for (final r in res) {
+        final m = re.firstMatch(r['v'].toString());
+        if (m != null) {
+          final n = int.parse(m.group(1)!);
+          if (n > max) max = n;
+        }
+      }
+    }
+    return max;
+  }
+
+  Future<int> getPendingSyncTotal() async {
+    final db = await instance.database;
+    final o = await db.rawQuery(
+      'SELECT COUNT(*) AS c FROM orders WHERE is_synced = 0 OR hub_synced = 0',
+    );
+    final p = await db.rawQuery(
+      'SELECT COUNT(*) AS c FROM payments WHERE is_synced = 0',
+    );
+    return (Sqflite.firstIntValue(o) ?? 0) + (Sqflite.firstIntValue(p) ?? 0);
+  }
+
   Future<String> generateLocalInvoiceNumber(String branchCode) async {
     final db = await instance.database;
+    final box = GetStorage();
     return await db.transaction((txn) async {
       final key = 'local_inv_seq_$branchCode';
       final rows = await txn.query('app_settings', where: 'key = ?', whereArgs: [key]);
-      int current = 0;
-      if (rows.isNotEmpty) {
-        current = int.tryParse(rows.first['value'].toString()) ?? 0;
-      }
+      int current = rows.isNotEmpty ? (int.tryParse(rows.first['value'].toString()) ?? 0) : 0;
+
+      current = math.max(current, box.read<int>(key) ?? 0); // backup copy
+
+      final re = RegExp('^M-${RegExp.escape(branchCode)}(\\d+)\$');
+      current = math.max(current, await _maxUsedSeq(txn, re, includeReserved: true));
+
       final next = current + 1;
-      await txn.insert(
-        'app_settings',
-        {'key': key, 'value': next.toString()},
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      await txn.insert('app_settings', {'key': key, 'value': next.toString()},
+          conflictAlgorithm: ConflictAlgorithm.replace);
+      await box.write(key, next);
       return 'M-$branchCode${next.toString().padLeft(4, '0')}';
     });
   }
 
   Future<String> generateLocalSoNumber(String branchCode) async {
     final db = await instance.database;
+    final box = GetStorage();
     return await db.transaction((txn) async {
-      final key = 'local_so_seq_$branchCode';
+      final b = branchCode.toLowerCase();               // "MPM" and "mpm" share one counter
+      final key = 'local_so_seq_$b';
       final rows = await txn.query('app_settings', where: 'key = ?', whereArgs: [key]);
-      int current = 0;
-      if (rows.isNotEmpty) {
-        current = int.tryParse(rows.first['value'].toString()) ?? 0;
-      }
+      final fromDb = rows.isNotEmpty ? (int.tryParse(rows.first['value'].toString()) ?? 0) : 0;
+      final fromBox = box.read<int>(key) ?? 0;
+
+      final re = RegExp('^M-${RegExp.escape(branchCode)}/SO/(\\d+)\$', caseSensitive: false);
+      final fromOrders = await _maxUsedSeq(txn, re);
+
+      final current = math.max(fromDb, math.max(fromBox, fromOrders));
+      debugPrint('[SO-SEQ] branch="$branchCode" db=$fromDb box=$fromBox orders=$fromOrders');
+
       final next = current + 1;
-      await txn.insert(
-        'app_settings',
-        {'key': key, 'value': next.toString()},
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      await txn.insert('app_settings', {'key': key, 'value': next.toString()},
+          conflictAlgorithm: ConflictAlgorithm.replace);
+      await box.write(key, next);
       return 'M-$branchCode/SO/${next.toString().padLeft(4, '0')}';
     });
   }
