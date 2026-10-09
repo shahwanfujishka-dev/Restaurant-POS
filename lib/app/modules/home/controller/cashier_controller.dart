@@ -599,6 +599,13 @@ class CashierController extends GetxController {
         payload: updatedPayload,
         total: finalTotal,
       );
+      final chk = await db.query('orders',
+          columns: ['uuid', 'server_id', 'status', 'is_synced', 'inv_no'],
+          where: 'uuid = ? OR server_id = ?',
+          whereArgs: [orderIdForDb, orderIdForDb]);
+      log("PAYCHK order row: $chk");
+      log("PAYCHK payments: ${await db.query('payments', where: 'order_uuid = ?', whereArgs: [orderIdForDb])}");
+
       if (isSplit.value && result != null) {
         result['message'] = {
           'pos_split_count': splitCount.value,

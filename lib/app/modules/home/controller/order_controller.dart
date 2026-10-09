@@ -110,9 +110,15 @@ class OrdersController extends GetxController {
       final bool isLocalClient = DeviceConfig.operationMode == OperationMode.local
           && DeviceConfig.role == DeviceRole.client;
 
-      final ordersData = isLocalHost
+      // final ordersData = isLocalHost
+      //     ? await _dbHelper.getActiveLocalOrders()
+      //     : await _dbHelper.getUnsyncedOrders();
+
+      final bool readLocalAll = isLocalHost || DeviceConfig.operationMode == OperationMode.online;
+      final ordersData = readLocalAll
           ? await _dbHelper.getActiveLocalOrders()
           : await _dbHelper.getUnsyncedOrders();
+
 
       final List<OrderModel> finalOrders = ordersData
           .map((json) => _mapJsonToOrderModel(json))
@@ -346,6 +352,41 @@ class OrdersController extends GetxController {
 
     } catch (e) {
       debugPrint("Error fetching active orders: $e");
+    }
+  }
+
+  Future<void> downloadAllOrders({int soldDays = 1}) async {
+    if (DeviceConfig.operationMode == OperationMode.local) return;
+    try {
+      // Active orders
+      final res = await _apiService.post("mobileapp/pos/get_pos_order_list",
+          data: {"usr_id": int.tryParse(AppState.userId) ?? 18});
+      if (res.statusCode == 200) {
+        final List<dynamic> data = res.data['data'] ?? [];
+        await _dbHelper.cacheServerOrders(data);
+        await _dbHelper.pruneSyncedActiveOrders(
+          data.map((o) => (o['sales_odr_id'] ?? '').toString()).toSet(),
+        );
+      }
+
+      // Sold orders (one API call per day)
+      for (int i = 0; i < soldDays; i++) {
+        final d = DateFormat('yyyy-MM-dd').format(DateTime.now().subtract(Duration(days: i)));
+        final r = await _apiService.post("mobileapp/pos/get_sold_pos_order_list",
+            data: {"usr_id": int.tryParse(AppState.userId) ?? 18, "date": d});
+        if (r.statusCode == 200) await _dbHelper.cacheSoldOrders(r.data['data'] ?? []);
+      }
+
+      // Items for every synced order that doesn't have them yet
+      final db = await _dbHelper.database;
+      final rows = await db.query('orders',
+          where: "is_synced = 1 AND (payload IS NULL OR payload NOT LIKE '%sales_order_sub%')",
+          limit: 200);
+      for (final row in rows) {
+        await fetchOrderDetails(_mapJsonToOrderModel(row));
+      }
+    } catch (e) {
+      debugPrint("downloadAllOrders failed (offline?): $e");
     }
   }
 
@@ -1266,7 +1307,13 @@ class OrdersController extends GetxController {
     debugPrint("--- PARSING ORDER RESPONSE FOR PRINTING ---");
     final bool isOffline = responseJson['offline'] == true;
     final preview = (responseJson['preview'] is Map) ? responseJson['preview'] : responseJson;
-    final List<dynamic> subItemsJson = preview['sales_order_sub'] ?? [];
+    final seenSubIds = <String>{};
+    final List<dynamic> subItemsJson =
+    (preview['sales_order_sub'] as List? ?? []).where((s) {
+      final id = (s['sales_ord_sub_id'] ?? '').toString();
+      if (id.isEmpty || id == '0' || id == 'null') return true; // offline rows have fake/no ids
+      return seenSubIds.add(id); // skip repeated ids
+    }).toList();
 
     final String imageBaseUrl = responseJson['image_url']?.toString() ??
         preview['image_url']?.toString() ?? "";

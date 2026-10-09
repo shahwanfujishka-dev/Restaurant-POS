@@ -642,7 +642,7 @@ class PrinterController extends GetxController {
       );
       if (result['success'] == true) {
         final List<dynamic> data = result['data'] ?? [];
-        await DatabaseHelper.instance.replaceAllTokenPrinterAssignments(
+        await DatabaseHelper.instance.mergeTokenPrinterAssignments(
           data.cast<Map<String, dynamic>>(),
         );
         await _loadSavedMappings(); // refresh in-memory Rx list from the DB
@@ -2446,11 +2446,21 @@ class PrinterController extends GetxController {
         }
       }
     }
+    final Map<String, DateTime> _lastKotPrint = {};
 
     if (itemsToPrint.isEmpty) {
       debugPrint("No new items or changes to print.");
       return;
     }
+    final sig = '${order.id}|${order.invNo}|'
+        '${itemsToPrint.map((i) => '${i.product.id}:${i.quantity}:${i.isRemoved}').join(',')}';
+    final last = _lastKotPrint[sig];
+    if (last != null &&
+        DateTime.now().difference(last) < const Duration(seconds: 3)) {
+      debugPrint("⚠️ Duplicate KOT call suppressed: $sig");
+      return;
+    }
+    _lastKotPrint[sig] = DateTime.now();
 
     debugPrint("📋 Total items to print: ${itemsToPrint.length}");
     await _distributeToPrinters(

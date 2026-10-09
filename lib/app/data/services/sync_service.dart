@@ -125,6 +125,8 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
   /// Fills missing sales_ord_sub_id values on an edit payload from the server's current rows.
   /// Returns false if the lookup failed (caller should skip this round, not post).
+  /// Fills missing sales_ord_sub_id values on an edit payload from the server's current rows.
+  /// Returns false if the lookup failed (caller should skip this round, not post).
   Future<bool> _fillSubIdsFromServer(Map<String, dynamic> payload) async {
     final List items = (payload['sale_items'] as List?) ?? [];
 
@@ -138,6 +140,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         },
       );
       if (res.statusCode != 200) return false;
+
       dynamic d = res.data;
       if (d is String) d = jsonDecode(d);
       final data = d is Map ? d['data'] : null;
@@ -145,29 +148,40 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       final List allSubs = (src is Map ? src['sales_order_sub'] : null) as List? ?? [];
       if (allSubs.isEmpty) return false;
 
+      // Tolerant field readers: this endpoint's field names can differ
+      // from the add_sales_order response.
+      int subIdOf(Map s) => _toInt(s['sales_ord_sub_id'] ?? s['salesub_id']);
+      int prdOf(Map s) => _toInt(s['sales_ord_sub_prod_id'] ?? s['salesub_prd_id']);
+      int unitOf(Map s) =>
+          _toInt(s['sales_ord_sub_unit_id'] ?? s['salesub_unit_id'] ?? s['sqs_unit_id']);
+      int parentOf(Map s) =>
+          _toInt(s['sales_odr_sub_addon_parent_prd_id'] ?? s['addon_parent_prd_id']);
+      String keyOf(int prd, int unit, int parent) => '$prd|$unit|$parent';
+
       // ignore voided rows (flags == 0)
-      final subs = allSubs.where((s) {
+      final subs = allSubs.whereType<Map>().where((s) {
         final f = s['sales_ord_sub_flags'];
         return f == null || _toInt(f) != 0;
       }).toList();
 
-      final serverIds = subs.map((s) => _toInt(s['sales_ord_sub_id'])).toSet();
-      bool needs(dynamic v) =>
-          v == null || v.toString().isEmpty || v.toString() == 'null' ||
-              !serverIds.contains(_toInt(v));
-      String keyOf(int prd, int unit, int parent) => '$prd|$unit|$parent';
+      log("SyncService: server sub keys → "
+          "${subs.map((s) => '${keyOf(prdOf(s), unitOf(s), parentOf(s))}=${subIdOf(s)}').toList()}");
 
+      final serverIds = subs.map(subIdOf).toSet();
+
+      bool needs(dynamic v) =>
+          v == null ||
+              v.toString().isEmpty ||
+              v.toString() == 'null' ||
+              !serverIds.contains(_toInt(v));
+
+      // Pool of server sub ids per key
       final Map<String, List<int>> pool = {};
       for (final s in subs) {
-        final k = keyOf(
-          _toInt(s['sales_ord_sub_prod_id']),
-          _toInt(s['sales_ord_sub_unit_id']),
-          _toInt(s['sales_odr_sub_addon_parent_prd_id']),
-        );
-        pool.putIfAbsent(k, () => []).add(_toInt(s['sales_ord_sub_id']));
+        pool.putIfAbsent(keyOf(prdOf(s), unitOf(s), parentOf(s)), () => []).add(subIdOf(s));
       }
 
-      // remove ids the payload already uses, from ALL pools
+      // Remove ids the payload already uses, from ALL pools
       for (final i in items) {
         if (!needs(i['sales_ord_sub_id'])) {
           final used = _toInt(i['sales_ord_sub_id']);
@@ -177,17 +191,35 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         }
       }
 
+      // Fill the missing ones
       for (final i in items) {
         if (!needs(i['sales_ord_sub_id'])) continue;
-        final k = keyOf(_toInt(i['salesub_prd_id']), _toInt(i['salesub_unit_id']), _toInt(i['addon_parent_prd_id']));
-        final ids = pool[k];
+
+        final prd = _toInt(i['salesub_prd_id']);
+        final unit = _toInt(i['salesub_unit_id']);
+        final parent = _toInt(i['addon_parent_prd_id']);
+
+        // 1) exact match: product + unit + parent
+        List<int>? ids = pool[keyOf(prd, unit, parent)];
+
+        // 2) fallback: same product + parent, any unit
+        if (ids == null || ids.isEmpty) {
+          for (final e in pool.entries) {
+            final p = e.key.split('|');
+            if (p[0] == '$prd' && p[2] == '$parent' && e.value.isNotEmpty) {
+              ids = e.value;
+              break;
+            }
+          }
+        }
+
         if (ids != null && ids.isNotEmpty) {
           i['sales_ord_sub_id'] = ids.removeAt(0);
           if (_toInt(i['is_deleted']) != 1) {
             i['is_edited'] = _toInt(i['salesub_qty']) != _toInt(i['oldqty']);
           }
         } else {
-          log("SyncService: no server row for key $k (${i['prd_name']}) — will be sent as new");
+          log("SyncService: no server row for $prd|$unit|$parent (${i['prd_name']}) — will be sent as new");
         }
       }
       return true;

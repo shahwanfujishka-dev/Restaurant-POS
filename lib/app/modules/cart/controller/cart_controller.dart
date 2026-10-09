@@ -2086,8 +2086,7 @@ class CartController extends GetxController {
           "subtotal": si['sale_total_amount'],
           "is_printed": 0,
           "notes": si['item_desc'] ?? '',
-        })
-            .toList();
+        }).toList();
 
         final hubPayload = {...body, "uuid": editingOrderId.value, "branch_inv": editingBranchInv.value, "items": hubItems};
         String resolvedBranchInv = editingBranchInv.value;
