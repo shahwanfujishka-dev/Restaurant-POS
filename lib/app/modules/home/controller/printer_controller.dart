@@ -108,7 +108,7 @@ class PrinterController extends GetxController {
     if (!showOnlyPrinters.value) return bluetoothPrinters;
     return bluetoothPrinters.where((d) => d.isLikelyPrinter).toList();
   }
-
+  String? _btConnectedAddress;
   // double calculatedCgst = 0;
   // double calculatedSgst = 0;
   @override
@@ -201,6 +201,45 @@ class PrinterController extends GetxController {
           ),
         );
       }
+    }
+  }
+
+  Future<bool> ensureBluetoothConnected(String address, {int retries = 2}) async {
+    try {
+      final connected = await PrintBluetoothThermal.connectionStatus;
+      if (connected && _btConnectedAddress == address) return true;
+      if (connected) await PrintBluetoothThermal.disconnect;
+      _btConnectedAddress = null;
+
+      // must be bonded, otherwise connect always fails
+      final paired = await PrintBluetoothThermal.pairedBluetooths;
+      final isPaired = paired.any(
+            (d) => d.macAdress.toUpperCase() == address.toUpperCase(),
+      );
+      if (!isPaired) {
+        debugPrint("❌ $address is not paired in Android settings");
+        return false;
+      }
+
+      // BLE scan running in parallel breaks classic connect
+      if (Platform.isAndroid || Platform.isIOS) {
+        await FlutterBluePlus.stopScan();
+        scanningBluetooth.value = false;
+      }
+
+      for (var i = 0; i < retries; i++) {
+        final ok = await PrintBluetoothThermal.connect(macPrinterAddress: address);
+        if (ok) {
+          _btConnectedAddress = address;
+          return true;
+        }
+        await Future.delayed(const Duration(milliseconds: 800));
+      }
+      return false;
+    } catch (e) {
+      debugPrint("BT ensure connect error: $e");
+      _btConnectedAddress = null;
+      return false;
     }
   }
 
@@ -324,9 +363,7 @@ class PrinterController extends GetxController {
         // Windows printers are installed in the OS; if it was listed, it exists.
         isConnected = windowsPrinters.any((p) => p.address == printer.address);
       } else {
-        isConnected = await PrintBluetoothThermal.connect(
-          macPrinterAddress: printer.address,
-        );
+        isConnected = await ensureBluetoothConnected(printer.address);
       }
     } catch (e) {
       debugPrint("Connection check error: $e");
@@ -335,6 +372,47 @@ class PrinterController extends GetxController {
       isCheckingConnection.value = false;
     }
     return isConnected;
+  }
+
+  int? _resolveTokenIdForProduct(FoodItemModel p) {
+    if ((p.tokenPrinterId ?? 0) > 0) return p.tokenPrinterId;
+    if (Get.isRegistered<DashboardController>()) {
+      final cat = Get.find<DashboardController>()
+          .allCategoriesForPrinters
+          .firstWhereOrNull((c) => c.id.toString() == p.categoryId.toString());
+      if (cat != null && cat.tokenPrinterId != 0) return cat.tokenPrinterId;
+    }
+    return tokenPrinterAssignments
+        .firstWhereOrNull((a) => a.printerAddress.value.isNotEmpty)
+        ?.tokenPrinterId;
+  }
+
+  /// Returns problems. Empty list = all printers reachable.
+  Future<List<String>> getUnreachablePrinters(List<FoodItemModel> products) async {
+    final tokenIds = <int>{};
+    for (final p in products) {
+      final id = _resolveTokenIdForProduct(p);
+      if (id != null && id != 0) tokenIds.add(id);
+    }
+
+    final problems = <String>[];
+    final checked = <String, bool>{}; // address -> result, avoid double connect
+
+    for (final id in tokenIds) {
+      final a = tokenPrinterAssignments.firstWhereOrNull((a) => a.tokenPrinterId == id);
+      if (a == null || a.printerAddress.value.isEmpty) {
+        problems.add("Token Printer $id (not assigned)"); // your log showed token 2 unassigned
+        continue;
+      }
+      final addr = a.printerAddress.value;
+      final ok = checked[addr] ??= await checkPrinterConnection(PrinterModel(
+        name: a.printerName.value,
+        address: addr,
+        type: a.printerType.value,
+      ));
+      if (!ok) problems.add(a.printerName.value.isNotEmpty ? a.printerName.value : addr);
+    }
+    return problems;
   }
 
   Future<void> scanWindowsPrinters() async {
@@ -354,7 +432,6 @@ class PrinterController extends GetxController {
 
         final printer = PrinterModel(
           name: name,
-          // For Windows printers we use the printer name as the identifier.
           address: name,
           type: "windows",
           isLikelyPrinter: _checkIfPrinter(name),
@@ -381,31 +458,53 @@ class PrinterController extends GetxController {
     }
   }
 
-  Future<void> updateTokenPrinter(
-    int tokenPrinterId,
-    PrinterModel printer,
-  ) async {
+  Future<({bool saved, bool connected, String message})> updateTokenPrinter(
+      int tokenPrinterId,
+      PrinterModel printer,
+      ) async {
     selectPrinter(printer);
 
-    final bool isConnected = await checkPrinterConnection(printer);
-
-    if (!isConnected) {
-      showSafeSnackbar(
-        "Connection Warning",
-        "Could not connect to ${printer.name}. "
-            "The assignment will be saved, but printing may fail if it remains unreachable.",
-      );
+    if (printer.type == 'bluetooth') {
+      try {
+        final paired = await PrintBluetoothThermal.pairedBluetooths;
+        final isPaired = paired.any(
+              (d) => d.macAdress.toUpperCase() == printer.address.toUpperCase(),
+        );
+        if (!isPaired) {
+          return (
+          saved: false,
+          connected: false,
+          message: "Pair ${printer.name} in Android Bluetooth settings first.",
+          );
+        }
+      } catch (e) {
+        debugPrint("Paired check error: $e");
+        return (
+        saved: false,
+        connected: false,
+        message: "Could not read paired Bluetooth devices.",
+        );
+      }
     }
 
+    final bool isConnected = await checkPrinterConnection(printer);
+    if (!isConnected) {
+      // Keep the printer in the available list.
+      // The user can retry after checking the connection.
+      return (
+      saved: false,
+      connected: false,
+      message:
+      "Could not connect to ${printer.name}. "
+          "Turn the printer on, keep it in range, and try again.",
+      );
+    }
     var assignment = tokenPrinterAssignments.firstWhereOrNull(
-      (a) => a.tokenPrinterId == tokenPrinterId,
+          (a) => a.tokenPrinterId == tokenPrinterId,
     );
 
     if (assignment == null) {
-      assignment = TokenPrinterAssignment(
-        tokenPrinterId: tokenPrinterId,
-      );
-
+      assignment = TokenPrinterAssignment(tokenPrinterId: tokenPrinterId);
       tokenPrinterAssignments.add(assignment);
     }
 
@@ -420,9 +519,9 @@ class PrinterController extends GetxController {
       printer.type,
     );
 
+    // 4. Keep category -> printer mapping in sync
     if (Get.isRegistered<DashboardController>()) {
       final dashboardController = Get.find<DashboardController>();
-
       for (var cat in dashboardController.allCategoriesForPrinters) {
         if (cat.tokenPrinterId == tokenPrinterId) {
           cat.printerAddress.value = printer.address;
@@ -430,13 +529,13 @@ class PrinterController extends GetxController {
       }
     }
 
-    if (isConnected) {
-      showSafeSnackbar(
-        "Saved",
-        "Token Printer $tokenPrinterId linked to "
-            "${printer.name} (${printer.type})",
-      );
-    }
+    return (
+    saved: true,
+    connected: isConnected,
+    message: isConnected
+        ? "Token Printer $tokenPrinterId linked to ${printer.name} (${printer.type})"
+        : "Saved, but could not connect to ${printer.name}. Printing may fail until it is reachable.",
+    );
   }
 
   Future<void> removeTokenPrinterAssignment(int tokenPrinterId) async {
@@ -471,56 +570,35 @@ class PrinterController extends GetxController {
     if (scanningBluetooth.value) return;
 
     if (Platform.isAndroid || Platform.isIOS) {
-      bool hasPermission = await checkPermissions();
-      if (!hasPermission) {
+      if (!await checkPermissions()) {
         await requestBluetoothPermissions();
         return;
       }
     }
 
-    debugPrint("🔍 Starting Bluetooth scan...");
     scanningBluetooth.value = true;
-
     try {
       if (Platform.isAndroid || Platform.isIOS) {
-        if (await FlutterBluePlus.adapterState.first !=
-            BluetoothAdapterState.on) {
-          showSafeSnackbar(
-            "Bluetooth Off",
-            "Please enable Bluetooth",
-          );
-          scanningBluetooth.value = false;
+        if (await FlutterBluePlus.adapterState.first != BluetoothAdapterState.on) {
+          showSafeSnackbar("Bluetooth Off", "Please enable Bluetooth");
           return;
         }
       }
 
-      bluetoothPrinters.clear();
-
-      final List<BluetoothInfo> pairedDevices =
-          await PrintBluetoothThermal.pairedBluetooths;
-      for (var d in pairedDevices) {
-        bluetoothPrinters.add(
-          PrinterModel(
-            name: d.name,
-            address: d.macAdress,
-            type: "bluetooth",
-            isLikelyPrinter: _checkIfPrinter(d.name),
-          ),
-        );
-      }
-
-      if (Platform.isAndroid || Platform.isIOS) {
-        await FlutterBluePlus.startScan(
-          timeout: const Duration(seconds: 5),
-          androidUsesFineLocation: true,
-        );
-      }
+      // Only bonded devices can be printed to via RFCOMM
+      final paired = await PrintBluetoothThermal.pairedBluetooths;
+      bluetoothPrinters.assignAll(
+        paired.map((d) => PrinterModel(
+          name: d.name,
+          address: d.macAdress,
+          type: "bluetooth",
+          isLikelyPrinter: _checkIfPrinter(d.name),
+        )),
+      );
     } catch (e) {
       debugPrint("❌ Bluetooth Scan Error: $e");
     } finally {
-      Future.delayed(const Duration(seconds: 5), () {
-        scanningBluetooth.value = false;
-      });
+      scanningBluetooth.value = false;
     }
   }
 
@@ -1181,6 +1259,10 @@ class PrinterController extends GetxController {
       if (!connected) {
         await PrintBluetoothThermal.connect(macPrinterAddress: printer.address);
       }
+      if (!await ensureBluetoothConnected(printer.address)) {
+        debugPrint("❌ BT receipt: printer not connected");
+        return;
+      }
       final bytes = _buildSplitReceiptBytes(
         order,
         split,
@@ -1194,7 +1276,7 @@ class PrinterController extends GetxController {
       await PrintBluetoothThermal.writeBytes(bytes);
       debugPrint("✅ Split receipt $splitLabel printed successfully");
     } catch (e) {
-      debugPrint("BT Split Receipt Error: $e");
+      debugPrint("BT Receipt Error: $e");
     }
   }
 
@@ -1871,6 +1953,10 @@ class PrinterController extends GetxController {
       bool connected = await PrintBluetoothThermal.connectionStatus;
       if (!connected) {
         await PrintBluetoothThermal.connect(macPrinterAddress: printer.address);
+      }
+      if (!await ensureBluetoothConnected(printer.address)) {
+        debugPrint("❌ BT receipt: printer not connected");
+        return;
       }
       final bytes = _buildReceiptBytes(
         order,
@@ -2925,11 +3011,11 @@ class PrinterController extends GetxController {
           "🔵 Not connected, attempting to connect to ${printer.address}",
         );
 
-        bool res = await PrintBluetoothThermal.connect(
-          macPrinterAddress: printer.address,
-        );
+        // bool res = await PrintBluetoothThermal.connect(
+        //   macPrinterAddress: printer.address,
+        // );
 
-        if (!res) {
+        if (!await ensureBluetoothConnected(printer.address)) {
           debugPrint("❌ Failed to connect to Bluetooth printer");
           return;
         }

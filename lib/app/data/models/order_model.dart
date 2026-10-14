@@ -52,6 +52,7 @@ class OrderModel {
   final String tableId;
   final String tableName;
   final String? customerName;
+  final String? tokenNo;
   final String? captainName;
   final int chairNumber;
   final int sales_odr_pos_status;
@@ -89,6 +90,7 @@ class OrderModel {
     required this.tableId,
     required this.tableName,
     this.customerName,
+    this.tokenNo,
     this.captainName,
     required this.chairNumber,
     required this.sales_odr_pos_status,
@@ -135,6 +137,7 @@ class OrderModel {
     String? tableId,
     String? tableName,
     String? customerName,
+    String? tokenNo,
     String? captainName,
     int? chairNumber,
     int? sales_odr_pos_status,
@@ -172,6 +175,7 @@ class OrderModel {
       tableId: tableId ?? this.tableId,
       tableName: tableName ?? this.tableName,
       customerName: customerName ?? this.customerName,
+      tokenNo: tokenNo ?? this.tokenNo,
       captainName: captainName ?? this.captainName,
       chairNumber: chairNumber ?? this.chairNumber,
       sales_odr_pos_status: sales_odr_pos_status ?? this.sales_odr_pos_status,

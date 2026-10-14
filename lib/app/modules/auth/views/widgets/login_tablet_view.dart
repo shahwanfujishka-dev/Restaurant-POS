@@ -129,7 +129,7 @@ class LoginTabletView extends GetView<AuthController> {
                               )
                             else
                               const Text(
-                                "Scan QR or enter code to verify branch",
+                                "Enter code to verify branch",
                                 style: TextStyle(color: Colors.red),
                               ),
                           ],

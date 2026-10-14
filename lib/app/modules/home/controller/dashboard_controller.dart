@@ -47,7 +47,6 @@ class DashboardController extends GetxController {
   final vatType = 0.obs;
   RxBool get isSyncing => _syncService.isSyncing;
   bool isDisposed = false;
-
   // Local Snackbar State
   final localErrorTitle = ''.obs;
   final localErrorMessage = ''.obs;

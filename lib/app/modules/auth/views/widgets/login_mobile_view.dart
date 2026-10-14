@@ -101,7 +101,7 @@ class LoginMobileView extends GetView<AuthController> {
                           )
                         else
                           const Text(
-                            "Scan QR or enter code to verify branch",
+                            "Scan QR verify branch",
                             style: TextStyle(color: Colors.red),
                           ),
                       ],

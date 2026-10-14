@@ -6,8 +6,9 @@ import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_navigation/src/extension_navigation.dart';
 import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
 import 'package:get/get_state_manager/src/simple/get_view.dart';
-
+import 'package:collection/collection.dart';
 import '../../../../../helper/screen_type.dart';
+import '../../../../../helper/snackbar_helper.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/app_typography.dart';
 import '../../controller/dashboard_controller.dart';
@@ -388,6 +389,7 @@ class PrintersPage extends GetView<PrinterController> {
 
         return AlertDialog(
           backgroundColor: colors.card,
+          scrollable: true,
           title: Text("Assign Printer to Token ID", style: TextStyle(color: colors.text)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -407,43 +409,57 @@ class PrintersPage extends GetView<PrinterController> {
                 onChanged: (val) => selectedTokenId = val,
               ),
               SizedBox(height: 8.h),
+
+
               Obx(() {
                 final allPrinters = controller.allPrinters;
 
-                return DropdownButtonFormField<PrinterModel>(
+                // Use a stable string key instead of a PrinterModel object.
+                String printerKey(PrinterModel printer) =>
+                    '${printer.type}::${printer.address}';
+
+                final selectedKey = selectedPrinter == null
+                    ? null
+                    : printerKey(selectedPrinter!);
+
+                // Only use a selected value that still exists in the items.
+                final validSelectedKey = selectedKey != null &&
+                    allPrinters.any((p) => printerKey(p) == selectedKey)
+                    ? selectedKey
+                    : null;
+
+                return DropdownButtonFormField<String>(
                   isExpanded: true,
                   dropdownColor: colors.card,
+                  value: validSelectedKey,
                   decoration: InputDecoration(
                     labelText: "Choose Printer",
-                    labelStyle: TextStyle(
-                      color: colors.subtext,
-                    ),
+                    labelStyle: TextStyle(color: colors.subtext),
                   ),
-                  style: TextStyle(
-                    color: colors.text,
-                  ),
-                  value: selectedPrinter,
+                  style: TextStyle(color: colors.text),
                   items: allPrinters.map((printer) {
-                    return DropdownMenuItem<PrinterModel>(
-                      value: printer,
+                    return DropdownMenuItem<String>(
+                      value: printerKey(printer),
                       child: Row(
                         children: [
                           Icon(
-                            printer.type == "bluetooth" ? Icons.bluetooth
-                                : printer.type == "windows" ? Icons.usb
+                            printer.type == "bluetooth"
+                                ? Icons.bluetooth
+                                : printer.type == "windows"
+                                ? Icons.usb
                                 : Icons.wifi,
                             size: 18,
-                            color: printer.type == "bluetooth" ? Colors.blue
-                                : printer.type == "windows" ? Colors.purple
+                            color: printer.type == "bluetooth"
+                                ? Colors.blue
+                                : printer.type == "windows"
+                                ? Colors.purple
                                 : Colors.green,
                           ),
                           SizedBox(width: 8.w),
-                          Flexible(
+                          Expanded(
                             child: Text(
                               "${printer.name} (${printer.type.toUpperCase()})",
-                              style: TextStyle(
-                                color: colors.text,
-                              ),
+                              style: TextStyle(color: colors.text),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -451,12 +467,23 @@ class PrintersPage extends GetView<PrinterController> {
                       ),
                     );
                   }).toList(),
-                  onChanged: (printer) {
-                    selectedPrinter = printer;
-
-                    if (printer != null) {
-                      controller.selectPrinter(printer);
+                  onChanged: (key) {
+                    if (key == null) {
+                      selectedPrinter = null;
+                      return;
                     }
+
+                    final matches = allPrinters.where(
+                          (printer) => printerKey(printer) == key,
+                    );
+
+                    if (matches.isEmpty) {
+                      selectedPrinter = null;
+                      return;
+                    }
+
+                    selectedPrinter = matches.first;
+                    controller.selectPrinter(matches.first);
                   },
                 );
               })
@@ -467,17 +494,29 @@ class PrintersPage extends GetView<PrinterController> {
             Obx(() => ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryGreen),
               onPressed: controller.isCheckingConnection.value ? null : () async {
-                if (selectedTokenId != null && selectedPrinter != null) {
-                  await controller.updateTokenPrinter(selectedTokenId!, selectedPrinter!);
-                  Get.back();
-                } else {
-                  Get.snackbar(
-                      "Error",
-                      "Please select both Token ID and Printer",
-                      backgroundColor: Colors.red,
-                      colorText: Colors.white
-                  );
+                if (selectedTokenId == null || selectedPrinter == null) {
+                  Get.snackbar("Error", "Please select both Token ID and Printer",
+                      backgroundColor: Colors.red, colorText: Colors.white);
+                  return;
                 }
+
+                final result = await controller.updateTokenPrinter(
+                  selectedTokenId!,
+                  selectedPrinter!,
+                );
+
+                if (!result.saved) {
+                  // not paired / paired list failed: keep dialog open and tell the user
+                  showSafeSnackbar("Not saved", result.message);
+                  return;
+                }
+
+                // close the dialog FIRST, then show the snackbar
+                if (Get.isDialogOpen == true) Get.back();
+                showSafeSnackbar(
+                  result.connected ? "Saved" : "Connection Warning",
+                  result.message,
+                );
               },
               child: controller.isCheckingConnection.value
                   ? SizedBox(
