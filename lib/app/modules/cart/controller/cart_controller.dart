@@ -16,6 +16,7 @@ import '../../../data/utils/AppState.dart';
 import 'package:get_storage/get_storage.dart';
 import '../../home/controller/dashboard_controller.dart';
 import '../../home/controller/order_controller.dart';
+import '../../home/controller/printer_controller.dart';
 import '../../home/controller/table_controller.dart';
 import '../../home/views/dashoard/models/dashboard_models.dart';
 
@@ -990,11 +991,41 @@ class CartController extends GetxController {
     bool isBill = false,
     int? splitCount,
     List<double> splitAmounts = const [],
+    bool skipPrinterCheck = false,
   }) async {
     try {
       if (AppState.orderType == OrderType.dineIn && selectedTableId.value.isEmpty) {
         showSafeSnackbar("Error", "Please select a table and chair first.");
         return null;
+      }
+      if (!skipPrinterCheck && !isDraft) {
+        final printerCtrl = Get.find<PrinterController>();
+
+        // replace `cartItems` with your actual cart list (List<OrderItem>)
+        final failed = await printerCtrl.getUnreachablePrinters(
+          cartItems.where((i) => !i.isDeleted.value).map((i) => i.product).toList(),
+        );
+
+        if (failed.isNotEmpty) {
+          final proceed = await Get.dialog<bool>(
+            AlertDialog(
+              title: const Text("Printer not connected"),
+              content: Text("Cannot reach: ${failed.join(', ')}"),
+              actions: [
+                TextButton(
+                  onPressed: () => Get.back(result: false),
+                  child: const Text("Cancel"),
+                ),
+                TextButton(
+                  onPressed: () => Get.back(result: true),
+                  child: const Text("Continue without print"),
+                ),
+              ],
+            ),
+            barrierDismissible: false,
+          );
+          if (proceed != true) return null; // order NOT posted
+        }
       }
       final now = DateTime.now();
       final dateStr = DateFormat('yyyy-MM-dd').format(now);

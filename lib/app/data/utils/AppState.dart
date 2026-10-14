@@ -72,9 +72,17 @@ class AppState {
           k.startsWith('local_so_seq_') ||
           k == 'offline_order_seq';
 
+  static const _deviceKeys = [
+    'host_ip',
+    'host_port',
+    'device_id',
+    'operation_mode',
+    'hub_auth_token',
+    'order_visibility_my_only',
+    'device_role_override',
+  ];
 
   static Future<void> clearAllData() async {
-    // Keep essential branch config before erasing
     final baseUrl = _storage.read('base_url');
     final companyCode = _storage.read('company_code');
     final branchId = _storage.read('branch_id');
@@ -87,13 +95,22 @@ class AppState {
     final branchMob = _storage.read('branch_mob');
     final branchTin = _storage.read('branch_tin');
     final taxType = _storage.read('cmp_tax_type');
+
+    // Backup device configuration keys
+    final Map<String, dynamic> deviceBackup = {};
+    for (final key in _deviceKeys) {
+      if (_storage.hasData(key)) {
+        deviceBackup[key] = _storage.read(key);
+      }
+    }
+
     final seqBackup = <String, dynamic>{
-      for (final k in _storage.getKeys<Iterable<String>>())
-        if (_isSeqKey(k)) k: _storage.read(k),
+      for (final k in _storage.getKeys())
+        if (k is String && _isSeqKey(k)) k: _storage.read(k),
     };
+
     await _storage.erase();
 
-    // Restore branch config
     if (baseUrl != null) _storage.write('base_url', baseUrl);
     if (companyCode != null) _storage.write('company_code', companyCode);
     if (branchId != null) _storage.write('branch_id', branchId);
@@ -110,6 +127,10 @@ class AppState {
     if (branchMob != null) _storage.write('branch_mob', branchMob);
     if (branchTin != null) _storage.write('branch_tin', branchTin);
     if (taxType != null) _storage.write('cmp_tax_type', taxType);
+
+    // Restore device configuration
+    deviceBackup.forEach((k, v) => _storage.write(k, v));
+
     seqBackup.forEach((k, v) => _storage.write(k, v));
     orderType = OrderType.dineIn;
 
@@ -180,7 +201,7 @@ class AppState {
                 } catch (_) {}
                 final left = await DatabaseHelper.instance.getPendingSyncTotal();
                 if (left == 0) {
-                  await logout(); // safe now, re-runs the check
+                  await logout();
                 } else {
                   Get.snackbar('Sync incomplete',
                       '$left item(s) still pending. Check the connection and try again.');
