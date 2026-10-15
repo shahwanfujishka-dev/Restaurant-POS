@@ -158,6 +158,7 @@ class OrdersController extends GetxController {
                   ]),
                   tableName: _resolveName(processing, orderType, table.name),
                   customerName: (processing['sq_cust_name'] ?? processing['customer_name'] ?? processing['cust_name'] ??'')?.toString(),
+                  tokenNo: processing['sales_odr_token_no']?.toString(),
                   chairNumber: (processing['sales_odr_no_seats'] as num? ?? 0).toInt(),
                   sales_odr_pos_status: posStatus,
                   items: [],
@@ -252,6 +253,7 @@ class OrdersController extends GetxController {
                 ]),
                 tableName: _resolveName(json, orderType, processingOrder?.tableName ?? 'Unknown Table'),
                 customerName: (json['sq_cust_name'] ?? json['customer_name'] ?? json['cust_name'] ?? processingOrder?.customerName)?.toString(),
+                tokenNo: (json['sales_odr_token_no'] ?? processingOrder?.tokenNo)?.toString(),
                 chairNumber: (json['sales_odr_no_seats'] as num? ??
                     processingOrder?.chairNumber ?? 0).toInt(),
                 captainName: (json['usr_name'] ?? json['captain_name'] ?? json['ledger_name'])?.toString(),
@@ -459,6 +461,7 @@ class OrdersController extends GetxController {
               tableId: (json['sales_odr_table_id'] ?? '').toString(),
               tableName: _resolveName(json, type, 'Walk-in Customer'),
               customerName: (json['sq_cust_name'] ?? json['customer_name'] ?? json['cust_name']??'')?.toString(),
+              tokenNo: json['sales_odr_token_no']?.toString(),
               chairNumber: 0,
               sales_odr_pos_status: (json['sales_odr_pos_status'] as num? ?? 3).toInt(),
               items: [],
@@ -559,6 +562,7 @@ class OrdersController extends GetxController {
     List<OrderItem> localItems = [];
     String tableName = json['customer_name'] ?? "Offline Order";
     String? customerName;
+    String? tokenNo = json['token_no']?.toString();
     int chairNumber = 0;
     int? areaId;
     String? areaName;
@@ -602,6 +606,7 @@ class OrdersController extends GetxController {
           qrLink = (payload['qr_link'] ?? payload['zatca_qr'])?.toString();
           customerName = (payload['sq_cust_name'] ?? payload['customer_name'] ?? payload['cust_name'] ??'')?.toString();
           captainName = (payload['agent_name'] ?? payload['sale_agent_name'] ?? payload['captain_name'])?.toString();
+          tokenNo = (payload['sales_odr_token_no'] ?? payload['sales_odr_token'] ?? tokenNo)?.toString();
           tableName = _resolveName(payload, orderType, tableName);
 
           if (payload['sq_inv_no'] != null && payload['sq_inv_no'].toString() != '0') {
@@ -798,6 +803,7 @@ class OrdersController extends GetxController {
       tableId: tableId,
       tableName: tableName,
       customerName: customerName,
+      tokenNo: tokenNo,
       chairNumber: chairNumber,
       sales_odr_pos_status: (status == OrderStatus.billed) ? 2 : ((status == OrderStatus.draft) ? 0 : (status == OrderStatus.paid ? 3 : 1)),
       items: localItems,
@@ -967,6 +973,7 @@ class OrdersController extends GetxController {
       orders[activeIndex] = existingOrder.copyWith(
         tableName: updatedOrder.tableName,
         customerName: updatedOrder.customerName,
+        tokenNo: updatedOrder.tokenNo,
         subTotal: updatedOrder.subTotal,
         totalAmount: updatedOrder.totalAmount,
         totalTax: updatedOrder.totalTax,
@@ -1010,6 +1017,7 @@ class OrdersController extends GetxController {
       list[index] = existingOrder.copyWith(
         tableName: updatedOrder.tableName,
         customerName: updatedOrder.customerName,
+        tokenNo: updatedOrder.tokenNo,
         subTotal: updatedOrder.subTotal,
         totalAmount: updatedOrder.totalAmount,
         totalTax: updatedOrder.totalTax,
@@ -1216,6 +1224,7 @@ class OrdersController extends GetxController {
           orders[activeIndex] = current.copyWith(
             tableName: resolvedTableName,
             customerName: (preview['sq_cust_name'] ?? preview['customer_name'] ?? preview['cust_name'] ??'')?.toString(),
+            tokenNo: (preview['sales_odr_token_no'] ?? preview['sales_odr_token'])?.toString(),
             sales_odr_pos_status: posStatus,
             items: items,
             status: updatedStatus,
@@ -1249,6 +1258,7 @@ class OrdersController extends GetxController {
             soldOrders[soldIndex] = current.copyWith(
               tableName: resolvedTableName,
               customerName: (preview['sq_cust_name'] ?? preview['customer_name'] ?? preview['cust_name'] ?? '')?.toString(),
+              tokenNo: (preview['sales_odr_token_no'] ?? preview['sales_odr_token'])?.toString(),
               sales_odr_pos_status: posStatus,
               items: items,
               status: current.status.value,
@@ -1492,6 +1502,7 @@ class OrdersController extends GetxController {
     final String tableName = _resolveName(preview, orderType, cartTableFallback);
     final String? customerName = (preview['sq_cust_name'] ?? preview['customer_name'] ?? preview['cust_name'] ?? '')?.toString();
     final String? captainName = (preview['agent_name'] ?? preview['usr_name'])?.toString(); // ✅ ADD
+    final String? tokenNo = (preview['sales_odr_token_no'] ?? preview['sales_odr_token'])?.toString(); // ✅ ADD
 
     final int cartChairFallback = fallbackChairCount > 0
         ? fallbackChairCount
@@ -1509,6 +1520,7 @@ class OrdersController extends GetxController {
       tableId: (preview['sales_odr_table_id'] ?? cartController.selectedTableId.value).toString(),
       tableName: tableName,
       customerName: customerName,
+      tokenNo: tokenNo,
       chairNumber: chairNumber,
       sales_odr_pos_status: posStatus,
       items: items,

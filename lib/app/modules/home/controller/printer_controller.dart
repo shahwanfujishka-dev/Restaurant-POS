@@ -375,6 +375,16 @@ class PrinterController extends GetxController {
     return isConnected;
   }
 
+  String _tokenLabel(OrderModel order, String fallback) {
+    final t = order.tokenNo?.trim() ?? '';
+    return (t.isNotEmpty && t != 'null' && t != '0') ? t.toUpperCase() : fallback;
+  }
+
+  String? _receiptToken(OrderModel order) {
+    final t = order.tokenNo?.trim() ?? '';
+    return (t.isEmpty || t == 'null' || t == '0') ? null : t.toUpperCase();
+  }
+
   int? _resolveTokenIdForProduct(FoodItemModel p) {
     if ((p.tokenPrinterId ?? 0) > 0) return p.tokenPrinterId;
     if (Get.isRegistered<DashboardController>()) {
@@ -1132,6 +1142,17 @@ class PrinterController extends GetxController {
         styles: const PosStyles(align: PosAlign.right),
       ),
     ]);
+    final tok = _receiptToken(order);
+    if (tok != null) {
+      bytes += generator.row([
+        PosColumn(text: "Token No:", width: 6),
+        PosColumn(
+          text: tok,
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
     bytes += generator.row([
       PosColumn(text: "Order type:", width: 5),
       PosColumn(
@@ -1417,6 +1438,18 @@ class PrinterController extends GetxController {
         styles: const PosStyles(align: PosAlign.right),
       ),
     ]);
+
+    final tok = _receiptToken(order);
+    if (tok != null) {
+      bytes += generator.row([
+        PosColumn(text: "Token No:", width: 5),
+        PosColumn(
+          text: tok,
+          width: 7,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
     bytes += generator.row([
       PosColumn(text: "Order type:", width: 5),
       PosColumn(
@@ -2054,6 +2087,17 @@ class PrinterController extends GetxController {
         styles: const PosStyles(align: PosAlign.right),
       ),
     ]);
+    final tok = _receiptToken(order);
+    if (tok != null) {
+      printer.row([
+        PosColumn(text: "Token No:", width: 5),
+        PosColumn(
+          text: tok,
+          width: 7,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
     printer.row([
       PosColumn(text: "Captain:", width: 5),
       PosColumn(
@@ -2812,7 +2856,7 @@ class PrinterController extends GetxController {
 
     // HEADER
     bytes += generator.text(
-      "Token No : $invoiceLabel",
+      "Token No : ${_tokenLabel(order, invoiceLabel)}",
       styles: const PosStyles(
         align: PosAlign.center,
         height: PosTextSize.size2,
@@ -3094,7 +3138,7 @@ class PrinterController extends GetxController {
       bytes += generator.setGlobalFont(PosFontType.fontA);
 
       bytes += generator.text(
-        "Token No : $invoiceLabel",
+        "Token No : ${_tokenLabel(order, invoiceLabel)}",
         styles: const PosStyles(
           align: PosAlign.center,
           height: PosTextSize.size2,
@@ -3530,7 +3574,7 @@ class PrinterController extends GetxController {
     final newItems = items.where((i) => !i.isRemoved).toList();
 
     printer.text(
-      "Token No : $invoiceLabel",
+      "Token No : ${_tokenLabel(order, invoiceLabel)}",
       styles: const PosStyles(
         align: PosAlign.center,
         bold: true,
