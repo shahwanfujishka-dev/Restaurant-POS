@@ -204,27 +204,26 @@ class PrinterController extends GetxController {
     }
   }
 
+  String _btError = "";
+
   Future<bool> ensureBluetoothConnected(String address, {int retries = 2}) async {
+    _btError = "";
     try {
       final connected = await PrintBluetoothThermal.connectionStatus;
       if (connected && _btConnectedAddress == address) return true;
       if (connected) await PrintBluetoothThermal.disconnect;
       _btConnectedAddress = null;
 
-      // must be bonded, otherwise connect always fails
-      final paired = await PrintBluetoothThermal.pairedBluetooths;
-      final isPaired = paired.any(
-            (d) => d.macAdress.toUpperCase() == address.toUpperCase(),
-      );
-      if (!isPaired) {
-        debugPrint("❌ $address is not paired in Android settings");
-        return false;
-      }
-
-      // BLE scan running in parallel breaks classic connect
-      if (Platform.isAndroid || Platform.isIOS) {
-        await FlutterBluePlus.stopScan();
-        scanningBluetooth.value = false;
+      // Only Android uses MAC bonding. macOS/iOS use a CoreBluetooth UUID.
+      if (Platform.isAndroid) {
+        final paired = await PrintBluetoothThermal.pairedBluetooths;
+        final isPaired = paired.any(
+              (d) => d.macAdress.toUpperCase() == address.toUpperCase(),
+        );
+        if (!isPaired) {
+          _btError = "Pair this printer in Android Bluetooth settings first.";
+          return false;
+        }
       }
 
       for (var i = 0; i < retries; i++) {
@@ -235,8 +234,10 @@ class PrinterController extends GetxController {
         }
         await Future.delayed(const Duration(milliseconds: 800));
       }
+      _btError = "Connect failed for $address";
       return false;
     } catch (e) {
+      _btError = "$e";
       debugPrint("BT ensure connect error: $e");
       _btConnectedAddress = null;
       return false;
@@ -464,7 +465,8 @@ class PrinterController extends GetxController {
       ) async {
     selectPrinter(printer);
 
-    if (printer.type == 'bluetooth') {
+    if (printer.type == 'bluetooth' && Platform.isAndroid) {
+
       try {
         final paired = await PrintBluetoothThermal.pairedBluetooths;
         final isPaired = paired.any(
@@ -489,14 +491,13 @@ class PrinterController extends GetxController {
 
     final bool isConnected = await checkPrinterConnection(printer);
     if (!isConnected) {
-      // Keep the printer in the available list.
-      // The user can retry after checking the connection.
+      final reason = (printer.type == 'bluetooth' && _btError.isNotEmpty)
+          ? _btError
+          : "Turn the printer on, keep it in range, and try again.";
       return (
       saved: false,
       connected: false,
-      message:
-      "Could not connect to ${printer.name}. "
-          "Turn the printer on, keep it in range, and try again.",
+      message: "Could not connect to ${printer.name}. $reason",
       );
     }
     var assignment = tokenPrinterAssignments.firstWhereOrNull(
@@ -623,7 +624,7 @@ class PrinterController extends GetxController {
     scanningWifi.value = true;
     List<PrinterModel> foundPrinters = [];
     try {
-      String? ip = await _networkInfo.getWifiIP();
+      String? ip = await _getLocalIPv4();
       debugPrint("📡 Device IP: $ip");
 
       if (ip == null || ip.isEmpty || ip == "0.0.0.0") {
@@ -654,6 +655,32 @@ class PrinterController extends GetxController {
     } finally {
       scanningWifi.value = false;
     }
+  }
+
+  Future<String?> _getLocalIPv4() async {
+    try {
+      final ip = await _networkInfo.getWifiIP();
+      if (ip != null && ip.isNotEmpty && ip != "0.0.0.0") return ip;
+    } catch (_) {}
+
+    try {
+      final ifaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLoopback: false,
+      );
+      for (final i in ifaces) {
+        for (final a in i.addresses) {
+          final ip = a.address;
+          final isPrivate = ip.startsWith('192.168.') ||
+              ip.startsWith('10.') ||
+              RegExp(r'^172\.(1[6-9]|2\d|3[01])\.').hasMatch(ip);
+          if (isPrivate) return ip;
+        }
+      }
+    } catch (e) {
+      debugPrint("NetworkInterface error: $e");
+    }
+    return null;
   }
 
   Future<void> _checkIp(
@@ -2418,7 +2445,29 @@ class PrinterController extends GetxController {
           );
         } else if (oldItem != null && newItem != null) {
           // ✅ Item exists in both - check for changes
-
+          final int oldUnitId = oldItem.unitId ?? oldItem.unit.unitId;
+          final int newUnitId = newItem.unitId ?? newItem.unit.unitId;
+          if (oldUnitId != newUnitId) {
+            itemsToPrint.add(
+              OrderItem(
+                subId: oldItem.subId,
+                product: oldItem.product,
+                quantity: oldItem.quantity,
+                priceAtOrder: oldItem.priceAtOrder,
+                unit: oldItem.unit,
+                unitId: oldItem.unitId,
+                tokenPrinterId: oldItem.tokenPrinterId,
+                selectedAddons: oldItem.selectedAddons,
+                isRemoved: true,
+                notes: oldItem.notes,
+              ),
+            );
+            itemsToPrint.add(newItem);
+            debugPrint(
+              "🔁 UNIT CHANGED: ${oldItem.product.name} $oldUnitId → $newUnitId",
+            );
+            continue;
+          }
           final int qtyDifference = newItem.quantity - oldItem.quantity;
           final bool qtyIncreased = qtyDifference > 0;
           final bool qtyDecreased = qtyDifference < 0;

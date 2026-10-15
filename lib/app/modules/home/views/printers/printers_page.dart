@@ -306,7 +306,7 @@ class PrintersPage extends GetView<PrinterController> {
         itemBuilder: (context, index) {
           final assignment = controller.tokenPrinterAssignments[index];
           return Container(
-            padding: EdgeInsets.all(16.w),
+            padding: EdgeInsets.all(AppTypography.smallText),
             decoration: BoxDecoration(
               color: colors.card,
               borderRadius: BorderRadius.circular(12.r),
@@ -334,9 +334,9 @@ class PrintersPage extends GetView<PrinterController> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text("Token Printer ID", style: TextStyle(color: colors.subtext, fontSize: AppTypography.sizeText)),
+                      // Text("Token Printer ID", style: TextStyle(color: colors.subtext, fontSize: AppTypography.sizeText)),
                       Text("Printer: ${assignment.printerName.value}", style: TextStyle(fontWeight: FontWeight.bold, fontSize: AppTypography.sizeText, color: colors.text)),
-                      Text("Address: ${assignment.printerAddress.value}", style: TextStyle(color: colors.subtext, fontSize: AppTypography.sizeText)),
+                      // Text("Address: ${assignment.printerAddress.value}", style: TextStyle(color: colors.subtext, fontSize: AppTypography.sizeText)),
                     ],
                   ),
                 ),
@@ -413,16 +413,11 @@ class PrintersPage extends GetView<PrinterController> {
 
               Obx(() {
                 final allPrinters = controller.allPrinters;
-
-                // Use a stable string key instead of a PrinterModel object.
                 String printerKey(PrinterModel printer) =>
                     '${printer.type}::${printer.address}';
-
                 final selectedKey = selectedPrinter == null
                     ? null
                     : printerKey(selectedPrinter!);
-
-                // Only use a selected value that still exists in the items.
                 final validSelectedKey = selectedKey != null &&
                     allPrinters.any((p) => printerKey(p) == selectedKey)
                     ? selectedKey
