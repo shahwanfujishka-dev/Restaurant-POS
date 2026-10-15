@@ -671,7 +671,7 @@ class OrdersController extends GetxController {
                 }
               }
             }
-            final double quantity = (si['salesub_qty'] ?? si['sales_ord_sub_qty'] as num? ?? 1).toDouble();
+            // final double quantity = (si['salesub_qty'] ?? si['sales_ord_sub_qty'] as num? ?? 1).toDouble();
             final double baseRate = (si['salesub_rate'] ?? si['sales_ord_sub_rate'] ?? si['rate'] as num? ?? 0.0).toDouble();
             final double taxAmt = (si['salesub_tax'] ?? si['sales_ord_sub_tax'] ?? si['sales_ord_sub_tax_rate'] as num? ?? 0.0).toDouble();
             final double cgstRate = (si['sales_ord_sub_cgst_rate'] as num? ?? 0.0).toDouble();
@@ -679,12 +679,29 @@ class OrdersController extends GetxController {
 
             // final bool isDeleted = (si['is_deleted'] ?? 0) == 1;
             // Use DashboardController to determine if VAT is included in price
-            double price = baseRate;
+            // double price = baseRate;
             // if (Get.isRegistered<DashboardController>()) {
             //   final dashboardController = Get.find<DashboardController>();
             //   price = dashboardController.vatType.value == 0 ? baseRate + taxAmt : baseRate;
             // }
+            final bool isServerRows = payload['sale_items'] == null;
+            final double unitBase =
+            ((si['base_qty'] ?? si['unit_base_qty'] ?? 1.0) as num).toDouble();
+            final bool derived = unitBase > 1.0;
 
+            final double rawQty =
+            ((si['salesub_qty'] ?? si['sales_ord_sub_qty'] ?? 1) as num).toDouble();
+            final double rawRate =
+            ((si['salesub_rate'] ?? si['sales_ord_sub_rate'] ?? si['rate'] ?? 0.0) as num).toDouble();
+
+// per-unit qty & rate
+            final double quantity = (isServerRows && derived)
+                ? (rawQty / unitBase).roundToDouble().clamp(1.0, 1e9)
+                : rawQty;
+            final double price = (isServerRows && derived) ? rawRate * unitBase : rawRate;
+
+// product.price must be the BASE rate (receipt/edit logic expects it)
+            final double productBaseRate = derived ? price / unitBase : price;
             final addons = addonItems.where((a) {
               final parentPrdId = (a['addon_parent_prd_id'] ?? a['sales_odr_sub_addon_parent_prd_id'])?.toString();
               final parentUnitId = (a['addon_parent_unit_id'] ?? a['sales_odr_sub_addon_parent_unit_id'] as num? ?? 0).toInt();
@@ -722,7 +739,7 @@ class OrdersController extends GetxController {
                 taxCatId: taxCatId,
               );
             }).toList();
-
+            log("MAPJSON → ${si['prd_name']} rawRate=$price unitBase=${si['unit_base_qty']} serverRows=$offlineSeq");
             localItems.add(OrderItem(
               subId: subId == 0 ? null : subId,
               tokenPrinterId: tokenPrinterId,
@@ -732,7 +749,7 @@ class OrdersController extends GetxController {
                 id: prdId,
                 name: si['prd_name']?.toString() ?? '',
                 categoryId: (si['prd_cat_id'] ?? '').toString(),
-                price: price,
+                price: productBaseRate,
                 prd_tax: (si['salesub_tax_per'] ?? si['sales_ord_sub_tax_per'] as num? ?? 0.0).toDouble(),
                 image: '',
                 unitDisplay: (si['salesub_unit_display'] ?? si['prd_unit_name'] ?? si['unit_display'] ?? '').toString(),
@@ -745,7 +762,8 @@ class OrdersController extends GetxController {
                 unitName: (si['salesub_unit_display'] ?? si['prd_unit_name'] ?? si['unit_display'] ?? '').toString(),
                 unitDisplay: (si['salesub_unit_display'] ?? si['prd_unit_name'] ?? si['unit_display'] ?? '').toString(),
                 rate: price,
-                unitBaseQty: (si['base_qty'] ?? si['unit_base_qty'] as num? ?? 1.0).toDouble(),
+                // unitBaseQty: (si['base_qty'] ?? si['unit_base_qty'] as num? ?? 1.0).toDouble(),
+                unitBaseQty: unitBase,
                 existAddOns: [],
               ),
               selectedAddons: addons,
@@ -1411,7 +1429,7 @@ class OrdersController extends GetxController {
           taxCatId: (addonJson['sales_ord_sub_taxcat_id'] as num? ?? 0).toInt(),
         );
       }).toList();
-
+      log("PARSE → ${sub['prd_name']} rawRate=$rawRate baseQty=$baseQty isOffline=$isOffline");
       items.add(OrderItem(
         subId: (sub['sales_ord_sub_id'] as num? ?? 0).toInt(),
         quantity: displayQty,
@@ -1426,7 +1444,7 @@ class OrdersController extends GetxController {
           id: prdId,
           name: sub['prd_name']?.toString() ?? cartItem?.product.name ?? 'Unknown',
           categoryId: (sub['prd_cat_id'] ?? cartItem?.product.categoryId ?? '').toString(),
-          price: displayRate,
+          price: (baseQty > 1.0) ? (isOffline ? rawRate / baseQty : rawRate) : rawRate,
           prd_tax: (sub['sales_ord_sub_tax_per'] as num?)?.toDouble()
               ?? cartItem?.product.prd_tax
               ?? 0.0,

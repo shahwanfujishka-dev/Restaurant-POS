@@ -332,7 +332,10 @@ class CartController extends GetxController {
     for (var item in order.items) {
       // Clone addons with their original state
       // In startEditingOrder, replace the cloning block:
-
+      log("EDIT LOAD → ${item.product.name} qty=${item.quantity} "
+          "priceAtOrder=${item.priceAtOrder} unit.rate=${item.unit.rate} "
+          "unit.base=${item.unit.unitBaseQty} product.price=${item.product.price} "
+          "unitId=${item.unitId ?? item.unit.unitId}");
       final clonedAddons = item.selectedAddons
           .map(
             (a) => AddonModel(
@@ -374,8 +377,7 @@ class CartController extends GetxController {
           isDefault: 1,
           freeQty: ea.freeQty,
         ),
-      )
-          .toList();
+      ).toList();
 
       // ✅ originalAddons = selectedAddons + free addons from existAddOns
       final originalAddonCopy = [
