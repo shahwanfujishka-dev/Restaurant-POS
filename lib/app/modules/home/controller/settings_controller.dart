@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:restaurant_pos/app/modules/home/controller/dashboard_controller.dart';
 import 'package:restaurant_pos/app/modules/home/controller/order_controller.dart';
 import 'package:restaurant_pos/app/modules/home/controller/printer_controller.dart';
@@ -38,7 +39,8 @@ class SettingsController extends GetxController {
   Timer? _countRefreshTimer; // ← new: Timer for automatic count refresh
   final connectedDevices = <Map<String, dynamic>>[].obs;   // ← new
   final showMyOrdersOnly = DeviceConfig.showMyOrdersOnly.obs;
-
+  static const _openingKey = 'opening_time_minutes';
+  final openingTime = Rxn<TimeOfDay>();
   final pendingCount = 0.obs;
   final isSyncingOrders = false.obs;
 
@@ -48,7 +50,10 @@ class SettingsController extends GetxController {
     _initializeHub();
     refreshPendingCount();
     _startCountRefreshPolling(); // ← new
-
+    final mins = GetStorage().read(_openingKey) as int?;
+    if (mins != null) {
+      openingTime.value = TimeOfDay(hour: mins ~/ 60, minute: mins % 60);
+    }
     // Automatically refresh count when background sync status changes
     ever(_syncService.isSyncing, (bool syncing) {
       if (!syncing) {
@@ -78,6 +83,21 @@ class SettingsController extends GetxController {
         verifyConnection();
       }
     });
+  }
+
+  Future<void> pickOpeningTime(BuildContext context) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: openingTime.value ?? const TimeOfDay(hour: 0, minute: 0),
+    );
+    if (picked == null) return;
+    openingTime.value = picked;
+    await GetStorage().write(_openingKey, picked.hour * 60 + picked.minute);
+  }
+
+  Future<void> clearOpeningTime() async {
+    openingTime.value = null;
+    await GetStorage().remove(_openingKey);
   }
 
   @override

@@ -181,6 +181,8 @@ class CartController extends GetxController {
   final captainsList = <Map<String, dynamic>>[].obs;
   bool get isLocalHubClient => DeviceConfig.operationMode == OperationMode.local && DeviceConfig.role == DeviceRole.client;
   bool get isLocalHubHost => DeviceConfig.operationMode == OperationMode.local && DeviceConfig.role == DeviceRole.server;
+  final editingTokenNo = "".obs;
+
 
   String _generateUuid() {
     final random = math.Random();
@@ -244,9 +246,28 @@ class CartController extends GetxController {
       _ensureCaptainSelected(); // reset to default immediately
     }
   }
+
   void setCaption(int? ledgerId, String name) {
     selectedCaptainId.value = ledgerId;
     selectedCaptainName.value = name;
+  }
+
+  String _nextOfflineToken() {
+    final box = GetStorage();
+    final int openMins = (box.read('opening_time_minutes') as int?) ?? 0;
+
+    // Shift "now" back by the opening time so the business day rolls over at opening time.
+    final String businessDay = DateFormat('yyyy-MM-dd')
+        .format(DateTime.now().subtract(Duration(minutes: openMins)));
+
+    int seq = (box.read('offline_token_seq') as int?) ?? 0;
+    if (box.read('offline_token_date') != businessDay) {
+      seq = 0;
+      box.write('offline_token_date', businessDay);
+    }
+    seq++;
+    box.write('offline_token_seq', seq);
+    return 'o-$seq';
   }
 
   void setTable({
@@ -309,6 +330,7 @@ class CartController extends GetxController {
     editingOrderId.value = order.id;
     editingInvNo.value = order.invNo;
     editingBranchInv.value = order.branchInv ?? ""; // ✅ Added
+    editingTokenNo.value = order.tokenNo ?? "";
     wasDraft.value = order.sales_odr_pos_status == 0;
     originalItems.assignAll(order.items);
     editingOrderFullData = _buildProcessingTable(order);
@@ -1044,6 +1066,7 @@ class CartController extends GetxController {
 
       final double finalTotal = isCompliment ? 0 : (totalWithTax - discountAmount + roundOffAmount).clamp(0, double.infinity);
       final double finalDiscount = isCompliment ? totalWithTax : discountAmount;
+      final String? offlineToken = DeviceConfig.operationMode == OperationMode.local ? _nextOfflineToken() : null;
 
       final body = {
         "usr_id": int.tryParse(AppState.userId) ?? 0,
@@ -1059,6 +1082,7 @@ class CartController extends GetxController {
         "advance_amount": 0,
         "sale_pay_type": payType ?? 0,
         "balance_amount": 0,
+        "sales_odr_token_no": ?offlineToken,
         // "sale_acc_ledger_id": cashLedgerId ?? 0,
         "sq_tax": totalTax,
         "cmp_tax": AppState.cmpTaxType,
@@ -1185,6 +1209,7 @@ class CartController extends GetxController {
             final syntheticResponse = _buildOfflineResponse(
               orderUuid: orderUuid,
               branchInv: localBranchInv,
+              tokenNo: offlineToken,
               body: body,
               totalWithTax: totalWithTax,
               totalTax: totalTax,
@@ -1207,6 +1232,7 @@ class CartController extends GetxController {
         final syntheticResponse = _buildOfflineResponse(
           orderUuid: orderUuid,
           branchInv: resolvedBranchInv,
+          tokenNo: offlineToken,
           body: body,
           totalWithTax: totalWithTax,
           totalTax: totalTax,
@@ -2103,6 +2129,7 @@ class CartController extends GetxController {
         "is_mob_restaurant": 1,
         "is_online": DeviceConfig.operationMode == OperationMode.online ? 1 : 0,
         if (editingBranchInv.value.isNotEmpty) "branch_ref_no": editingBranchInv.value,
+        if (editingTokenNo.value.isNotEmpty) "sales_odr_token_no": editingTokenNo.value,
       };
       log("Final Body with ${saleItems.length} items");
       log('Api Body: ${jsonEncode(body)}');
@@ -2120,7 +2147,6 @@ class CartController extends GetxController {
           "is_printed": 0,
           "notes": si['item_desc'] ?? '',
         }).toList();
-
         final hubPayload = {...body, "uuid": editingOrderId.value, "branch_inv": editingBranchInv.value, "items": hubItems};
         String resolvedBranchInv = editingBranchInv.value;
 
@@ -2243,6 +2269,7 @@ class CartController extends GetxController {
     required bool isDraft,
     required DateTime now,
     required String branchInv,
+    required String? tokenNo,
     bool isSplit = false,
     int? splitCount,
     List<double> splitAmounts = const [],
@@ -2303,6 +2330,7 @@ class CartController extends GetxController {
         "sales_odr_id": null, // filled after SyncService pushes it
         "sales_odr_inv_no": null,
         "sales_odr_branch_inv": branchInv,  // ✅ Added
+        "sales_odr_token_no": tokenNo,
         "sales_odr_date": dateStr,
         "agent_name": selectedCaptainName.value,
         "sales_odr_time": timeStr,
@@ -2440,6 +2468,7 @@ class CartController extends GetxController {
         "sales_odr_id": realServerId,
         "sales_odr_inv_no": realInvNo ?? editingInvNo.value,
         "sales_odr_branch_inv": branchInv ?? realBranchInv ?? editingBranchInv.value,
+        "sales_odr_token_no": editingTokenNo.value.isEmpty ? null : editingTokenNo.value,
         "sales_odr_date": dateStr,
         "sales_odr_time": timeStr,
         "agent_name": selectedCaptainName.value,

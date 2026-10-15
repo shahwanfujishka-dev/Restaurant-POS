@@ -91,6 +91,25 @@ class SettingsView extends GetView<SettingsController> {
             );
           }),
 
+          Obx(() {
+            if (!controller.isLocalMode) return const SizedBox.shrink();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(height: 24.h),
+                Text(
+                  "Token Reset",
+                  style: AppTypography.cardTitle.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colors.text,
+                  ),
+                ),
+                SizedBox(height: 12.h),
+                _buildOpeningTimeCard(context),
+              ],
+            );
+          }),
+
           // ============================================================
           // SYNC PREFERENCES
           // ============================================================
@@ -216,6 +235,39 @@ class SettingsView extends GetView<SettingsController> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildOpeningTimeCard(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.card,
+        borderRadius: BorderRadius.circular(12.r),
+      ),
+      child: Obx(() {
+        final t = controller.openingTime.value;
+        return ListTile(
+          onTap: () => controller.pickOpeningTime(context),
+          leading: CircleAvatar(
+            backgroundColor: AppTheme.primaryGreen.withOpacity(0.1),
+            child: const Icon(Icons.access_time, color: AppTheme.primaryGreen),
+          ),
+          title: Text("Opening Time", style: TextStyle(color: colors.text, fontWeight: FontWeight.w600)),
+          subtitle: Text(
+            t == null
+                ? "Not set. Tokens restart from o-1 at midnight."
+                : "Tokens restart from o-1 every day at ${t.format(context)}.",
+            style: TextStyle(color: colors.subtext),
+          ),
+          trailing: t == null
+              ? Icon(Icons.edit_outlined, color: colors.subtext)
+              : IconButton(
+            icon: Icon(Icons.close, color: colors.subtext),
+            onPressed: controller.clearOpeningTime,
+          ),
+        );
+      }),
     );
   }
 
