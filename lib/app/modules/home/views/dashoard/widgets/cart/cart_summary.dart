@@ -190,7 +190,16 @@ class CartSummary extends StatelessWidget {
 
       final String snapshotTableName = controller.selectedTableName.value;
       final int snapshotChairCount = controller.selectedChairCount.value;
-
+      OrderModel? liveOrder;
+      try {
+        liveOrder = ordersController.parseOrderResponse(
+          responseData,
+          fallbackTableName: snapshotTableName,
+          fallbackChairCount: snapshotChairCount,
+        );
+      } catch (e) {
+        debugPrint("Pre-clear parse failed: $e");
+      }
       if (wasEditing) {
         showSafeSnackbar(
           isDraft ? "Draft Updated" : "Order Updated",
@@ -209,6 +218,7 @@ class CartSummary extends StatelessWidget {
       Get.offAllNamed(ScreenType.isMobile() ? Routes.ORDER_TYPE : Routes.HOME);
 
       _runBackgroundTasks(
+        liveOrder: liveOrder,
         responseData: responseData,
         isDraft: isDraft,
         wasEditing: wasEditing,
@@ -295,32 +305,38 @@ class CartSummary extends StatelessWidget {
     required bool wasDraft,
     required List<OrderItem> originalItems,
     required OrdersController ordersController,
-    String snapshotTableName = "",    // ✅ new
-    int snapshotChairCount = 0,       // ✅ new
+    String snapshotTableName = "",
+    int snapshotChairCount = 0,
     bool shouldPrintReceipt = false,
+    OrderModel? liveOrder,
   }) async {
     if (!isDraft) {
       try {
         final printerController = Get.find<PrinterController>();
-        final OrderModel liveOrder = ordersController.parseOrderResponse(
-          responseData,
-          fallbackTableName: snapshotTableName,
-          fallbackChairCount: snapshotChairCount,
-        );
-        debugPrint("🖨️ liveOrder.items.length = ${liveOrder.items.length}"); // ADD
-        debugPrint("🖨️ liveOrder.invNo = ${liveOrder.invNo}");
+
+        // Use the order parsed BEFORE the cart was cleared; parse here only as a fallback
+        final OrderModel order = liveOrder ??
+            ordersController.parseOrderResponse(
+              responseData,
+              fallbackTableName: snapshotTableName,
+              fallbackChairCount: snapshotChairCount,
+            );
+
+        debugPrint("🖨️ order.items.length = ${order.items.length}");
+        debugPrint("🖨️ order.invNo = ${order.invNo}");
+
         List<OrderItem>? oldItemsForKOT;
         if (wasEditing && !wasDraft) {
           oldItemsForKOT = originalItems;
         }
 
         await printerController.printKOT(
-          liveOrder,
+          order,
           oldItems: oldItemsForKOT,
         );
 
         if (shouldPrintReceipt) {
-          await printerController.printReceipt(liveOrder, 0, 0);
+          await printerController.printReceipt(order, 0, 0);
         }
       } catch (e) {
         debugPrint("Background Printing failed: $e");

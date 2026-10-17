@@ -231,32 +231,13 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
   Future<void> syncPendingOrders() async {
     if (isSyncing.value) return;
-    if (DeviceConfig.isLocal && DeviceConfig.role == DeviceRole.client) {
-      log("SyncService: Device is a Client in Local Hub Mode. Live DB sync is disabled for clients.");
-      return;
-    }
+    isSyncing.value = true;               // before any await
     try {
       final unsyncedOrders = await _dbHelper.getUnsyncedOrders();
-      if (unsyncedOrders.isNotEmpty) {
-        isSyncing.value = true;
-        log("SyncService: Found ${unsyncedOrders.length} unsynced orders.");
-        for (var order in unsyncedOrders) {
-          await _syncOrder(order);
-        }
-      }
+      for (var order in unsyncedOrders) { await _syncOrder(order); }
       final unsyncedPayments = await _dbHelper.getUnsyncedPayments();
-      if (unsyncedPayments.isNotEmpty) {
-        isSyncing.value = true;
-        log("SyncService: Found ${unsyncedPayments.length} unsynced payments.");
-        for (var payment in unsyncedPayments) {
-          await _syncPayment(payment);
-        }
-      }
-      try {
-        await fillMissingProductUnits();
-      } catch (e) {
-        log("SyncService: fillMissingProductUnits failed during periodic sync: $e");
-      }
+      for (var p in unsyncedPayments) { await _syncPayment(p); }
+      try { await fillMissingProductUnits(); } catch (e) { log("$e"); }
     } catch (e) {
       log("SyncService Error: $e");
     } finally {
@@ -786,6 +767,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     } else {
       final create = Map<String, dynamic>.from(jsonDecode(createStr));
       create['is_pos_edit'] = false;
+      create['client_uuid'] = uuid;
       log("SyncService: [STEP 1] add_sales_order for $uuid (branch_ref_no: ${create['branch_ref_no']})");
 
       final res = await _apiService.post("mobileapp/pos/add_sales_order", data: create);
@@ -800,6 +782,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       final preview = (msg is Map ? msg['preview'] : null) ?? (d is Map ? d['preview'] : null);
       final String serverId = preview?['sq_id']?.toString() ?? preview?['sales_odr_id']?.toString() ?? '';
       final String invNo = preview?['sq_inv_no']?.toString() ?? preview?['sales_odr_inv_no']?.toString() ?? '';
+
       if (serverId.isEmpty || serverId == '0') {
         log("SyncService: ⚠️ Step 1 returned no serverId, will retry");
         return;
@@ -888,43 +871,63 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     log("SyncService: [STEP 2] ✅ $uuid settled, branchInv: $finalBranch");
   }
 
+  final _inFlight = <String>{};
+
   Future<void> _syncOrder(Map<String, dynamic> order) async {
     final String uuid = order['uuid'];
-    final String? payloadStr = order['payload'];
-    if (await _isGivenUp(uuid)) {
-      log("SyncService: Skipping $uuid — failed 3 times, needs manual fix.");
-      return;
-    }
-    if (payloadStr == null || payloadStr.isEmpty) {
-      log("SyncService: Skipping $uuid — no payload");
-      return;
-    }
+    if (!_inFlight.add(uuid)) return; // already syncing this order
 
     try {
-      final Map<String, dynamic> payload = jsonDecode(payloadStr);
+      final String? payloadStr = order['payload'];
+      if (await _isGivenUp(uuid)) {
+        log("SyncService: Skipping $uuid — failed 3 times, needs manual fix.");
+        return;
+      }
+      if (payloadStr == null || payloadStr.isEmpty) {
+        log("SyncService: Skipping $uuid — no payload");
+        return;
+      }
 
-      // Determine if this is truly an edit of a SERVER-SIDE order
+      final Map<String, dynamic> payload = jsonDecode(payloadStr);
+      payload['client_uuid'] ??= uuid; // idempotency key, always present
+
+      // A real server id always means update, never add
       final String? serverIdInDb = order['server_id'];
-      final bool isRealServerOrder = serverIdInDb != null && 
-                                     serverIdInDb.isNotEmpty && 
-                                     !serverIdInDb.startsWith('ORD-');
-                                     
-      bool isEdit = payload['is_pos_edit'] == true && isRealServerOrder;
+      final bool isRealServerOrder = serverIdInDb != null &&
+          serverIdInDb.isNotEmpty &&
+          !serverIdInDb.startsWith('ORD-');
+
+      final bool isEdit = isRealServerOrder;
+      if (isEdit) payload['is_pos_edit'] = true;
+
       final String? createStr = order['create_payload']?.toString();
       final bool settled = _safeInt(payload['res_status']) == 3;
       final String? step1Saved = await _dbHelper.getSetting('sync_step1_$uuid');
       final bool step1Done = step1Saved != null && step1Saved.isNotEmpty;
 
-      if (createStr != null && createStr.isNotEmpty && settled && (!isRealServerOrder || step1Done)) {
+      // Is the create payload already a settled sale? (place-and-settle)
+      bool createAlreadySettled = false;
+      if (createStr != null && createStr.isNotEmpty) {
+        try {
+          final c = jsonDecode(createStr) as Map<String, dynamic>;
+          createAlreadySettled =
+              _safeInt(c['res_status']) == 3 || _safeInt(c['sale_pay_type']) != 0;
+        } catch (_) {}
+      }
+
+      // Two-step only for KOT-first orders settled later,
+      // or to finish a step 2 that is already pending.
+      if (createStr != null &&
+          createStr.isNotEmpty &&
+          settled &&
+          (step1Done || (!isRealServerOrder && !createAlreadySettled))) {
         await _syncTwoStep(order, payload, createStr, step1Saved);
         return;
       }
 
-      // Fallback: If payload thinks it's an edit but we don't have a server ID, 
-      // treat it as a new order.
+      // Payload says edit but there is no server id -> treat as new order
       if (payload['is_pos_edit'] == true && !isRealServerOrder) {
         log("SyncService: Order $uuid marked as edit but no server ID found. Falling back to add_sales_order.");
-        isEdit = false;
         payload['is_pos_edit'] = false;
         payload.remove('sq_id');
         payload.remove('sq_inv_no');
@@ -938,7 +941,6 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
       log("SyncService: Syncing $uuid via $endpoint (isEdit: $isEdit, sq_inv_no: ${payload['sq_inv_no']})");
 
-      // ✅ ADDED DETAILED LOGGING FOR SYNC
       if (payload['sale_items'] != null) {
         final List items = payload['sale_items'];
         log("SyncService: [PAYLOAD CHECK] Order $uuid contains ${items.length} items.");
@@ -948,6 +950,8 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       } else {
         log("SyncService: ⚠️ WARNING! No sale_items found in payload for $uuid");
       }
+
+      // Repair edit payload using values stored on the row
       if (isEdit && _safeInt(payload['sq_inv_no']) == 0) {
         final int inv = _safeInt(order['inv_no']);
         final int sid = int.tryParse(serverIdInDb ?? '') ?? 0;
@@ -969,6 +973,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           log("SyncService: Repaired edit payload for $uuid → sq_id $sid, inv $inv");
         }
       }
+
       if (isEdit) {
         final int sqInvNo = _safeInt(payload['sq_inv_no']);
         final List processingTable =
@@ -985,7 +990,8 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           return;
         }
       }
-      log("SyncService: About to POST ${payload.length} items to $endpoint");
+
+      log("SyncService: About to POST ${payload.length} fields to $endpoint");
       log("SyncService: Full payload sale_items: ${jsonEncode(payload['sale_items'])}");
       final response = await _apiService.post(endpoint, data: payload);
 
@@ -993,35 +999,34 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         dynamic data = response.data;
         if (data is String) data = jsonDecode(data);
         log("SyncService: RAW response → $data");
-          if (data is Map && data['message'] is Map) {
-            final msg = data['message'] as Map;
-            if (msg['status'] == 0) {
-              log("SyncService: ❌ Server rejected $uuid: ${msg['msg']}");
-              await _registerFailure(uuid);
-              return;
-            }
+
+        if (data is Map && data['message'] is Map) {
+          final msg = data['message'] as Map;
+          if (msg['status'] == 0) {
+            log("SyncService: ❌ Server rejected $uuid: ${msg['msg']}");
+            await _registerFailure(uuid);
+            return;
           }
+        }
 
         if (data is Map) {
-          // Server might wrap preview under 'message' (Map) or at top level
           final message = data['message'];
           final preview = (message is Map ? message['preview'] : null) ?? data['preview'];
 
-          final String serverId =
-              preview?['sq_id']?.toString() ??
-                  preview?['sales_odr_id']?.toString() ??
-                  data['id']?.toString() ??
-                  data['sales_odr_id']?.toString() ?? '';
+          final String serverId = preview?['sq_id']?.toString() ??
+              preview?['sales_odr_id']?.toString() ??
+              data['id']?.toString() ??
+              data['sales_odr_id']?.toString() ??
+              '';
 
-          final String? invNo =
-              preview?['sq_inv_no']?.toString() ??
-                  preview?['sales_odr_inv_no']?.toString() ??
-                  data['inv_no']?.toString() ??
-                  data['sales_odr_inv_no']?.toString();
-                  
-          final String? branchInv =
+          final String? invNo = preview?['sq_inv_no']?.toString() ??
+              preview?['sales_odr_inv_no']?.toString() ??
+              data['inv_no']?.toString() ??
+              data['sales_odr_inv_no']?.toString();
+
+          final String? branchInv = preview?['sales_odr_sales_branch_inv']?.toString() ??
               preview?['sales_odr_branch_inv']?.toString() ??
-                  data['sales_odr_branch_inv']?.toString(); // ✅ Added
+              data['sales_odr_branch_inv']?.toString();
 
           if (serverId.isNotEmpty && serverId != '0') {
             await _dbHelper.updateOrderStatusByUuid(
@@ -1030,7 +1035,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
               isSynced: 1,
               serverId: serverId,
               invNo: invNo,
-              branchInv: branchInv, // ✅ Added
+              branchInv: branchInv,
             );
             log("SyncService: ✅ Synced $uuid → serverId: $serverId, invNo: $invNo, branchInv: $branchInv");
             if (Get.isRegistered<OrdersController>()) {
@@ -1044,18 +1049,26 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       }
     } catch (e) {
       log("SyncService: Failed to sync order $uuid: $e");
+    } finally {
+      _inFlight.remove(uuid);
     }
   }
+
+  final _inFlightPayments = <int>{};
 
   Future<void> _syncPayment(Map<String, dynamic> payment) async {
     final String orderUuid = payment['order_uuid'];
     final int localPaymentId = payment['id'];
 
+    if (!_inFlightPayments.add(localPaymentId)) return; // already syncing this payment
+
     try {
       final db = await _dbHelper.database;
-      final List<Map<String, dynamic>> orders = await db.query('orders',
-          where: 'uuid = ? OR server_id = ?',
-          whereArgs: [orderUuid, orderUuid]);
+      final List<Map<String, dynamic>> orders = await db.query(
+        'orders',
+        where: 'uuid = ? OR server_id = ?',
+        whereArgs: [orderUuid, orderUuid],
+      );
 
       if (orders.isEmpty) {
         log("SyncService: No order found for payment uuid=$orderUuid, marking done.");
@@ -1065,10 +1078,10 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
       final order = orders.first;
 
-      // ✅ KEY FIX: If the order payload already included payment (res_status=3 or
-      // sale_pay_type != 0), _syncOrder already settled it in add_sales_order.
-      // A separate settle call would double-process and corrupt the order.
-      // We check this BEFORE the serverId check so we can clear payments even if the order sync is pending.
+      // If the order payload already carries the payment (res_status 3 or a pay type),
+      // add_sales_order / _syncTwoStep step 2 settles it. A separate settle call would
+      // double-process the order. Checked BEFORE the serverId check so the payment row
+      // is cleared even while the order sync is still pending.
       if (order['payload'] != null) {
         try {
           final orderPayload = jsonDecode(order['payload'] as String);
@@ -1085,31 +1098,31 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         }
       }
 
-      final String? serverId = order['server_id'];
-      final String? invNo = order['inv_no'];
+      final String? serverId = order['server_id']?.toString();
+      final String? invNo = order['inv_no']?.toString();
 
       if (serverId == null || serverId.isEmpty || serverId.startsWith('ORD-')) {
         log("SyncService: Order $orderUuid not yet synced, skipping payment API call.");
         return;
       }
 
-      // Only reach here for orders that were initially placed as drafts/pending
-      // and then paid separately (two-step flow)
+      // Only reached for orders placed as draft/pending and paid separately
       final Map<String, int> payTypeMap = {
         'cash': 2, 'card': 5, 'bank': 3, 'credit': 1, 'multiple': 4, 'compliment': 2,
       };
 
-      final bool isCompliment = payment['method'].toString().toLowerCase() == 'compliment';
+      final String method = payment['method'].toString().toLowerCase();
+      final bool isCompliment = method == 'compliment';
 
-      final body = {
+      final body = <String, dynamic>{
         "usr_id": _payloadUserId(order),
         "sales_odr_id": int.tryParse(serverId),
         "sales_odr_inv_no": int.tryParse(invNo ?? "0"),
-        "sale_pay_type": payTypeMap[payment['method'].toString().toLowerCase()] ?? 2,
+        "sale_pay_type": payTypeMap[method] ?? 2,
         "amount_paid": isCompliment ? 0 : payment['amount'],
         "received_amount": payment['amount'],
         "change_given": 0,
-        "settle_date": payment['created_at'].split('T')[0],
+        "settle_date": payment['created_at'].toString().split('T')[0],
         "sale_acc_ledger_id_cash": payment['cash_ledger_id'],
         "sale_acc_ledger_id_bank": payment['bank_ledger_id'],
         "sq_disc": isCompliment ? payment['amount'] : payment['discount_amount'] ?? 0,
@@ -1129,8 +1142,6 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       }
 
       log("SyncService: Sending settlement for order $serverId...");
-      print("🚀 Settlement API URL: ${_apiService.baseUrl}mobileapp/pos/settle_sales_order");
-
       final response = await _apiService.post("mobileapp/pos/settle_sales_order", data: body);
 
       if (response.statusCode == 200) {
@@ -1139,6 +1150,8 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       }
     } catch (e) {
       log("SyncService: ❌ Payment sync failed: $e");
+    } finally {
+      _inFlightPayments.remove(localPaymentId);
     }
   }
 

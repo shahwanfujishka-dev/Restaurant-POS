@@ -411,7 +411,7 @@ class CashierController extends GetxController {
         }
       }
     }
-
+    Map<String, dynamic>? result;
     try {
       isProcessing.value = true;
       if (customerMobileController.text.isNotEmpty && customerNameController.text.isNotEmpty && customerNameController.text != "Cash Customer") {
@@ -451,8 +451,7 @@ class CashierController extends GetxController {
       }
       log("settleOrder: isComp=$isComp, payType=$payType, totalToPay=$totalToPay");
       final cartController = Get.find<CartController>();
-      final result = cartController.isEditing
-          ? await cartController.updateOrder(
+      result = cartController.isEditing ? await cartController.updateOrder(
         isDraft: false,
         payType: payType,
         cashAmt: cashAmt,
@@ -542,7 +541,11 @@ class CashierController extends GetxController {
       }
     } catch (e) {
       log("Settle Error: $e");
-      await _savePaymentLocally(isComp: isComp);
+      if (result == null) {
+        await _savePaymentLocally(isComp: isComp);
+      } else {
+        log("Post-settle error, order already saved: $e");
+      }
     } finally {
       isProcessing.value = false;
     }

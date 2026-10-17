@@ -713,6 +713,7 @@ class CartController extends GetxController {
 
   void clearCart() {
     cartItems.clear();
+    _pendingOrderUuid = null;
   }
 
   double get totalAmount => cartItems
@@ -993,7 +994,7 @@ class CartController extends GetxController {
       }
     ];
   }
-
+  String? _pendingOrderUuid;
   Future<Map<String, dynamic>?> placeOrder({
     bool isDraft = false,
     int? payType,
@@ -1054,7 +1055,7 @@ class CartController extends GetxController {
       final now = DateTime.now();
       final dateStr = DateFormat('yyyy-MM-dd').format(now);
       final syncTime = "${DateFormat('yyMMddHHmmssSSS').format(now)}000";
-      final orderUuid = _generateUuid();
+      final orderUuid = _pendingOrderUuid ??= _generateUuid();
       final DashboardController dashboardController = Get.find<DashboardController>();
       final bool isVatDisabled = dashboardController.vatType.value == 1;
 
@@ -1070,6 +1071,7 @@ class CartController extends GetxController {
 
       final body = {
         "usr_id": int.tryParse(AppState.userId) ?? 0,
+        "client_uuid": orderUuid,
         "is_mob_restaurant": 1,
         "is_online": DeviceConfig.operationMode == OperationMode.online ? 1 : 0,
         "cust_type": customerData != null ? "0" : "1",
@@ -1206,6 +1208,7 @@ class CartController extends GetxController {
             }
 
             final localBranchInv = "OFFLINE-${orderUuid.substring(orderUuid.length - 6)}";
+            _pendingOrderUuid = null;
             final syntheticResponse = _buildOfflineResponse(
               orderUuid: orderUuid,
               branchInv: localBranchInv,
@@ -1222,6 +1225,7 @@ class CartController extends GetxController {
               splitAmounts: splitAmounts,
               isBill: isBill,
             );
+            _pendingOrderUuid = null;
             _clearDashboardSearch();
             return syntheticResponse;
           }
@@ -1297,7 +1301,7 @@ class CartController extends GetxController {
 
           debugPrint('======== END FULL RESPONSE ========');
           debugPrint('======================================');
-
+          _pendingOrderUuid = null;
           _clearDashboardSearch();
 
           return responseData;
