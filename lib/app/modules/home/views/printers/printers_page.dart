@@ -48,7 +48,11 @@ class PrintersPage extends GetView<PrinterController> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.bluetooth_disabled, size: ScreenType.isMobile()? 80.w : 40.w, color: Colors.orange),
+            Icon(
+              Icons.bluetooth_disabled,
+              size: ScreenType.isMobile() ? 80.w : 40.w,
+              color: Colors.orange,
+            ),
             SizedBox(height: 24.h),
             Text(
               "Bluetooth Permissions Required",
@@ -65,11 +69,16 @@ class PrintersPage extends GetView<PrinterController> {
             ElevatedButton.icon(
               onPressed: () => controller.requestBluetoothPermissions(),
               icon: const Icon(Icons.security, color: Colors.white),
-              label: const Text("Grant Permissions", style: TextStyle(color: Colors.white)),
+              label: const Text(
+                "Grant Permissions",
+                style: TextStyle(color: Colors.white),
+              ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primaryGreen,
                 padding: EdgeInsets.symmetric(horizontal: 32.w, vertical: 16.h),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12.r),
+                ),
               ),
             ),
           ],
@@ -79,7 +88,10 @@ class PrintersPage extends GetView<PrinterController> {
   }
 
   // --- TABLET LAYOUT ---
-  Widget _buildTabletLayout(BuildContext context, DashboardController dashboardController) {
+  Widget _buildTabletLayout(
+      BuildContext context,
+      DashboardController dashboardController,
+      ) {
     final colors = AppColors.of(context);
     return Padding(
       padding: EdgeInsets.all(16.w),
@@ -90,19 +102,19 @@ class PrintersPage extends GetView<PrinterController> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                  "Printer Configuration",
-                  style: AppTypography.cardTitle.copyWith(color: colors.text)
+                "Printer Configuration",
+                style: AppTypography.cardTitle.copyWith(color: colors.text),
               ),
               Row(
                 children: [
-                  _buildHeaderActionBtn(
-                    context,
-                    label: "Refresh",
-                    icon: Icons.refresh,
-                    onPressed: () => controller.refreshPrinters(),
-                    isPrimary: false,
-                  ),
-                  SizedBox(width: 12.w),
+                  // _buildHeaderActionBtn(
+                  //   context,
+                  //   label: "Refresh",
+                  //   icon: Icons.refresh,
+                  //   onPressed: () => controller.refreshPrinters(),
+                  //   isPrimary: false,
+                  // ),
+                  // SizedBox(width: 12.w),
                   _buildHeaderActionBtn(
                     context,
                     label: "Add Manual IP",
@@ -110,7 +122,7 @@ class PrintersPage extends GetView<PrinterController> {
                     onPressed: () => _showManualIpDialog(context),
                     isPrimary: false,
                   ),
-                  SizedBox(width: 12.w),
+                  SizedBox(width: 6.w),
                   _buildHeaderActionBtn(
                     context,
                     label: "Scan for Devices",
@@ -126,7 +138,7 @@ class PrintersPage extends GetView<PrinterController> {
               ),
             ],
           ),
-          SizedBox(height: 24.h),
+          SizedBox(height: 12.h),
           Expanded(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -138,17 +150,23 @@ class PrintersPage extends GetView<PrinterController> {
                       _buildNetworkInfoCard(context),
                       SizedBox(height: 16.h),
                       _buildActivePrintersSummary(context),
+                      SizedBox(height: 16.h),
+                      _buildReceiptPrinterCard(context), // add
                     ],
                   ),
                 ),
-                SizedBox(width: 24.w),
+                SizedBox(width: 12.w),
 
                 Expanded(
-                  flex: 7,
+                  flex: 6,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildSectionHeader(context, "Token Printer Assignments", Icons.print),
+                      _buildSectionHeader(
+                        context,
+                        "Token Printer Assignments",
+                        Icons.print,
+                      ),
                       Expanded(child: _buildTokenAssignmentsList(context)),
                     ],
                   ),
@@ -162,7 +180,10 @@ class PrintersPage extends GetView<PrinterController> {
   }
 
   // --- MOBILE LAYOUT ---
-  Widget _buildMobileLayout(BuildContext context, DashboardController dashboardController) {
+  Widget _buildMobileLayout(
+      BuildContext context,
+      DashboardController dashboardController,
+      ) {
     return SingleChildScrollView(
       padding: EdgeInsets.all(16.w),
       child: Column(
@@ -171,10 +192,16 @@ class PrintersPage extends GetView<PrinterController> {
           _buildNetworkInfoCard(context),
           SizedBox(height: 24.h),
           _buildActivePrintersSummary(context),
+          SizedBox(height: 16.h),
+          _buildReceiptPrinterCard(context), // add
           SizedBox(height: 24.h),
-          _buildSectionHeader(context, "Token Printer Assignments", Icons.print),
+          _buildSectionHeader(
+            context,
+            "Token Printer Assignments",
+            Icons.print,
+          ),
           _buildTokenAssignmentsList(context),
-          SizedBox(height: 80.h), // Space for FAB
+          SizedBox(height: 80.h),
         ],
       ),
     );
@@ -187,7 +214,12 @@ class PrintersPage extends GetView<PrinterController> {
       decoration: BoxDecoration(
         color: colors.card,
         borderRadius: BorderRadius.circular(12.r),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(colors.isDark ? 0.2 : 0.05), blurRadius: 10)],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(colors.isDark ? 0.2 : 0.05),
+            blurRadius: 10,
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -197,19 +229,29 @@ class PrintersPage extends GetView<PrinterController> {
               color: AppTheme.primaryGreen.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
-            child: Icon(Icons.wifi, color: AppTheme.primaryGreen, size: AppTypography.sizeText),
+            child: Icon(
+              Icons.wifi,
+              color: AppTheme.primaryGreen,
+              size: AppTypography.sizeText,
+            ),
           ),
           SizedBox(width: 6.w),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Current Network",
-                    style: AppTypography.cardSubtitle.copyWith(color: colors.subtext)),
-                Obx(() => Text(
-                  controller.currentWifiName.value.replaceAll('"', ''),
-                  style: AppTypography.cardTitle.copyWith(color: colors.text),
-                )),
+                Text(
+                  "Current Network",
+                  style: AppTypography.cardSubtitle.copyWith(
+                    color: colors.subtext,
+                  ),
+                ),
+                Obx(
+                      () => Text(
+                    controller.currentWifiName.value.replaceAll('"', ''),
+                    style: AppTypography.cardTitle.copyWith(color: colors.text),
+                  ),
+                ),
               ],
             ),
           ),
@@ -227,7 +269,12 @@ class PrintersPage extends GetView<PrinterController> {
         decoration: BoxDecoration(
           color: colors.card,
           borderRadius: BorderRadius.circular(10.r),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(colors.isDark ? 0.2 : 0.05), blurRadius: 10)],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(colors.isDark ? 0.2 : 0.05),
+              blurRadius: 10,
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -235,22 +282,44 @@ class PrintersPage extends GetView<PrinterController> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("Available Printers",
-                    style: AppTypography.cardTitle.copyWith(color: colors.text)),
+                Text(
+                  "Available Printers",
+                  style: AppTypography.cardTitle.copyWith(color: colors.text),
+                ),
                 IconButton(
-                  icon: Icon(Icons.refresh, size: AppTypography.sizeText, color: colors.subtext),
+                  icon: Icon(
+                    Icons.refresh,
+                    size: AppTypography.sizeText,
+                    color: colors.subtext,
+                  ),
                   onPressed: () => controller.refreshPrinters(),
                   tooltip: "Refresh list",
                 ),
               ],
             ),
             SizedBox(height: 6.h),
-            _buildPrinterStatusRow(context, "Bluetooth", controller.bluetoothPrinters.length, Colors.blue),
+            _buildPrinterStatusRow(
+              context,
+              "Bluetooth",
+              controller.bluetoothPrinters.length,
+              Colors.blue,
+            ),
             SizedBox(height: 4.h),
-            _buildPrinterStatusRow(context, "WiFi", controller.wifiPrinters.length, Colors.orange),
+            _buildPrinterStatusRow(
+              context,
+              "WiFi",
+              controller.wifiPrinters.length,
+              Colors.orange,
+            ),
             SizedBox(height: 4.h),
-            _buildPrinterStatusRow(context, "Windows", controller.windowsPrinters.length, Colors.purple),
-            if (controller.scanningBluetooth.value || controller.scanningWifi.value)
+            _buildPrinterStatusRow(
+              context,
+              "Windows",
+              controller.windowsPrinters.length,
+              Colors.purple,
+            ),
+            if (controller.scanningBluetooth.value ||
+                controller.scanningWifi.value)
               const Padding(
                 padding: EdgeInsets.only(top: 16),
                 child: LinearProgressIndicator(color: AppTheme.primaryGreen),
@@ -261,21 +330,37 @@ class PrintersPage extends GetView<PrinterController> {
     });
   }
 
-  Widget _buildPrinterStatusRow(BuildContext context, String label, int count, Color color) {
+  Widget _buildPrinterStatusRow(
+      BuildContext context,
+      String label,
+      int count,
+      Color color,
+      ) {
     final colors = AppColors.of(context);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: TextStyle(color: colors.subtext, fontSize: AppTypography.sizeText)),
+        Text(
+          label,
+          style: TextStyle(
+            color: colors.subtext,
+            fontSize: AppTypography.sizeText,
+          ),
+        ),
         Container(
           padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
           decoration: BoxDecoration(
             color: color.withOpacity(0.1),
             borderRadius: BorderRadius.circular(20.r),
           ),
-          child: Text("$count Found",
-              style: TextStyle(
-                  color: color, fontSize: AppTypography.sizeText, fontWeight: FontWeight.bold)),
+          child: Text(
+            "$count Found",
+            style: TextStyle(
+              color: color,
+              fontSize: AppTypography.sizeText,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ),
       ],
     );
@@ -289,10 +374,20 @@ class PrintersPage extends GetView<PrinterController> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.print_disabled, size: AppTypography.foodIcon, color: colors.subtext.withOpacity(0.3)),
+              Icon(
+                Icons.print_disabled,
+                size: AppTypography.foodIcon,
+                color: colors.subtext.withOpacity(0.3),
+              ),
               SizedBox(height: 16.h),
-              Text("No assignments yet", style: AppTypography.bodyText.copyWith(color: colors.text)),
-              Text("Tap '+' to link a printer to a Token ID", style: AppTypography.bodyText.copyWith(color: colors.subtext)),
+              Text(
+                "No assignments yet",
+                style: AppTypography.bodyText.copyWith(color: colors.text),
+              ),
+              Text(
+                "Tap '+' to link a printer to a Token ID",
+                style: AppTypography.bodyText.copyWith(color: colors.subtext),
+              ),
             ],
           ),
         );
@@ -310,7 +405,12 @@ class PrintersPage extends GetView<PrinterController> {
             decoration: BoxDecoration(
               color: colors.card,
               borderRadius: BorderRadius.circular(12.r),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(colors.isDark ? 0.2 : 0.03), blurRadius: 5)],
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(colors.isDark ? 0.2 : 0.03),
+                  blurRadius: 5,
+                ),
+              ],
               border: Border.all(color: colors.border),
             ),
             child: Row(
@@ -325,7 +425,11 @@ class PrintersPage extends GetView<PrinterController> {
                   child: Center(
                     child: Text(
                       assignment.tokenPrinterId.toString(),
-                      style: TextStyle(color: AppTheme.primaryGreen, fontWeight: FontWeight.bold, fontSize: AppTypography.sizeText),
+                      style: TextStyle(
+                        color: AppTheme.primaryGreen,
+                        fontWeight: FontWeight.bold,
+                        fontSize: AppTypography.sizeText,
+                      ),
                     ),
                   ),
                 ),
@@ -335,14 +439,26 @@ class PrintersPage extends GetView<PrinterController> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Text("Token Printer ID", style: TextStyle(color: colors.subtext, fontSize: AppTypography.sizeText)),
-                      Text("Printer: ${assignment.printerName.value}", style: TextStyle(fontWeight: FontWeight.bold, fontSize: AppTypography.sizeText, color: colors.text)),
+                      Text(
+                        "Printer: ${assignment.printerName.value}",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: AppTypography.sizeText,
+                          color: colors.text,
+                        ),
+                      ),
                       // Text("Address: ${assignment.printerAddress.value}", style: TextStyle(color: colors.subtext, fontSize: AppTypography.sizeText)),
                     ],
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                  onPressed: () => controller.removeTokenPrinterAssignment(assignment.tokenPrinterId),
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: Colors.redAccent,
+                  ),
+                  onPressed: () => controller.removeTokenPrinterAssignment(
+                    assignment.tokenPrinterId,
+                  ),
                 ),
               ],
             ),
@@ -352,7 +468,108 @@ class PrintersPage extends GetView<PrinterController> {
     });
   }
 
-  void _showAddAssignmentDialog(BuildContext context, DashboardController dashboardController) {
+  Widget _buildReceiptPrinterCard(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Obx(() {
+      final rp = controller.receiptPrinter.value;
+      return Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(AppTypography.smallText),
+        decoration: BoxDecoration(
+          color: colors.card,
+          borderRadius: BorderRadius.circular(10.r),
+          border: Border.all(color: colors.border),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.receipt_long, color: AppTheme.primaryGreen),
+            SizedBox(width: 4.w),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Receipt Printer",
+                    style: AppTypography.cardTitle.copyWith(color: colors.text),
+                  ),
+                  Text(
+                    rp == null
+                        ? "Not set (uses first token printer)"
+                        : rp.printerName.value,
+                    style: TextStyle(color: colors.subtext),
+                  ),
+                ],
+              ),
+            ),
+            if (rp != null)
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                onPressed: controller.clearReceiptPrinter,
+              ),
+            TextButton(
+              onPressed: () => _showReceiptPrinterDialog(context),
+              child: const Text("Choose"),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  void _showReceiptPrinterDialog(BuildContext context) {
+    final colors = AppColors.of(context);
+    Get.dialog(
+      AlertDialog(
+        backgroundColor: colors.card,
+        title: Text(
+          "Select Receipt Printer",
+          style: TextStyle(color: colors.text),
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Obx(() {
+            final printers = controller.allPrinters;
+            return ListView(
+              shrinkWrap: true,
+              children: printers
+                  .map(
+                    (p) => ListTile(
+                  leading: Icon(
+                    p.type == "bluetooth"
+                        ? Icons.bluetooth
+                        : p.type == "windows"
+                        ? Icons.usb
+                        : Icons.wifi,
+                  ),
+                  title: Text(
+                    "${p.name} (${p.type.toUpperCase()})",
+                    style: TextStyle(color: colors.text),
+                  ),
+                  onTap: () async {
+                    final r = await controller.setReceiptPrinter(p);
+                    if (r.saved && Get.isDialogOpen == true) Get.back();
+                    showSafeSnackbar(
+                      r.saved ? "Saved" : "Not saved",
+                      r.message,
+                    );
+                  },
+                ),
+              )
+                  .toList(),
+            );
+          }),
+        ),
+        actions: [
+          TextButton(onPressed: () => Get.back(), child: const Text("Cancel")),
+        ],
+      ),
+    );
+  }
+
+  void _showAddAssignmentDialog(
+      BuildContext context,
+      DashboardController dashboardController,
+      ) {
     int? selectedTokenId;
     PrinterModel? selectedPrinter;
     final colors = AppColors.of(context);
@@ -368,20 +585,29 @@ class PrintersPage extends GetView<PrinterController> {
         uniqueTokenIds.sort();
 
         // If categories haven't loaded yet, show a loader
-        if (dashboardController.isFetchingAllCategories.value && uniqueTokenIds.isEmpty) {
-          return const Center(child: CircularProgressIndicator(color: AppTheme.primaryGreen));
+        if (dashboardController.isFetchingAllCategories.value &&
+            uniqueTokenIds.isEmpty) {
+          return const Center(
+            child: CircularProgressIndicator(color: AppTheme.primaryGreen),
+          );
         }
 
         // If no token IDs available, show a message
         if (uniqueTokenIds.isEmpty) {
           return AlertDialog(
             backgroundColor: colors.card,
-            title: Text("Assign Printer to Token ID", style: TextStyle(color: colors.text)),
-            content: Text("No Token Printer IDs available. Please check your categories configuration.", style: TextStyle(color: colors.text)),
+            title: Text(
+              "Assign Printer to Token ID",
+              style: TextStyle(color: colors.text),
+            ),
+            content: Text(
+              "No Token Printer IDs available. Please check your categories configuration.",
+              style: TextStyle(color: colors.text),
+            ),
             actions: [
               TextButton(
-                  onPressed: () => Get.back(),
-                  child: const Text("Close")
+                onPressed: () => Get.back(),
+                child: const Text("Close"),
               ),
             ],
           );
@@ -390,7 +616,10 @@ class PrintersPage extends GetView<PrinterController> {
         return AlertDialog(
           backgroundColor: colors.card,
           scrollable: true,
-          title: Text("Assign Printer to Token ID", style: TextStyle(color: colors.text)),
+          title: Text(
+            "Assign Printer to Token ID",
+            style: TextStyle(color: colors.text),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -402,14 +631,20 @@ class PrintersPage extends GetView<PrinterController> {
                 ),
                 style: TextStyle(color: colors.text),
                 value: selectedTokenId,
-                items: uniqueTokenIds.map((id) => DropdownMenuItem(
-                  value: id,
-                  child: Text("Token ID: $id", style: TextStyle(color: colors.text)),
-                )).toList(),
+                items: uniqueTokenIds
+                    .map(
+                      (id) => DropdownMenuItem(
+                    value: id,
+                    child: Text(
+                      "Token ID: $id",
+                      style: TextStyle(color: colors.text),
+                    ),
+                  ),
+                )
+                    .toList(),
                 onChanged: (val) => selectedTokenId = val,
               ),
               SizedBox(height: 8.h),
-
 
               Obx(() {
                 final allPrinters = controller.allPrinters;
@@ -418,7 +653,8 @@ class PrintersPage extends GetView<PrinterController> {
                 final selectedKey = selectedPrinter == null
                     ? null
                     : printerKey(selectedPrinter!);
-                final validSelectedKey = selectedKey != null &&
+                final validSelectedKey =
+                selectedKey != null &&
                     allPrinters.any((p) => printerKey(p) == selectedKey)
                     ? selectedKey
                     : null;
@@ -481,46 +717,66 @@ class PrintersPage extends GetView<PrinterController> {
                     controller.selectPrinter(matches.first);
                   },
                 );
-              })
+              }),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Get.back(), child: const Text("Cancel")),
-            Obx(() => ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryGreen),
-              onPressed: controller.isCheckingConnection.value ? null : () async {
-                if (selectedTokenId == null || selectedPrinter == null) {
-                  Get.snackbar("Error", "Please select both Token ID and Printer",
-                      backgroundColor: Colors.red, colorText: Colors.white);
-                  return;
-                }
+            TextButton(
+              onPressed: () => Get.back(),
+              child: const Text("Cancel"),
+            ),
+            Obx(
+                  () => ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryGreen,
+                ),
+                onPressed: controller.isCheckingConnection.value
+                    ? null
+                    : () async {
+                  if (selectedTokenId == null ||
+                      selectedPrinter == null) {
+                    Get.snackbar(
+                      "Error",
+                      "Please select both Token ID and Printer",
+                      backgroundColor: Colors.red,
+                      colorText: Colors.white,
+                    );
+                    return;
+                  }
 
-                final result = await controller.updateTokenPrinter(
-                  selectedTokenId!,
-                  selectedPrinter!,
-                );
+                  final result = await controller.updateTokenPrinter(
+                    selectedTokenId!,
+                    selectedPrinter!,
+                  );
 
-                if (!result.saved) {
-                  // not paired / paired list failed: keep dialog open and tell the user
-                  showSafeSnackbar("Not saved", result.message);
-                  return;
-                }
+                  if (!result.saved) {
+                    // not paired / paired list failed: keep dialog open and tell the user
+                    showSafeSnackbar("Not saved", result.message);
+                    return;
+                  }
 
-                // close the dialog FIRST, then show the snackbar
-                if (Get.isDialogOpen == true) Get.back();
-                showSafeSnackbar(
-                  result.connected ? "Saved" : "Connection Warning",
-                  result.message,
-                );
-              },
-              child: controller.isCheckingConnection.value
-                  ? SizedBox(
-                      width: 20.w,
-                      height: 20.w,
-                      child: const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-                    )
-                  : const Text("Save Assignment", style: TextStyle(color: Colors.white)),
-            )),
+                  // close the dialog FIRST, then show the snackbar
+                  if (Get.isDialogOpen == true) Get.back();
+                  showSafeSnackbar(
+                    result.connected ? "Saved" : "Connection Warning",
+                    result.message,
+                  );
+                },
+                child: controller.isCheckingConnection.value
+                    ? SizedBox(
+                  width: 20.w,
+                  height: 20.w,
+                  child: const CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                )
+                    : const Text(
+                  "Save Assignment",
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ),
           ],
         );
       }),
@@ -533,7 +789,10 @@ class PrintersPage extends GetView<PrinterController> {
     Get.dialog(
       AlertDialog(
         backgroundColor: colors.card,
-        title: Text("Add Manual WiFi Printer", style: TextStyle(color: colors.text)),
+        title: Text(
+          "Add Manual WiFi Printer",
+          style: TextStyle(color: colors.text),
+        ),
         content: TextField(
           controller: ipController,
           style: TextStyle(color: colors.text),
@@ -546,7 +805,9 @@ class PrintersPage extends GetView<PrinterController> {
         actions: [
           TextButton(onPressed: () => Get.back(), child: const Text("Cancel")),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryGreen),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryGreen,
+            ),
             onPressed: () {
               if (ipController.text.isNotEmpty) {
                 controller.addManualWifiPrinter(ipController.text);
@@ -560,7 +821,11 @@ class PrintersPage extends GetView<PrinterController> {
     );
   }
 
-  Widget _buildSectionHeader(BuildContext context, String title, IconData icon) {
+  Widget _buildSectionHeader(
+      BuildContext context,
+      String title,
+      IconData icon,
+      ) {
     final colors = AppColors.of(context);
     return Padding(
       padding: EdgeInsets.only(bottom: 12.h),
@@ -568,24 +833,36 @@ class PrintersPage extends GetView<PrinterController> {
         children: [
           Icon(icon, color: AppTheme.primaryGreen, size: AppTypography.iconXL),
           SizedBox(width: 8.w),
-          Text(title, style: AppTypography.cardTitle.copyWith(color: colors.text)),
+          Text(
+            title,
+            style: AppTypography.cardTitle.copyWith(color: colors.text),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildHeaderActionBtn(
-    BuildContext context, {
-    required String label,
-    required IconData icon,
-    required VoidCallback onPressed,
-    required bool isPrimary,
-  }) {
+      BuildContext context, {
+        required String label,
+        required IconData icon,
+        required VoidCallback onPressed,
+        required bool isPrimary,
+      }) {
     final colors = AppColors.of(context);
     return ElevatedButton.icon(
       onPressed: onPressed,
-      icon: Icon(icon, size: AppTypography.sizeText, color: isPrimary ? Colors.white : AppTheme.primaryGreen),
-      label: Text(label, style: TextStyle(color: isPrimary ? Colors.white : AppTheme.primaryGreen)),
+      icon: Icon(
+        icon,
+        size: AppTypography.sizeText,
+        color: isPrimary ? Colors.white : AppTheme.primaryGreen,
+      ),
+      label: Text(
+        label,
+        style: TextStyle(
+          color: isPrimary ? Colors.white : AppTheme.primaryGreen,
+        ),
+      ),
       style: ElevatedButton.styleFrom(
         backgroundColor: isPrimary ? AppTheme.primaryGreen : colors.card,
         side: const BorderSide(color: AppTheme.primaryGreen),
