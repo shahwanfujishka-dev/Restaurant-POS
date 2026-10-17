@@ -109,8 +109,8 @@ class PrinterController extends GetxController {
     return bluetoothPrinters.where((d) => d.isLikelyPrinter).toList();
   }
   String? _btConnectedAddress;
-  // double calculatedCgst = 0;
-  // double calculatedSgst = 0;
+  final receiptPrinter = Rxn<TokenPrinterAssignment>();
+
   @override
   void onInit() {
     super.onInit();
@@ -118,7 +118,8 @@ class PrinterController extends GetxController {
     _initWifi();
     _loadSavedMappings();
     _listenToBleScan();
-
+    _loadSavedMappings();
+    _loadReceiptPrinter();
     checkPermissions().then((granted) {
       if (granted) {
         scanBluetoothPrinters();
@@ -769,6 +770,45 @@ class PrinterController extends GetxController {
     }
   }
 
+  Future<void> _loadReceiptPrinter() async {
+    final db = DatabaseHelper.instance;
+    final addr = await db.getSetting('receipt_printer_address') ?? '';
+    if (addr.isEmpty) return;
+    receiptPrinter.value = TokenPrinterAssignment(
+      tokenPrinterId: -1,
+      address: addr,
+      name: await db.getSetting('receipt_printer_name') ?? '',
+      type: await db.getSetting('receipt_printer_type') ?? 'bluetooth',
+    );
+  }
+
+  Future<({bool saved, String message})> setReceiptPrinter(PrinterModel p) async {
+    final ok = await checkPrinterConnection(p);
+    if (!ok) {
+      return (saved: false, message: "Could not connect to ${p.name}.");
+    }
+    final db = DatabaseHelper.instance;
+    await db.saveSetting('receipt_printer_address', p.address);
+    await db.saveSetting('receipt_printer_name', p.name);
+    await db.saveSetting('receipt_printer_type', p.type);
+    receiptPrinter.value = TokenPrinterAssignment(
+      tokenPrinterId: -1, address: p.address, name: p.name, type: p.type,
+    );
+    return (saved: true, message: "Receipt printer set to ${p.name}");
+  }
+
+  Future<void> clearReceiptPrinter() async {
+    final db = DatabaseHelper.instance;
+    await db.saveSetting('receipt_printer_address', '');
+    await db.saveSetting('receipt_printer_name', '');
+    await db.saveSetting('receipt_printer_type', '');
+    receiptPrinter.value = null;
+  }
+
+  TokenPrinterAssignment? _receiptAssignment() =>
+      receiptPrinter.value ??
+          (tokenPrinterAssignments.isNotEmpty ? tokenPrinterAssignments.first : null);
+
   AddonModel _addonWithQty(AddonModel a, int qty) => AddonModel(
         id: a.id,
         subId: a.subId,
@@ -826,9 +866,7 @@ class PrinterController extends GetxController {
         customerName ?? order.customerName ?? order.tableName;
     final double finalDiscount = discount ?? order.discount;
     final double finalRoundOff = roundOff ?? order.roundOff;
-    final assignment = tokenPrinterAssignments.isNotEmpty
-        ? tokenPrinterAssignments.first
-        : null;
+    final assignment = _receiptAssignment();
     final address = assignment?.printerAddress.value ?? "";
     final type = assignment?.printerType.value ?? "bluetooth";
 
@@ -953,9 +991,7 @@ class PrinterController extends GetxController {
       }) async {
     debugPrint("--- START SPLIT RECEIPT PRINTING ($totalSplits splits) ---");
 
-    final assignment = tokenPrinterAssignments.isNotEmpty
-        ? tokenPrinterAssignments.first
-        : null;
+    final assignment = _receiptAssignment();
     final address = assignment?.printerAddress.value ?? "";
     final type = assignment?.printerType.value ?? "bluetooth";
 
