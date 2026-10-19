@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
-
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get_core/src/get_main.dart';
@@ -9,7 +8,6 @@ import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_rx/src/rx_types/rx_types.dart';
 import 'package:get/get_state_manager/src/rx_flutter/rx_disposable.dart';
 import 'package:get_storage/get_storage.dart';
-
 import '../../modules/cart/controller/cart_controller.dart';
 import '../../modules/home/controller/order_controller.dart';
 import '../../modules/home/controller/printer_controller.dart';
@@ -22,7 +20,6 @@ import 'local_hub_client.dart';
 class SyncService extends GetxService with WidgetsBindingObserver {
   final ApiService _apiService = Get.find<ApiService>();
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
-
   final isSyncing = false.obs;
   final isMasterSyncing = false.obs;
   final masterSyncProgress = 0.0.obs;
@@ -720,13 +717,13 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         });
 
         final double saleRate = (json['sale_rate'] as num? ?? 0.0).toDouble();
-        final String unit_display = (json['unit_display'] ?? '').toString();
+        final String unitDisplay = (json['unit_display'] ?? '').toString();
         basicUnits.add({
           'prd_id':         prdId,
           'price_group_id': pgId,
           'unit_id':        0,
-          'unit_name':      unit_display.isNotEmpty ? unit_display : 'Unit',
-          'unit_display':   unit_display.isNotEmpty ? unit_display : 'Unit',
+          'unit_name':      unitDisplay.isNotEmpty ? unitDisplay : 'Unit',
+          'unit_display':   unitDisplay.isNotEmpty ? unitDisplay : 'Unit',
           'rate':           saleRate,
           'unit_base_qty':  1.0,
           'exist_addons':   '[]',
@@ -782,6 +779,9 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       final preview = (msg is Map ? msg['preview'] : null) ?? (d is Map ? d['preview'] : null);
       final String serverId = preview?['sq_id']?.toString() ?? preview?['sales_odr_id']?.toString() ?? '';
       final String invNo = preview?['sq_inv_no']?.toString() ?? preview?['sales_odr_inv_no']?.toString() ?? '';
+      String firstNonEmpty(List<dynamic> v) =>
+          v.map((e) => e?.toString() ?? '').firstWhere((s) => s.isNotEmpty, orElse: () => '');
+
 
       if (serverId.isEmpty || serverId == '0') {
         log("SyncService: ⚠️ Step 1 returned no serverId, will retry");
@@ -790,7 +790,11 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       step1 = {
         'sq_id': serverId,
         'inv_no': invNo,
-        'so_branch': preview?['sales_odr_sales_branch_inv'] ?? preview?['sq_branch_qt_no'] ?? create['branch_ref_no'],
+        'so_branch': firstNonEmpty([
+          preview?['sales_odr_sales_branch_inv'],
+          preview?['sq_branch_qt_no'],
+          create['branch_ref_no'],
+        ]),
         'subs': preview?['sales_order_sub'] ?? [],
       };
       // Persist so a failed step 2 never re-runs step 1 (no duplicate SO)
@@ -847,7 +851,6 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       'res_table': rt,
       'is_pos_edit': true,
       'sq_inv_no': sqInv,
-      // branch_ref_no stays as the settle payload's invoice number (M-mpm0121)
     };
 
     log("SyncService: [STEP 2] update_sales_order for $uuid (sq_id: $sqId, branch_ref_no: ${body['branch_ref_no']})");
@@ -954,7 +957,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       // Repair edit payload using values stored on the row
       if (isEdit && _safeInt(payload['sq_inv_no']) == 0) {
         final int inv = _safeInt(order['inv_no']);
-        final int sid = int.tryParse(serverIdInDb ?? '') ?? 0;
+        final int sid = int.tryParse(serverIdInDb) ?? 0;
         if (inv > 0 && sid > 0) {
           payload['sq_inv_no'] = inv;
           final rt = Map<String, dynamic>.from(payload['res_table'] ?? {});

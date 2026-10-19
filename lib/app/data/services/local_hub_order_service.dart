@@ -122,28 +122,42 @@ class LocalHubOrderService {
 
     if (existingOrders.isNotEmpty) {
       debugPrint('[LocalHubOrderService] createOrder: order already exists for uuid: $uuid');
-      return {'success': true, 'duplicate': true, 'message': 'Order already exists', 'order': _injectStatus(existingOrders.first)};
+      return {
+        'success': true,
+        'duplicate': true,
+        'message': 'Order already exists',
+        'order': _injectStatus(existingOrders.first),
+      };
     }
 
     final int resStatus = _toInt(payload['res_status']);
     final bool placeAndSettle = resStatus == 3;
-    final String soNumber = await _step('soNumber',
-            () => _db.generateLocalSoNumber(AppState.branchDisName));
+
+    // Step 1 number: SO number, always generated
+    final String soNumber = await _step(
+        'soNumber', () => _db.generateLocalSoNumber(AppState.branchDisName));
+
+    // Step 2 number: invoice number, only for settled orders (reserved per uuid, stable on retry)
     final String? invNumber = placeAndSettle
         ? await _step('invNumber', () => reserveInvoiceNumber(uuid))
         : null;
+
     final String finalBranch = invNumber ?? soNumber;
-    final branchInv = await _step('branchNumber', () => resStatus == 3
-        ? _db.generateLocalInvoiceNumber(AppState.branchDisName)
-        : _db.generateLocalSoNumber(AppState.branchDisName));
-    payload = {...payload, 'branch_inv': finalBranch, 'branch_ref_no': finalBranch, 'is_mob_restaurant': 1};
-    final List<dynamic> rawItems = payload['items'] is List ? payload['items'] as List : [];
-    final List<Map<String, dynamic>> items = rawItems.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).map((item) => {...item, 'order_uuid': uuid}).toList();
+
+    // Final payload (settle payload for settled orders)
+    payload = {
+      ...payload,
+      'branch_inv': finalBranch,
+      'branch_ref_no': finalBranch,
+      'is_mob_restaurant': 1,
+    };
+
+    // Create payload (step 1): unsettled, carrying the SO number
     Map<String, dynamic> createPayload = payload;
     if (placeAndSettle) {
-      final double gross = _toDouble(payload['sq_total'])
-          + _toDouble(payload['sq_disc'])
-          - _toDouble(payload['sales_roundoff']);
+      final double gross = _toDouble(payload['sq_total']) +
+          _toDouble(payload['sq_disc']) -
+          _toDouble(payload['sales_roundoff']);
       createPayload = {
         ...payload,
         'res_status': 1,
@@ -164,6 +178,14 @@ class LocalHubOrderService {
         'sale_acc_ledger_id_cash': null,
       };
     }
+
+    final List<dynamic> rawItems = payload['items'] is List ? payload['items'] as List : [];
+    final List<Map<String, dynamic>> items = rawItems
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .map((item) => {...item, 'order_uuid': uuid})
+        .toList();
+
     final now = DateTime.now().toIso8601String();
     final Map<String, dynamic> order = {
       'uuid': uuid,
@@ -177,10 +199,13 @@ class LocalHubOrderService {
       'customer_phone': payload['customer_phone'] ?? payload['phone_no'],
       'total_amount': _toDouble(payload['total_amount'] ?? payload['sq_total']),
       'total_tax': _toDouble(payload['total_tax'] ?? payload['sq_tax']),
-      'status': payload['status'] ?? (_toInt(payload['res_status']) == 0 ? 'draft' : (_toInt(payload['res_status']) == 2 ? 'billed' : (_toInt(payload['res_status']) == 3 ? 'paid' : 'pending'))),
+      'status': payload['status'] ??
+          (resStatus == 0
+              ? 'draft'
+              : (resStatus == 2 ? 'billed' : (resStatus == 3 ? 'paid' : 'pending'))),
       'is_synced': 0,
-      'payload': jsonEncode(payload),
-      'create_payload': jsonEncode(createPayload),
+      'payload': jsonEncode(payload),               // settle payload (res_status 3, invoice no.)
+      'create_payload': jsonEncode(createPayload),  // step 1 payload (res_status 1, SO no.)
       'created_at': payload['created_at'] ?? now,
     };
 
@@ -191,7 +216,8 @@ class LocalHubOrderService {
     try {
       if (Get.isRegistered<OrdersController>()) {
         final oc = Get.find<OrdersController>();
-        oc.updateExistingOrder(oc.parseOrderResponse({'preview': _buildPreviewMap(uuid, payload), 'offline': true}));
+        oc.updateExistingOrder(
+            oc.parseOrderResponse({'preview': _buildPreviewMap(uuid, payload), 'offline': true}));
       }
       if (Get.isRegistered<TablesController>()) {
         Get.find<TablesController>().fetchTables(silent: true);
@@ -405,7 +431,6 @@ class LocalHubOrderService {
   Future<Map<String, dynamic>> fetchMasterTables() async {
     debugPrint('[LocalHubOrderService] fetchMasterTables starting...');
     try {
-      // 1. Fetch all hub orders that are active to calculate dynamic occupancy
       final db = await _db.database;
       final activeOrders = await db.query(
         'orders',

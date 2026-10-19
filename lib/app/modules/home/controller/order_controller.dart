@@ -616,6 +616,9 @@ class OrdersController extends GetxController {
           if (resolvedBranchInv.isNotEmpty) {
             branchInv = resolvedBranchInv;
           }
+          if (branchInv.isEmpty) {
+            branchInv = _firstNonEmptyValue([payload['branch_inv'], payload['branch_ref_no']]);
+          }
 
           final dynamic rawResTable = payload['res_table'];
           if (rawResTable is Map<String, dynamic>) {
@@ -988,7 +991,7 @@ class OrdersController extends GetxController {
         status: updatedOrder.status.value,
         qrLink: updatedOrder.qrLink,
         offlineSeq: updatedOrder.offlineSeq,
-        branchInv: updatedOrder.branchInv, // ✅ Added
+        branchInv: updatedOrder.branchInv!.isNotEmpty ? updatedOrder.branchInv : existingOrder.branchInv,
       );
 
       orders.refresh();
@@ -1032,7 +1035,7 @@ class OrdersController extends GetxController {
         status: updatedOrder.status.value,
         qrLink: updatedOrder.qrLink,
         offlineSeq: updatedOrder.offlineSeq,
-        branchInv: updatedOrder.branchInv, // ✅ Added
+        branchInv: updatedOrder.branchInv!.isNotEmpty ? updatedOrder.branchInv : existingOrder.branchInv,
       );
       list.refresh();
       debugPrint("✅ Updated existing order in list: ${updatedOrder.invNo}");
@@ -1244,6 +1247,7 @@ class OrdersController extends GetxController {
               preview['sales_odr_sales_branch_inv'],
               preview['sales_odr_branch_inv'],
               preview['sales_branch_inv'],
+              current.branchInv,   // fall back to what we already have
             ]),
           );
           orders.refresh();
@@ -1278,6 +1282,7 @@ class OrdersController extends GetxController {
                 preview['sales_odr_sales_branch_inv'],
                 preview['sales_odr_branch_inv'],
                 preview['sales_branch_inv'],
+                current.branchInv,   // fall back to what we already have
               ]),
             );
             soldOrders.refresh();

@@ -11,8 +11,6 @@ import '../../../../theme/app_typography.dart';
 import '../../controller/settings_controller.dart';
 
 class SettingsView extends GetView<SettingsController> {
-  const SettingsView({super.key});
-
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
@@ -148,7 +146,7 @@ class SettingsView extends GetView<SettingsController> {
             ),
           ),
           SizedBox(height: 12.h),
-          _buildInfoTile(context, Icons.info_outline, "Version", "1.0.8"),
+          _buildInfoTile(context, Icons.info_outline, "Version", "1.0.9"),
           _buildInfoTile(
             context,
             Icons.business_outlined,
@@ -173,6 +171,8 @@ class SettingsView extends GetView<SettingsController> {
       ),
     );
   }
+
+  const SettingsView({super.key});
 
   Widget _buildOperationModeCard(BuildContext context) {
     final colors = AppColors.of(context);

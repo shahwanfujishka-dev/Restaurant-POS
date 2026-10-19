@@ -722,7 +722,7 @@ CREATE TABLE orders (
     if (tax != null) values['total_tax'] = tax;
     if (payload != null) values['payload'] = payload;
     if (invNo != null) values['inv_no'] = invNo;
-    if (branchInv != null) values['branch_inv'] = branchInv;
+    if (branchInv != null && branchInv.trim().isNotEmpty) values['branch_inv'] = branchInv;
 
     int count = await db.update('orders', values, where: 'server_id = ?', whereArgs: [serverId]);
     if (count == 0) {
@@ -750,7 +750,7 @@ CREATE TABLE orders (
         final values = {
           'server_id': serverId,
           'inv_no': invNo,
-          'branch_inv': branchInv,
+          if (branchInv.isNotEmpty) 'branch_inv': branchInv,
           'order_type_id': (json['sales_odr_order_type'] as num? ?? 0).toInt(),
           'table_id': (json['sales_odr_table_id'] ?? 0).toString(),
           'customer_name': json['sales_odr_table_name']?.toString() ?? json['ledger_name']?.toString() ?? 'N/A',
@@ -802,7 +802,7 @@ CREATE TABLE orders (
     if (isSynced != null) values['is_synced'] = isSynced;
     if (serverId != null) values['server_id'] = serverId;
     if (invNo != null) values['inv_no'] = invNo;
-    if (branchInv != null) values['branch_inv'] = branchInv;
+    if (branchInv != null && branchInv.trim().isNotEmpty) values['branch_inv'] = branchInv;
     if (payload != null) values['payload'] = payload;
     if (total != null) values['total_amount'] = total;
     if (tax != null) values['total_tax'] = tax;
@@ -1390,6 +1390,17 @@ CREATE TABLE orders (
       for (var order in orders) {
         final serverId = (order['sales_odr_id'] ?? '').toString();
         if (serverId.isEmpty) continue;
+        final existing = await txn.query('orders',
+            columns: ['uuid', 'branch_inv'],
+            where: 'uuid = ? OR server_id = ?',
+            whereArgs: [serverId, serverId],
+            limit: 1);
+
+        final String serverBranch =
+        (order['sales_odr_branch_inv'] ?? order['sales_branch_inv'] ?? order['sales_odr_sales_branch_inv'] ?? '').toString();
+        final String keepBranch = serverBranch.isNotEmpty
+            ? serverBranch
+            : (existing.isNotEmpty ? (existing.first['branch_inv']?.toString() ?? '') : '');
 
         await txn.insert(
           'orders',
@@ -1397,7 +1408,7 @@ CREATE TABLE orders (
             'uuid': serverId,
             'server_id': serverId,
             'inv_no': (order['sales_odr_inv_no'] ?? '').toString(),
-            'branch_inv': (order['sales_odr_branch_inv'] ?? order['sales_branch_inv'] ?? '').toString(), // ✅ Updated to check both
+            'branch_inv': keepBranch,
             'customer_name': order['ledger_name']?.toString() ?? 'Walk-in Customer',
             'total_amount': _toDouble(order['sales_odr_total'] ?? order['tot_amount'] ?? order['total_amount']),
             'total_tax': _toDouble(order['sales_odr_tax'] ?? order['tot_tax'] ?? order['total_tax']),
