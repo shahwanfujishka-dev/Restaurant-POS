@@ -358,26 +358,31 @@ class CartController extends GetxController {
           "priceAtOrder=${item.priceAtOrder} unit.rate=${item.unit.rate} "
           "unit.base=${item.unit.unitBaseQty} product.price=${item.product.price} "
           "unitId=${item.unitId ?? item.unit.unitId}");
-      final clonedAddons = item.selectedAddons
-          .map(
-            (a) => AddonModel(
-          id: a.id,
-          subId: a.subId,
-          prdId: a.prdId,
-          prdaddon_flags: a.prdaddon_flags,
-          name: a.name,
-          price: a.price,
-          unitDisplay: a.unitDisplay,
-          unitId: a.unitId,
-          taxCatId: a.taxCatId,
-          taxPer: a.taxPer,
-          unitBaseQty: a.unitBaseQty,
-          initialQty: a.quantity.value,
-          isDefault: a.isDefault,
-          freeQty: a.freeQty,
-        ),
-      )
-          .toList();
+      final Map<int, List<AddonModel>> grouped = {};
+      for (final a in item.selectedAddons) {
+        grouped.putIfAbsent(a.prdId, () => []).add(a);
+      }
+
+      final clonedAddons = grouped.values.map((rows) {
+        final paid = rows.firstWhereOrNull((r) => r.price > 0) ?? rows.first;
+        final totalQty = rows.fold<int>(0, (s, r) => s + r.quantity.value);
+        return AddonModel(
+          id: paid.id,
+          subId: paid.subId,              // paid row's subId
+          prdId: paid.prdId,
+          prdaddon_flags: paid.prdaddon_flags,
+          name: paid.name,
+          price: paid.price,
+          unitDisplay: paid.unitDisplay,
+          unitId: paid.unitId,
+          taxCatId: paid.taxCatId,
+          taxPer: paid.taxPer,
+          unitBaseQty: paid.unitBaseQty,
+          initialQty: totalQty,           // 1 free + 2 paid = 3
+          isDefault: paid.isDefault,
+          freeQty: paid.freeQty,
+        );
+      }).toList();
 
       // ✅ Also capture free addons (existAddOns with flags==1) that have a subId
       // These come from the server response's sales_order_sub as addon entries
@@ -861,12 +866,16 @@ class CartController extends GetxController {
         int freePart = totalQty < freeQtyLimit ? totalQty : freeQtyLimit;
         int paidPart = totalQty - freePart;
         // final existSource = item.unit.existAddOns.firstWhereOrNull((ea) => ea.prdId == addon.prdId);
-        final double catalogPrice = existSource?.price ?? addon.price;
+        final double catalogPrice = (existSource != null && existSource.price > 0)
+            ? existSource.price
+            : addon.price;
         // final bool isUserSelected = item.selectedAddons.any((sa) => sa.prdId == addon.prdId,);
-        double paidRate = addon.price;
+        double paidRate = catalogPrice;
         if (paidPart > 0) {
           if (addon.price == 0 && addon.freeQty > 0 && freePart < totalQty) {
             paidRate = catalogPrice;
+            log("ADDON ${addon.name} total=$totalQty free=$freePart paid=$paidPart "
+                "paidRate=$paidRate catalog=$catalogPrice addon.price=${addon.price} freeQty=$resolvedFreeQty");
           }
           else if (isUserSelected && addon.price > 0) {
             paidRate = addon.price;
@@ -1711,9 +1720,7 @@ class CartController extends GetxController {
           // ── Current qty ──────────────────────────────────────────────────────
           int currentQty;
 
-          final bool shouldMirrorParentQty =
-              resolvedFreeQty > 0 &&
-                  !addonQtyManuallyChanged;
+          final bool shouldMirrorParentQty = resolvedFreeQty > 0 && !userTouched;
 
           if (shouldMirrorParentQty) {
             currentQty = newQty * resolvedFreeQty;
@@ -1840,7 +1847,7 @@ class CartController extends GetxController {
                 "salesub_price": 0,
                 "salesub_tax": 0,
                 "salesub_tax_per": 0,
-                "salesub_qty": 0,
+                "salesub_qty": oldFreePart,
                 if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": 0,
                 if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": 0,
                 "count": oldFreePart,
@@ -1961,7 +1968,7 @@ class CartController extends GetxController {
                 "salesub_tax_per": 0,
                 if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": 0,
                 if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": 0,
-                "salesub_qty": 0,
+                "salesub_qty": oldPaidPart,
                 "count": oldPaidPart,
                 "sale_total_amount": 0,
                 "salesub_tax_amnt": 0,
@@ -2012,7 +2019,7 @@ class CartController extends GetxController {
                 "salesub_tax_per": oa.taxPer,
                 if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": oa.taxPer / 2,
                 if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": oa.taxPer / 2,
-                "salesub_qty": 0,
+                "salesub_qty": oa.initialQty,
                 "count": oa.initialQty,
                 "sale_total_amount": 0,
                 "salesub_tax_amnt": 0,

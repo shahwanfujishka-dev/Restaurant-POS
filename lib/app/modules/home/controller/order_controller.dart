@@ -1436,7 +1436,7 @@ class OrdersController extends GetxController {
           prdId: (addonJson['sales_ord_sub_prod_id'] as num? ?? 0).toInt(),
           prdaddon_flags: (addonJson['prdaddon_flags'] as num? ?? 1).toInt(),
           name: addonJson['prd_name']?.toString() ?? '',
-          price: (addonJson['rate'] as num? ?? 0.0).toDouble(),
+          price: (addonJson['rate'] ?? addonJson['sales_ord_sub_rate'] as num? ?? 0.0).toDouble(),
           unitDisplay: (addonJson['unit_display'] ?? addonJson['salesub_unit_display'] ?? '').toString(),
           unitId: (addonJson['sales_ord_sub_unit_id'] as num? ?? 0).toInt(),
           initialQty: (addonJson['sales_ord_sub_qty'] as num? ?? 0).toInt(),

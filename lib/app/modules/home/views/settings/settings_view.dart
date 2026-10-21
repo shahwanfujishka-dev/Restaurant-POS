@@ -146,7 +146,7 @@ class SettingsView extends GetView<SettingsController> {
             ),
           ),
           SizedBox(height: 12.h),
-          _buildInfoTile(context, Icons.info_outline, "Version", "1.0.9"),
+          _buildInfoTile(context, Icons.info_outline, "Version", "1.1.4"),
           _buildInfoTile(
             context,
             Icons.business_outlined,

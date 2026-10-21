@@ -558,20 +558,17 @@ class SettingsController extends GetxController {
       return;
     }
 
+    // Background sync already running: don't start a second loop
+    if (_syncService.isSyncing.value) {
+      showSafeSnackbar("Sync In Progress", "Orders are already syncing. Please wait.");
+      return;
+    }
+
     isSyncingOrders.value = true;
     try {
-      final unsyncedOrders = await DatabaseHelper.instance.getUnsyncedOrders();
-      for (var order in unsyncedOrders) {
-        await _syncService.syncOrder(order);
-        await refreshPendingCount();
-      }
-
-      final unsyncedPayments = await DatabaseHelper.instance.getUnsyncedPayments();
-      for (var payment in unsyncedPayments) {
-        await _syncService.syncPayment(payment);
-        await refreshPendingCount();
-      }
-
+      // Same guarded, oldest-first loop the background timer uses
+      await _syncService.syncPendingOrders();
+      await refreshPendingCount();
       _refreshControllers();
 
       if (pendingCount.value == 0) {
