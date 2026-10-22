@@ -110,27 +110,17 @@ class CartItem {
   bool get hasUnitChanged =>
       originalUnitId != null && originalUnitId != unit.unitId;
 
-  // Helper to check if any addon changed
   bool hasAddonChanges() {
     if (originalAddons == null) return selectedAddons.isNotEmpty;
-
-    // Create maps for easy comparison
-    final originalMap = {for (var a in originalAddons!) a.prdId: a};
-    final currentMap = {for (var a in selectedAddons) a.prdId: a};
-
-    // Check for removed addons
-    for (var id in originalMap.keys) {
-      if (!currentMap.containsKey(id)) return true;
+    final orig = <int, int>{};
+    for (final a in originalAddons!) {
+      orig[a.prdId] = (orig[a.prdId] ?? 0) + a.initialQty;
     }
-
-    // Check for added or changed addons
-    for (var addon in selectedAddons) {
-      final original = originalMap[addon.prdId];
-      if (original == null) return true; // New addon
-      if (original.quantity.value != addon.quantity.value)
-        return true; // Quantity changed
+    final cur = {for (final a in selectedAddons) a.prdId: a.quantity.value};
+    if (orig.length != cur.length) return true;
+    for (final e in orig.entries) {
+      if (cur[e.key] != e.value) return true;
     }
-
     return false;
   }
 
@@ -352,60 +342,62 @@ class CartController extends GetxController {
     clearCart();
 
     for (var item in order.items) {
+      if (item.isRemoved) continue;
       // Clone addons with their original state
       // In startEditingOrder, replace the cloning block:
       log("EDIT LOAD → ${item.product.name} qty=${item.quantity} "
           "priceAtOrder=${item.priceAtOrder} unit.rate=${item.unit.rate} "
           "unit.base=${item.unit.unitBaseQty} product.price=${item.product.price} "
           "unitId=${item.unitId ?? item.unit.unitId}");
-      final clonedAddons = item.selectedAddons
-          .map(
-            (a) => AddonModel(
-          id: a.id,
-          subId: a.subId,
-          prdId: a.prdId,
-          prdaddon_flags: a.prdaddon_flags,
-          name: a.name,
-          price: a.price,
-          unitDisplay: a.unitDisplay,
-          unitId: a.unitId,
-          taxCatId: a.taxCatId,
-          taxPer: a.taxPer,
-          unitBaseQty: a.unitBaseQty,
-          initialQty: a.quantity.value,
-          isDefault: a.isDefault,
-          freeQty: a.freeQty,
-        ),
-      )
-          .toList();
+      final Map<int, List<AddonModel>> grouped = {};
+      for (final a in item.selectedAddons) {
+        grouped.putIfAbsent(a.prdId, () => []).add(a);
+      }
 
-      // ✅ Also capture free addons (existAddOns with flags==1) that have a subId
-      // These come from the server response's sales_order_sub as addon entries
+      final clonedAddons = grouped.values.map((rows) {
+        final paid = rows.firstWhereOrNull((r) => r.price > 0) ?? rows.first;
+        final totalQty = rows.fold<int>(0, (s, r) => s + r.quantity.value);
+        return AddonModel(
+          id: paid.id,
+          subId: paid.subId,              // paid row's subId
+          prdId: paid.prdId,
+          prdaddon_flags: paid.prdaddon_flags,
+          name: paid.name,
+          price: paid.price,
+          unitDisplay: paid.unitDisplay,
+          unitId: paid.unitId,
+          taxCatId: paid.taxCatId,
+          taxPer: paid.taxPer,
+          unitBaseQty: paid.unitBaseQty,
+          initialQty: totalQty,           // 1 free + 2 paid = 3
+          isDefault: paid.isDefault,
+          freeQty: paid.freeQty,
+        );
+      }).toList();
+
+// raw rows, NOT grouped: each keeps its own subId and qty
+      final rawOriginals = item.selectedAddons.map((r) => AddonModel(
+        id: r.id, subId: r.subId, prdId: r.prdId,
+        prdaddon_flags: r.prdaddon_flags, name: r.name, price: r.price,
+        unitDisplay: r.unitDisplay, unitId: r.unitId, taxCatId: r.taxCatId,
+        taxPer: r.taxPer, unitBaseQty: r.unitBaseQty,
+        initialQty: r.initialQty, isDefault: r.isDefault, freeQty: r.freeQty,
+      )).toList();
+
       final freeAddonOriginals = item.unit.existAddOns
           .where((ea) => ea.prdaddon_flags == 1 && ea.subId != null)
-          .map(
-            (ea) => AddonModel(
-          id: ea.id,
-          subId: ea.subId, // ✅ subId from server
-          prdId: ea.prdId,
-          prdaddon_flags: ea.prdaddon_flags,
-          name: ea.name,
-          price: 0,
-          unitDisplay: ea.unitDisplay,
-          unitId: ea.unitId,
-          taxCatId: ea.taxCatId,
-          taxPer: ea.taxPer,
-          unitBaseQty: ea.unitBaseQty, initialQty: ea.freeQty > 0 ? item.quantity * ea.freeQty : item.quantity,// ✅ mirrors parent qty
-          isDefault: 1,
-          freeQty: ea.freeQty,
-        ),
-      ).toList();
+          .where((ea) => !rawOriginals.any((r) => r.prdId == ea.prdId && r.price == 0))
+          .map((ea) => AddonModel(
+        id: ea.id, subId: ea.subId, prdId: ea.prdId,
+        prdaddon_flags: ea.prdaddon_flags, name: ea.name, price: 0,
+        unitDisplay: ea.unitDisplay, unitId: ea.unitId, taxCatId: ea.taxCatId,
+        taxPer: ea.taxPer, unitBaseQty: ea.unitBaseQty,
+        initialQty: ea.freeQty > 0 ? item.quantity * ea.freeQty : item.quantity,
+        isDefault: 1, freeQty: ea.freeQty,
+      ))
+          .toList();
 
-      // ✅ originalAddons = selectedAddons + free addons from existAddOns
-      final originalAddonCopy = [
-        ...clonedAddons.map((a) => a.copyWith()),
-        ...freeAddonOriginals,
-      ];
+      final originalAddonCopy = [...rawOriginals, ...freeAddonOriginals];
 
       cartItems.add(
         CartItem(
@@ -861,12 +853,16 @@ class CartController extends GetxController {
         int freePart = totalQty < freeQtyLimit ? totalQty : freeQtyLimit;
         int paidPart = totalQty - freePart;
         // final existSource = item.unit.existAddOns.firstWhereOrNull((ea) => ea.prdId == addon.prdId);
-        final double catalogPrice = existSource?.price ?? addon.price;
+        final double catalogPrice = (existSource != null && existSource.price > 0)
+            ? existSource.price
+            : addon.price;
         // final bool isUserSelected = item.selectedAddons.any((sa) => sa.prdId == addon.prdId,);
-        double paidRate = addon.price;
+        double paidRate = catalogPrice;
         if (paidPart > 0) {
           if (addon.price == 0 && addon.freeQty > 0 && freePart < totalQty) {
             paidRate = catalogPrice;
+            log("ADDON ${addon.name} total=$totalQty free=$freePart paid=$paidPart "
+                "paidRate=$paidRate catalog=$catalogPrice addon.price=${addon.price} freeQty=$resolvedFreeQty");
           }
           else if (isUserSelected && addon.price > 0) {
             paidRate = addon.price;
@@ -1674,11 +1670,6 @@ class CartController extends GetxController {
                 (sa) => sa.prdId == addon.prdId,
           );
 
-          final int originalAddonQty = originalAddon?.initialQty ?? 0;
-
-          final bool addonQtyManuallyChanged =
-              originalAddon != null &&
-                  addon.quantity.value != originalAddonQty;
           // ── Resolve selected version ─────────────────────────────────────────
           final AddonModel? selectedVersion = item.selectedAddons
               .firstWhereOrNull((sa) => sa.prdId == addon.prdId);
@@ -1711,24 +1702,13 @@ class CartController extends GetxController {
           // ── Current qty ──────────────────────────────────────────────────────
           int currentQty;
 
-          final bool shouldMirrorParentQty =
-              resolvedFreeQty > 0 &&
-                  !addonQtyManuallyChanged;
+          final bool shouldMirrorParentQty = resolvedFreeQty > 0 && !userTouched;
 
           if (shouldMirrorParentQty) {
             currentQty = newQty * resolvedFreeQty;
           } else {
             currentQty = addon.quantity.value;
           }
-          // ── Old qty from initialQty snapshot ─────────────────────────────────
-          final int oldQtySnapshot = unitChanged
-              ? 0
-              : (originalAddon?.initialQty ?? 0);
-          final String addonSubId = unitChanged
-              ? ""
-              : (originalAddon?.subId?.toString() ?? "");
-
-          // ── Free / paid split ─────────────────────────────────────────────────
           // Rules:
           //  • effectivePrice > 0  → user picked an explicitly paid addon: ALL qty is paid.
           //  • effectivePrice == 0 AND resolvedFreeQty > 0
@@ -1757,16 +1737,15 @@ class CartController extends GetxController {
           final int oldFreeLimit = hasFreeThreshold
               ? (oldQty * resolvedFreeQty)
               : 0;
-          final int oldFreePart = (effectivePrice == 0 && hasFreeThreshold)
-              ? oldQtySnapshot.clamp(0, oldFreeLimit)
-              : (effectivePrice == 0 && !hasFreeThreshold)
-              ? oldQtySnapshot
-              : 0;
-          final int oldPaidPart = (effectivePrice > 0)
-              ? oldQtySnapshot
-              : (hasFreeThreshold
-              ? (oldQtySnapshot - oldFreePart).clamp(0, 99999)
-              : 0);
+          final origRows = item.originalAddons
+              ?.where((a) => a.prdId == addon.prdId).toList() ?? const <AddonModel>[];
+          final AddonModel? origFree = origRows.firstWhereOrNull((a) => a.price == 0);
+          final AddonModel? origPaid = origRows.firstWhereOrNull((a) => a.price > 0);
+
+          final int oldFreePart = unitChanged ? 0 : (origFree?.initialQty ?? 0);
+          final int oldPaidPart = unitChanged ? 0 : (origPaid?.initialQty ?? 0);
+          final int oldQtySnapshot = oldFreePart + oldPaidPart;
+          final String addonSubId = unitChanged ? "" : (origFree?.subId?.toString() ?? "");
 
           log(
             "│  ADDON: ${addon.name}  userTouched: $userTouched"
@@ -1840,7 +1819,7 @@ class CartController extends GetxController {
                 "salesub_price": 0,
                 "salesub_tax": 0,
                 "salesub_tax_per": 0,
-                "salesub_qty": 0,
+                "salesub_qty": oldFreePart,
                 if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": 0,
                 if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": 0,
                 "count": oldFreePart,
@@ -1884,19 +1863,7 @@ class CartController extends GetxController {
                 ? 0
                 : (paidRate * addon.taxPer) / 100;
 
-            // subId resolution:
-            //  • Explicitly paid addon → look for original paid record.
-            //  • Free-addon overflow   → no prior paid sub record → "" (server creates new).
-            final AddonModel? originalPaidRecord = item.originalAddons
-                ?.firstWhereOrNull(
-                  (a) => a.prdId == addon.prdId && a.price > 0,
-            );
-
-            final String paidSubId = unitChanged
-                ? ""
-                : (originalPaidRecord?.subId?.toString() ??
-                (effectivePrice > 0 ? addonSubId : ""));
-
+            final String paidSubId = unitChanged ? "" : (origPaid?.subId?.toString() ?? "");
             if (paidChanged) {
               anyAddonChanged = true;
               hasAnyChange = true;
@@ -1961,7 +1928,7 @@ class CartController extends GetxController {
                 "salesub_tax_per": 0,
                 if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": 0,
                 if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": 0,
-                "salesub_qty": 0,
+                "salesub_qty": oldPaidPart,
                 "count": oldPaidPart,
                 "sale_total_amount": 0,
                 "salesub_tax_amnt": 0,
@@ -2012,7 +1979,7 @@ class CartController extends GetxController {
                 "salesub_tax_per": oa.taxPer,
                 if (AppState.cmpTaxType != 1) "salesub_cgst_tax_per": oa.taxPer / 2,
                 if (AppState.cmpTaxType != 1) "salesub_sgst_tax_per": oa.taxPer / 2,
-                "salesub_qty": 0,
+                "salesub_qty": oa.initialQty,
                 "count": oa.initialQty,
                 "sale_total_amount": 0,
                 "salesub_tax_amnt": 0,

@@ -61,6 +61,8 @@ class TokenPrinterAssignment {
   final RxString printerAddress = "".obs;
   final RxString printerName = "".obs;
   final RxString printerType = "".obs;
+  final RxString lastSeen = "".obs;
+  final RxBool isOnline = true.obs;
 
   TokenPrinterAssignment({
     required this.tokenPrinterId,

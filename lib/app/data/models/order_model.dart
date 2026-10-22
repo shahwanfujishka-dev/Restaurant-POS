@@ -20,7 +20,7 @@ class OrderItem {
   final bool isKotModified;
   final double cgstRate; // ✅ Added for GST
   final double sgstRate; // ✅ Added for GST
-  final String notes; // ✅ Added for item notes
+  final String notes;
 
   OrderItem({
     this.subId,

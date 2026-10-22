@@ -9,6 +9,12 @@ import 'package:sqflite/sqflite.dart';
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
+  static const _lastTouched = '''
+  MAX(
+    COALESCE(o.updated_at, o.created_at, ''),
+    COALESCE((SELECT MAX(p.created_at) FROM payments p WHERE p.order_uuid = o.uuid), '')
+  )
+''';
 
   DatabaseHelper._init();
 
@@ -24,7 +30,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 22, // bumped from 21 → 22 for order_inv_issue in local server
+      version: 23, // bumped from 21 → 22 for order_inv_issue in local server
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
       onOpen: _ensureOrderColumns,
@@ -53,6 +59,9 @@ class DatabaseHelper {
     }
     if (!cols.contains('hub_synced')) {
       await db.execute('ALTER TABLE orders ADD COLUMN hub_synced INTEGER DEFAULT 1');
+    }
+    if (!cols.contains('updated_at')) {
+      await db.execute('ALTER TABLE orders ADD COLUMN updated_at TEXT');
     }
   }
 
@@ -271,6 +280,9 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE orders ADD COLUMN create_payload TEXT');
       } catch (e) {}
     }
+    if (oldVersion < 23) {
+      try { await db.execute('ALTER TABLE orders ADD COLUMN updated_at TEXT'); } catch (e) {}
+    }
   }
 
   Future _createDB(Database db, int version) async {
@@ -424,7 +436,8 @@ CREATE TABLE orders (
   payload TEXT,
   create_payload TEXT,
   offline_seq INTEGER,
-  created_at TEXT
+  created_at TEXT,
+  updated_at TEXT
 )
 ''');
 
@@ -651,7 +664,7 @@ CREATE TABLE orders (
 
   Future<List<Map<String, dynamic>>> getUnsyncedPayments() async {
     final db = await instance.database;
-    return await db.query('payments', where: 'is_synced = ?', whereArgs: [0]);
+    return await db.query('payments', where: 'is_synced = ?', whereArgs: [0], orderBy: 'id ASC');
   }
 
   Future<void> updatePaymentSyncStatus(int id, int isSynced) async {
@@ -673,7 +686,11 @@ CREATE TABLE orders (
 
   Future<List<Map<String, dynamic>>> getUnsyncedOrders() async {
     final db = await instance.database;
-    return await db.query('orders', where: 'is_synced = ?', whereArgs: [0]);
+    return await db.rawQuery('''
+    SELECT o.* FROM orders o
+    WHERE o.is_synced = 0
+    ORDER BY $_lastTouched ASC, o.local_id ASC
+  ''');
   }
 
   Future<int> getUnsyncedOrdersCount() async {
@@ -706,7 +723,11 @@ CREATE TABLE orders (
 
   Future<List<Map<String, dynamic>>> getOrdersPendingHubSync() async {
     final db = await instance.database;
-    return await db.query('orders', where: 'hub_synced = ?', whereArgs: [0]);
+    return await db.rawQuery('''
+    SELECT o.* FROM orders o
+    WHERE o.hub_synced = 0
+    ORDER BY $_lastTouched ASC, o.local_id ASC
+  ''');
   }
 
   Future<void> markOrderHubSynced(String uuid) async {
@@ -722,7 +743,7 @@ CREATE TABLE orders (
     if (tax != null) values['total_tax'] = tax;
     if (payload != null) values['payload'] = payload;
     if (invNo != null) values['inv_no'] = invNo;
-    if (branchInv != null) values['branch_inv'] = branchInv;
+    if (branchInv != null && branchInv.trim().isNotEmpty) values['branch_inv'] = branchInv;
 
     int count = await db.update('orders', values, where: 'server_id = ?', whereArgs: [serverId]);
     if (count == 0) {
@@ -750,7 +771,7 @@ CREATE TABLE orders (
         final values = {
           'server_id': serverId,
           'inv_no': invNo,
-          'branch_inv': branchInv,
+          if (branchInv.isNotEmpty) 'branch_inv': branchInv,
           'order_type_id': (json['sales_odr_order_type'] as num? ?? 0).toInt(),
           'table_id': (json['sales_odr_table_id'] ?? 0).toString(),
           'customer_name': json['sales_odr_table_name']?.toString() ?? json['ledger_name']?.toString() ?? 'N/A',
@@ -802,7 +823,7 @@ CREATE TABLE orders (
     if (isSynced != null) values['is_synced'] = isSynced;
     if (serverId != null) values['server_id'] = serverId;
     if (invNo != null) values['inv_no'] = invNo;
-    if (branchInv != null) values['branch_inv'] = branchInv;
+    if (branchInv != null && branchInv.trim().isNotEmpty) values['branch_inv'] = branchInv;
     if (payload != null) values['payload'] = payload;
     if (total != null) values['total_amount'] = total;
     if (tax != null) values['total_tax'] = tax;
@@ -817,6 +838,7 @@ CREATE TABLE orders (
     final db = await instance.database;
     await db.transaction((txn) async {
       final String id = (orderValues['server_id'] ?? orderValues['uuid']).toString();
+      final nowIso = DateTime.now().toIso8601String();
 
       // Try to find existing record to get its real UUID
       final List<Map<String, dynamic>> existing = await txn.query(
@@ -830,10 +852,13 @@ CREATE TABLE orders (
       String targetUuid;
       if (existing.isNotEmpty) {
         targetUuid = existing.first['uuid'];
+        orderValues.remove('created_at');      // keep creation time
+        orderValues['updated_at'] = nowIso;    // every edit/settle moves it to "latest"
         await txn.update('orders', orderValues, where: 'uuid = ?', whereArgs: [targetUuid]);
       } else {
         targetUuid = orderValues['uuid'] ?? id;
-        orderValues['uuid'] = targetUuid; // ensure uuid is set
+        orderValues['uuid'] = targetUuid;
+        orderValues['updated_at'] ??= orderValues['created_at'] ?? nowIso;
         await txn.insert('orders', orderValues, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
@@ -1390,6 +1415,17 @@ CREATE TABLE orders (
       for (var order in orders) {
         final serverId = (order['sales_odr_id'] ?? '').toString();
         if (serverId.isEmpty) continue;
+        final existing = await txn.query('orders',
+            columns: ['uuid', 'branch_inv'],
+            where: 'uuid = ? OR server_id = ?',
+            whereArgs: [serverId, serverId],
+            limit: 1);
+
+        final String serverBranch =
+        (order['sales_odr_branch_inv'] ?? order['sales_branch_inv'] ?? order['sales_odr_sales_branch_inv'] ?? '').toString();
+        final String keepBranch = serverBranch.isNotEmpty
+            ? serverBranch
+            : (existing.isNotEmpty ? (existing.first['branch_inv']?.toString() ?? '') : '');
 
         await txn.insert(
           'orders',
@@ -1397,7 +1433,7 @@ CREATE TABLE orders (
             'uuid': serverId,
             'server_id': serverId,
             'inv_no': (order['sales_odr_inv_no'] ?? '').toString(),
-            'branch_inv': (order['sales_odr_branch_inv'] ?? order['sales_branch_inv'] ?? '').toString(), // ✅ Updated to check both
+            'branch_inv': keepBranch,
             'customer_name': order['ledger_name']?.toString() ?? 'Walk-in Customer',
             'total_amount': _toDouble(order['sales_odr_total'] ?? order['tot_amount'] ?? order['total_amount']),
             'total_tax': _toDouble(order['sales_odr_tax'] ?? order['tot_tax'] ?? order['total_tax']),

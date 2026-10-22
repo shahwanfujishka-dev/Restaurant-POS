@@ -616,6 +616,9 @@ class OrdersController extends GetxController {
           if (resolvedBranchInv.isNotEmpty) {
             branchInv = resolvedBranchInv;
           }
+          if (branchInv.isEmpty) {
+            branchInv = _firstNonEmptyValue([payload['branch_inv'], payload['branch_ref_no']]);
+          }
 
           final dynamic rawResTable = payload['res_table'];
           if (rawResTable is Map<String, dynamic>) {
@@ -988,7 +991,7 @@ class OrdersController extends GetxController {
         status: updatedOrder.status.value,
         qrLink: updatedOrder.qrLink,
         offlineSeq: updatedOrder.offlineSeq,
-        branchInv: updatedOrder.branchInv, // ✅ Added
+        branchInv: updatedOrder.branchInv!.isNotEmpty ? updatedOrder.branchInv : existingOrder.branchInv,
       );
 
       orders.refresh();
@@ -1032,7 +1035,7 @@ class OrdersController extends GetxController {
         status: updatedOrder.status.value,
         qrLink: updatedOrder.qrLink,
         offlineSeq: updatedOrder.offlineSeq,
-        branchInv: updatedOrder.branchInv, // ✅ Added
+        branchInv: updatedOrder.branchInv!.isNotEmpty ? updatedOrder.branchInv : existingOrder.branchInv,
       );
       list.refresh();
       debugPrint("✅ Updated existing order in list: ${updatedOrder.invNo}");
@@ -1131,16 +1134,20 @@ class OrdersController extends GetxController {
         final addonItems = subItems.where((i) => _isAddonRow(i)).toList();
 
         for (var productJson in mainItems) {
-          final double quantity = (productJson['salesub_qty'] ?? productJson['sales_ord_sub_qty'] as num? ?? 1).toDouble();
-          final double baseRate = (productJson['rate'] ?? productJson['sales_ord_sub_rate'] as num? ?? 0.0).toDouble();
           final double taxAmt = (productJson['sales_ord_sub_tax'] ?? productJson['sales_ord_sub_tax_rate'] as num? ?? 0.0).toDouble();
           final double cgstRate = (productJson['sales_ord_sub_cgst_rate'] as num? ?? 0.0).toDouble();
           final double sgstRate = (productJson['sales_ord_sub_sgst_rate'] as num? ?? 0.0).toDouble();
 
+          final double quantity = (productJson['salesub_qty'] ?? productJson['sales_ord_sub_qty'] as num? ?? 1).toDouble();
 
-          double price = baseRate;
           final double unitBase = (productJson['base_qty'] ?? productJson['unit_base_qty'] as num? ?? 1.0).toDouble();
-          final double basePrice = unitBase > 1.0 ? price / unitBase : price;
+          final double rawQty = (productJson['salesub_qty'] ?? productJson['sales_ord_sub_qty'] as num? ?? 1).toDouble();
+          final double baseRate = (productJson['sales_ord_sub_rate'] ?? productJson['rate'] as num? ?? 0.0).toDouble();
+
+          final bool derived = unitBase > 1.0;
+          // final double quantity = derived ? (rawQty / unitBase).roundToDouble().clamp(1.0, 1e9) : rawQty;
+          final double price = derived ? baseRate * unitBase : baseRate;
+          final double basePrice = baseRate;
           // if (Get.isRegistered<DashboardController>()) {
           //   final dashboardController = Get.find<DashboardController>();
           //   price = dashboardController.vatType.value == 0 ? baseRate + taxAmt : baseRate;
@@ -1244,6 +1251,7 @@ class OrdersController extends GetxController {
               preview['sales_odr_sales_branch_inv'],
               preview['sales_odr_branch_inv'],
               preview['sales_branch_inv'],
+              current.branchInv,   // fall back to what we already have
             ]),
           );
           orders.refresh();
@@ -1278,6 +1286,7 @@ class OrdersController extends GetxController {
                 preview['sales_odr_sales_branch_inv'],
                 preview['sales_odr_branch_inv'],
                 preview['sales_branch_inv'],
+                current.branchInv,   // fall back to what we already have
               ]),
             );
             soldOrders.refresh();
@@ -1375,6 +1384,7 @@ class OrdersController extends GetxController {
       if (!isOffline && baseQty > 1.0) {
         displayQty = (rawQty / baseQty).round();
         if (displayQty < 1 && rawQty > 0) displayQty = 1;
+        displayRate = rawRate * baseQty;   // server rate is per base unit
       } else {
         displayQty = rawQty.toInt();
       }
@@ -1431,7 +1441,7 @@ class OrdersController extends GetxController {
           prdId: (addonJson['sales_ord_sub_prod_id'] as num? ?? 0).toInt(),
           prdaddon_flags: (addonJson['prdaddon_flags'] as num? ?? 1).toInt(),
           name: addonJson['prd_name']?.toString() ?? '',
-          price: (addonJson['rate'] as num? ?? 0.0).toDouble(),
+          price: (addonJson['rate'] ?? addonJson['sales_ord_sub_rate'] as num? ?? 0.0).toDouble(),
           unitDisplay: (addonJson['unit_display'] ?? addonJson['salesub_unit_display'] ?? '').toString(),
           unitId: (addonJson['sales_ord_sub_unit_id'] as num? ?? 0).toInt(),
           initialQty: (addonJson['sales_ord_sub_qty'] as num? ?? 0).toInt(),
