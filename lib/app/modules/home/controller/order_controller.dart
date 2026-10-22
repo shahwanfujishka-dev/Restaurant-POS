@@ -1134,16 +1134,20 @@ class OrdersController extends GetxController {
         final addonItems = subItems.where((i) => _isAddonRow(i)).toList();
 
         for (var productJson in mainItems) {
-          final double quantity = (productJson['salesub_qty'] ?? productJson['sales_ord_sub_qty'] as num? ?? 1).toDouble();
-          final double baseRate = (productJson['rate'] ?? productJson['sales_ord_sub_rate'] as num? ?? 0.0).toDouble();
           final double taxAmt = (productJson['sales_ord_sub_tax'] ?? productJson['sales_ord_sub_tax_rate'] as num? ?? 0.0).toDouble();
           final double cgstRate = (productJson['sales_ord_sub_cgst_rate'] as num? ?? 0.0).toDouble();
           final double sgstRate = (productJson['sales_ord_sub_sgst_rate'] as num? ?? 0.0).toDouble();
 
+          final double quantity = (productJson['salesub_qty'] ?? productJson['sales_ord_sub_qty'] as num? ?? 1).toDouble();
 
-          double price = baseRate;
           final double unitBase = (productJson['base_qty'] ?? productJson['unit_base_qty'] as num? ?? 1.0).toDouble();
-          final double basePrice = unitBase > 1.0 ? price / unitBase : price;
+          final double rawQty = (productJson['salesub_qty'] ?? productJson['sales_ord_sub_qty'] as num? ?? 1).toDouble();
+          final double baseRate = (productJson['sales_ord_sub_rate'] ?? productJson['rate'] as num? ?? 0.0).toDouble();
+
+          final bool derived = unitBase > 1.0;
+          // final double quantity = derived ? (rawQty / unitBase).roundToDouble().clamp(1.0, 1e9) : rawQty;
+          final double price = derived ? baseRate * unitBase : baseRate;
+          final double basePrice = baseRate;
           // if (Get.isRegistered<DashboardController>()) {
           //   final dashboardController = Get.find<DashboardController>();
           //   price = dashboardController.vatType.value == 0 ? baseRate + taxAmt : baseRate;
@@ -1380,6 +1384,7 @@ class OrdersController extends GetxController {
       if (!isOffline && baseQty > 1.0) {
         displayQty = (rawQty / baseQty).round();
         if (displayQty < 1 && rawQty > 0) displayQty = 1;
+        displayRate = rawRate * baseQty;   // server rate is per base unit
       } else {
         displayQty = rawQty.toInt();
       }
