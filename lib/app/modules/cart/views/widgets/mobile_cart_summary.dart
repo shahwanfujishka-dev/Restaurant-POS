@@ -59,6 +59,8 @@ class MobileCartSummary extends StatelessWidget {
     double? cardAmt,
     bool isCompliment = false,
     bool shouldPrintReceipt = false,
+    bool validateClient = false,
+    bool validatePrinter = false,
   }) async {
     if (controller.cartItems.isEmpty || controller.isProcessing.value) return;
 
@@ -81,7 +83,8 @@ class MobileCartSummary extends StatelessWidget {
 
     try {
       controller.isProcessing.value = true;
-
+      if (validateClient) return;
+      if (validatePrinter && !await _validatePrinterReady()) return;
       final responseData = controller.isEditing
           ? await controller.updateOrder(
         isDraft: isDraft,
@@ -430,7 +433,8 @@ class MobileCartSummary extends StatelessWidget {
                           child: PrimaryButton(
                             isLoading: controller.isProcessing.value,
                             height: 48.h,
-                            onPressed: () => _handlePlaceOrUpdateOrder(isDraft: true),
+                            onPressed: () => _handlePlaceOrUpdateOrder(isDraft: true,validateClient: true,     // cart_summary.dart only
+                              validatePrinter: true,),
                             color: colors.isDark ? Colors.orange.shade900 : Colors.orange.shade700,
                             text: "Hold",
                             icon: Icons.pause,
@@ -444,7 +448,8 @@ class MobileCartSummary extends StatelessWidget {
                             onPressed: () async {
                               final ready = await _validatePrinterReady();
                               if (!ready) return;
-                              _handlePlaceOrUpdateOrder(isDraft: false);
+                              _handlePlaceOrUpdateOrder(isDraft: false,validateClient: true,     // cart_summary.dart only
+                                validatePrinter: true,);
                             },
                             text: controller.isEditing ? "Update KOT" : 'place_order'.tr,
                           ),
@@ -461,7 +466,8 @@ class MobileCartSummary extends StatelessWidget {
                             onPressed: () async {
                               final ready = await _validatePrinterReady();
                               if (!ready) return;
-                              _handlePlaceOrUpdateOrder(isDraft: false, shouldPrintReceipt: true);
+                              _handlePlaceOrUpdateOrder(isDraft: false, shouldPrintReceipt: true,validateClient: true,     // cart_summary.dart only
+                                validatePrinter: true,);
                             },
                             color: Colors.blueGrey,
                             text: "KOT & Print",

@@ -172,6 +172,7 @@ class CartController extends GetxController {
   bool get isLocalHubClient => DeviceConfig.operationMode == OperationMode.local && DeviceConfig.role == DeviceRole.client;
   bool get isLocalHubHost => DeviceConfig.operationMode == OperationMode.local && DeviceConfig.role == DeviceRole.server;
   final editingTokenNo = "".obs;
+  DateTime? _lastBlockMsgAt;
 
 
   String _generateUuid() {
@@ -194,6 +195,20 @@ class CartController extends GetxController {
       dashboard.searchController.clear();
       dashboard.fetchProducts();
     }
+  }
+
+  bool blockIfProcessing() {
+    if (!isProcessing.value) return false;
+    final now = DateTime.now();
+    if (_lastBlockMsgAt == null ||
+        now.difference(_lastBlockMsgAt!) > const Duration(seconds: 2)) {
+      _lastBlockMsgAt = now;
+      showSafeSnackbar(
+        "Please wait",
+        "Your order is being placed. You can add or change items once it finishes.",
+      );
+    }
+    return true;
   }
 
   Future<void> loadCaptains() async {
@@ -445,6 +460,7 @@ class CartController extends GetxController {
       List<AddonModel> addons, {
         String note = '',
       }) {
+    if (blockIfProcessing()) return;
     final existingDeletedIndex = cartItems.indexWhere((item) {
       bool sameProduct = item.product.id == product.id;
       bool sameUnit = item.unit.unitId == unit.unitId;
@@ -574,6 +590,7 @@ class CartController extends GetxController {
       List<AddonModel> addons,{
         String note = '',
       }) {
+    if (blockIfProcessing()) return;
     item.unit = unit;
     item.priceAtAdd.value = unit.rate;
     item.note.value = note;
@@ -619,7 +636,31 @@ class CartController extends GetxController {
     showSafeSnackbar("Item Updated", "${item.product.name} details updated");
   }
 
+  Future<bool> _ensureHubReachable() async {
+    if (!isLocalHubClient) return true;
+
+    final ip = DeviceConfig.hostIp;
+    if (ip == null || ip.trim().isEmpty) {
+      showSafeSnackbar("Local Hub Error", "Main Cashier IP is not configured.");
+      return false;
+    }
+    if (!DeviceConfig.hasAuthToken) {
+      showSafeSnackbar("Device Not Registered", "Please register this device with the Main Cashier.");
+      return false;
+    }
+    try {
+      await LocalHubClient.instance
+          .testConnection(hostIp: ip, port: DeviceConfig.hostPort)
+          .timeout(const Duration(seconds: 3));
+      return true;
+    } catch (_) {
+      showSafeSnackbar("Not Connected", "Main Cashier is not reachable. Connect to the host to place orders.");
+      return false;
+    }
+  }
+
   void updateQuantity(CartItem item, int newQty) {
+    if (blockIfProcessing()) return;
     final int oldQty = item.quantity.value;
     if (newQty <= 0) {
       newQty =
@@ -655,6 +696,7 @@ class CartController extends GetxController {
   }
 
   void removeItem(CartItem item) {
+    if (blockIfProcessing()) return;
     if (isEditing && item.subId != null) {
       // Mark the parent item as deleted
       item.isDeleted.value = true;
@@ -672,6 +714,7 @@ class CartController extends GetxController {
   }
 
   void decreaseQuantity(CartItem item) {
+    if (blockIfProcessing()) return;
     if (item.quantity.value > 1) {
       updateQuantity(item, item.quantity.value - 1);
     } else {
@@ -684,11 +727,13 @@ class CartController extends GetxController {
   }
 
   void removeAddon(CartItem item, AddonModel addon) {
+    if (blockIfProcessing()) return;
     item.selectedAddons.remove(addon);
     cartItems.refresh();
   }
 
   void decreaseAddonQuantity(CartItem item, AddonModel addon) {
+    if (blockIfProcessing()) return;
     if (addon.quantity.value > 1) {
       addon.quantity.value--;
     } else {
@@ -1019,6 +1064,7 @@ class CartController extends GetxController {
         showSafeSnackbar("Error", "Please select a table and chair first.");
         return null;
       }
+      if (!await _ensureHubReachable()) return null;
       if (!skipPrinterCheck && !isDraft) {
         final printerCtrl = Get.find<PrinterController>();
 
@@ -1063,7 +1109,8 @@ class CartController extends GetxController {
 
       final double finalTotal = isCompliment ? 0 : (totalWithTax - discountAmount + roundOffAmount).clamp(0, double.infinity);
       final double finalDiscount = isCompliment ? totalWithTax : discountAmount;
-      final String? offlineToken = DeviceConfig.operationMode == OperationMode.local ? _nextOfflineToken() : null;
+      String? offlineToken;
+      // final String? offlineToken = DeviceConfig.operationMode == OperationMode.local ? _nextOfflineToken() : null;
 
       final body = {
         "usr_id": int.tryParse(AppState.userId) ?? 0,
@@ -1149,6 +1196,7 @@ class CartController extends GetxController {
             debugPrint("✅ LOCAL HOST ORDER SAVED: $result");
             final hostOrder = result['order'] as Map<String, dynamic>?;
             resolvedBranchInv = hostOrder?['branch_inv']?.toString() ?? '';
+            offlineToken = hostOrder?['token_no']?.toString();
           } else {
             final hostIp = DeviceConfig.hostIp;
             if (hostIp == null || hostIp.trim().isEmpty) {
@@ -1167,66 +1215,16 @@ class CartController extends GetxController {
             debugPrint("✅ LOCAL CLIENT ORDER SENT: $hubResponse");
             final hostOrder = hubResponse['order'] as Map<String, dynamic>?;
             resolvedBranchInv = hostOrder?['branch_inv']?.toString() ?? '';
+            offlineToken = hostOrder?['token_no']?.toString();
           }
         } catch (e) {
           log("❌ LOCAL ORDER SAVE FAILED: $e");
-
-          if (deviceRole == DeviceRole.client) {
-            // Hub unreachable — don't lose the order. Save it locally, flagged
-            // for retry, and let the UI/printer proceed as if it succeeded.
-            try {
-              await _dbHelper.saveOrderOffline(
-                {
-                  'uuid': orderUuid,
-                  'server_id': null,
-                  'inv_no': null,
-                  'branch_inv': null,
-                  'created_by_device_id': DeviceConfig.deviceId,
-                  'order_type_id': AppState.orderType.id,
-                  'table_id': int.tryParse(selectedTableId.value) ?? 0,
-                  'customer_name': body['cust_name']??'Cash Customer',
-                  'customer_phone': body['phone_no'],
-                  'total_amount': finalTotal,
-                  'total_tax': totalTax,
-                  'status': isDraft ? 'draft' : 'pending',
-                  'is_synced': 0,
-                  'hub_synced': 0,
-                  'payload': jsonEncode(hubPayload),
-                  'created_at': now.toIso8601String(),
-                },
-                localItems,
-              );
-              log("✅ Order saved locally on client, pending hub sync: $orderUuid");
-            } catch (dbError) {
-              log("❌ Even local save failed: $dbError");
-              showSafeSnackbar("Order Failed", "Could not save order. Please try again.");
-              return null;
-            }
-
-            final localBranchInv = "OFFLINE-${orderUuid.substring(orderUuid.length - 6)}";
-            _pendingOrderUuid = null;
-            final syntheticResponse = _buildOfflineResponse(
-              orderUuid: orderUuid,
-              branchInv: localBranchInv,
-              tokenNo: offlineToken,
-              body: body,
-              totalWithTax: totalWithTax,
-              totalTax: totalTax,
-              saleItems: saleItems,
-              isDraft: isDraft,
-              now: now,
-              isCompliment: isCompliment,
-              isSplit: isSplit,
-              splitCount: splitCount,
-              splitAmounts: splitAmounts,
-              isBill: isBill,
-            );
-            _pendingOrderUuid = null;
-            _clearDashboardSearch();
-            return syntheticResponse;
-          }
-
-          showSafeSnackbar("Order Failed", "Could not save/send order on the local network.");
+          showSafeSnackbar(
+            "Order Not Placed",
+            deviceRole == DeviceRole.client
+                ? "Lost connection to Main Cashier. Order was not placed. Please reconnect and try again."
+                : "Could not save order.",
+          );
           return null;
         }
         final syntheticResponse = _buildOfflineResponse(
@@ -1263,7 +1261,6 @@ class CartController extends GetxController {
       debugPrint('======================================');
 
       try {
-
         final response = await _apiService.post(
           "mobileapp/pos/add_sales_order",
           data: body,
@@ -1364,8 +1361,7 @@ class CartController extends GetxController {
         showSafeSnackbar("Error", "This order has an invalid ID and cannot be updated. Please remove it and recreate it.");
         return null;
       }
-
-
+      if (!await _ensureHubReachable()) return null;
       final now = DateTime.now();
       final dateStr = DateFormat('yyyy-MM-dd').format(now);
       final syncTime = "${DateFormat('yyMMddHHmmssSSS').format(now)}000";

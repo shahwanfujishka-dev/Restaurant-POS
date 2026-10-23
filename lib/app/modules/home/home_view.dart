@@ -11,6 +11,7 @@ import 'package:get/get_utils/src/extensions/internacionalization.dart';
 import 'package:google_nav_bar/google_nav_bar.dart';
 
 import '../../../helper/screen_type.dart';
+import '../../data/Device_Roles/device_roles.dart';
 import '../../data/models/order_type.dart';
 import '../../data/services/sync_service.dart';
 import '../../data/utils/AppState.dart';
@@ -23,6 +24,7 @@ import '../../widgets/navigation_rail.dart';
 import '../cart/controller/cart_controller.dart';
 import '../order_type/controller/order_type_controller.dart';
 import 'controller/home_controller.dart';
+import 'controller/settings_controller.dart';
 
 class HomeView extends GetView<HomeController> {
   const HomeView({super.key});
@@ -115,12 +117,19 @@ class HomeView extends GetView<HomeController> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        controller.pageTitle.tr,
-                        style: AppTypography.appBarTitle.copyWith(
-                          color: colors.text,
-                          fontSize: ScreenType.isMobile() ? 16.sp : null,
-                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            controller.pageTitle.tr,
+                            style: AppTypography.appBarTitle.copyWith(
+                              color: colors.text,
+                              fontSize: ScreenType.isMobile() ? 16.sp : null,
+                            ),
+                          ),
+                          SizedBox(width: 8.w),
+                          _buildStatusBadge(context),
+                        ],
                       ),
                       if (ScreenType.isMobile())
                         Container(
@@ -142,17 +151,17 @@ class HomeView extends GetView<HomeController> {
                         ),
                     ],
                   ),
-                  SizedBox(width: 8.w),
-                  Obx(() => syncService.isSyncing.value
-                      ? SizedBox(
-                          width: 16.w,
-                          height: 16.w,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.w,
-                            valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryGreen),
-                          ),
-                        )
-                      : const SizedBox.shrink()),
+                  // SizedBox(width: 8.w),
+                  // Obx(() => syncService.isSyncing.value
+                  //     ? SizedBox(
+                  //         width: 16.w,
+                  //         height: 16.w,
+                  //         child: CircularProgressIndicator(
+                  //           strokeWidth: 2.w,
+                  //           valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryGreen),
+                  //         ),
+                  //       )
+                  //     : const SizedBox.shrink()),
                 ],
               ),
               actions: [
@@ -315,6 +324,80 @@ class HomeView extends GetView<HomeController> {
     );
   }
 
+  Widget _buildStatusBadge(BuildContext context) {
+    if (!Get.isRegistered<SettingsController>()) return const SizedBox.shrink();
+    final settings = Get.find<SettingsController>();
+
+    return Obx(() {
+      final isOnline = settings.operationMode.value == OperationMode.online;
+      final isLocal = settings.operationMode.value == OperationMode.local;
+
+      String label = isOnline ? "ONLINE" : "LOCAL";
+      Color badgeColor = isOnline ? AppTheme.primaryGreen : Colors.orange;
+      IconData icon = isOnline ? Icons.cloud_done : Icons.lan;
+      bool isError = false;
+
+      if (isLocal) {
+        if (settings.isHost) {
+          label = "HUB HOST";
+          icon = Icons.hub;
+        } else {
+          final connected = settings.isHubConnected.value;
+          label = connected ? "CONNECTED" : "OFFLINE";
+          badgeColor = connected ? AppTheme.primaryGreen : Colors.red;
+          icon = connected ? Icons.lan : Icons.lan_outlined;
+          isError = !connected;
+        }
+      }
+
+      return AnimatedContainer(
+        duration: const Duration(milliseconds: 400),
+        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
+        decoration: BoxDecoration(
+          color: badgeColor.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(20.r),
+          border: Border.all(color: badgeColor.withOpacity(0.4), width: 1.2),
+          boxShadow: [
+            if (isError || label == "HUB HOST")
+              BoxShadow(
+                color: badgeColor.withOpacity(0.2),
+                blurRadius: 8,
+                spreadRadius: 1,
+              )
+          ],
+        ),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(scale: animation, child: child),
+          ),
+          child: Row(
+            key: ValueKey(label),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: ScreenType.isMobile() ? 12.sp : 5.sp, color: badgeColor),
+              SizedBox(width: 4.w),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: ScreenType.isMobile() ? 9.sp : 4.sp,
+                  color: badgeColor,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              // if (isError || label == "HUB HOST") ...[
+              //   SizedBox(width: 6.w),
+              //   _BlinkingDot(color: badgeColor),
+              // ]
+            ],
+          ),
+        ),
+      );
+    });
+  }
+
   Widget _proNavItem(IconData icon, String label, int index, bool showTables) {
 
     // Map the real index to the visible index for the BottomNavigationBar
@@ -434,6 +517,48 @@ class HomeView extends GetView<HomeController> {
         backgroundColor: isArabic ? AppTheme.primaryGreen : colors.textField,
         labelStyle: TextStyle(color: isArabic ? Colors.white : colors.text, fontSize: 3.5.sp),
         onPressed: _toggleLanguage,
+      ),
+    );
+  }
+}
+
+class _BlinkingDot extends StatefulWidget {
+  final Color color;
+  const _BlinkingDot({required this.color});
+
+  @override
+  State<_BlinkingDot> createState() => _BlinkingDotState();
+}
+
+class _BlinkingDotState extends State<_BlinkingDot> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _controller,
+      child: Container(
+        width: 6.w,
+        height: 6.w,
+        decoration: BoxDecoration(
+          color: widget.color,
+          shape: BoxShape.circle,
+        ),
       ),
     );
   }

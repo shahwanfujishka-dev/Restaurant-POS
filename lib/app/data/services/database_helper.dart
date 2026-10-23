@@ -705,6 +705,18 @@ CREATE TABLE orders (
     return Sqflite.firstIntValue(result) ?? 0;
   }
 
+  Future<int> getDistinctUnsyncedCount() async {
+    final db = await instance.database;
+    final result = await db.rawQuery('''
+      SELECT COUNT(DISTINCT uuid) as count FROM (
+        SELECT uuid FROM orders WHERE is_synced = 0
+        UNION
+        SELECT order_uuid as uuid FROM payments WHERE is_synced = 0
+      )
+    ''');
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
   Future<List<Map<String, dynamic>>> getAllLocalOrders() async {
     final db = await instance.database;
     return await db.query('orders', orderBy: 'created_at DESC');
@@ -804,6 +816,17 @@ CREATE TABLE orders (
     });
   }
 
+  Future<Map<String, dynamic>> getUnsyncedOrderSummary() async {
+    final db = await instance.database;
+    final r = await db.rawQuery(
+      "SELECT COUNT(*) AS c, MIN(created_at) AS oldest FROM orders WHERE is_synced = 0",
+    );
+    return {
+      'count': (r.first['c'] as int?) ?? 0,
+      'oldest': DateTime.tryParse(r.first['oldest']?.toString() ?? ''),
+    };
+  }
+
   /// Remove synced, still-open orders that the server no longer lists (paid or cancelled elsewhere).
   Future<void> pruneSyncedActiveOrders(Set<String> liveServerIds) async {
     final db = await instance.database;
@@ -890,6 +913,11 @@ CREATE TABLE orders (
 
       await txn.delete('orders', where: 'uuid = ? OR server_id = ?', whereArgs: [id, id]);
     });
+  }
+
+  Future<void> markOrderSyncStatus(String id, int isSynced) async {
+    final db = await instance.database;
+    await db.update('orders', {'is_synced': isSynced}, where: 'uuid = ?', whereArgs: [id, id]);
   }
 
   Future<void> markItemAsPrinted(int itemId) async {

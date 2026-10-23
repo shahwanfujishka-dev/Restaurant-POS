@@ -7,7 +7,7 @@ import '../../../../../theme/app_typography.dart';
 import '../../../controller/order_controller.dart';
 
 class AnimatedTabBar extends StatefulWidget {
-  final TabController tabController; // ← explicit, no DefaultTabController.of()
+  final TabController tabController;
   const AnimatedTabBar({required this.tabController, super.key});
 
   @override

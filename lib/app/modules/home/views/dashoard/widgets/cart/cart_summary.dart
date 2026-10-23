@@ -88,6 +88,7 @@ class CartSummary extends StatelessWidget {
     double? cardAmt,
     bool isCompliment = false,
     bool shouldPrintReceipt = false,
+
   }) async {
     if (controller.cartItems.isEmpty || controller.isProcessing.value) return;
 

@@ -19,6 +19,7 @@ import '../../controller/dashboard_controller.dart';
 import '../../controller/order_controller.dart';
 import '../../controller/printer_controller.dart';
 import '../dashoard/widgets/dashboard_widgets/food_item_shimmer.dart';
+import '../printers/widgets/printer_card.dart';
 
 class OrdersPage extends GetView<OrdersController> {
   const OrdersPage({super.key});
@@ -316,12 +317,19 @@ void _showOrderDetailsDialog(
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'order_details'.tr,
-                        style: AppTypography.cardTitle.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colors.text,
-                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'order_details'.tr,
+                            style: AppTypography.cardTitle.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: colors.text,
+                            ),
+                          ),
+                          SizedBox(width: 8.w),
+                          PrintIssueBadge(orderId: currentOrder.id),
+                        ],
                       ),
                       // RichText(
                       //   text: TextSpan(
@@ -713,6 +721,13 @@ class _MobileOrderCard extends StatelessWidget {
                               ),
                             ),
                           ),
+                        Padding(                                              // ← add
+                          padding: EdgeInsets.only(top: 4.h),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: PrintIssueBadge(orderId: order.id),
+                          ),
+                        ),
                         SizedBox(height: 12.h),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -860,6 +875,9 @@ class _OrderTicket extends StatelessWidget {
                               color: displayColor,
                             ),
                           ),
+                        SizedBox(width: 2.w,),
+                        PrintIssueBadge(orderId: order.id, compact: true),
+                        SizedBox(width: 2.w,),
                         if (order.status.value != OrderStatus.paid &&
                             order.status.value != OrderStatus.cancelled)
                           IconButton(

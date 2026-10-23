@@ -83,6 +83,17 @@ class DashboardController extends GetxController {
     refreshDashboardData();
   }
 
+  @override
+  void onReady() {
+    super.onReady();
+    // Wait for the first frame so the dialog has an overlay to attach to
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(seconds: 1), () {
+        if (!isDisposed) _syncService.checkSyncReminder();
+      });
+    });
+  }
+
   Future<void> refreshDashboardData() async {
     await fetchVatType();
     await fetchCategories();
@@ -365,8 +376,8 @@ class DashboardController extends GetxController {
   }
 
   void onProductTapped(FoodItemModel product, {CartItem? existingItem}) async {
+    if (Get.find<CartController>().blockIfProcessing()) return;
     if (isLoadingDetails.value) return;
-
     if (AppState.orderType.id == 0 && !cartController.hasSelectedTable) {
       showError("table_required".tr, "select_table_msg".tr);
       return;
