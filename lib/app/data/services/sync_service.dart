@@ -5,6 +5,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/src/extension_instance.dart';
+import 'package:get/get_navigation/src/extension_navigation.dart';
+import 'package:get/get_navigation/src/snackbar/snackbar.dart';
 import 'package:get/get_rx/src/rx_types/rx_types.dart';
 import 'package:get/get_state_manager/src/rx_flutter/rx_disposable.dart';
 import 'package:get_storage/get_storage.dart';
@@ -25,10 +27,9 @@ class SyncService extends GetxService with WidgetsBindingObserver {
   final masterSyncProgress = 0.0.obs;
   final isHubSyncing = false.obs;
   Timer? _syncTimer;
-  static DateTime _touchedAt(Map<String, dynamic> o) =>
-      DateTime.tryParse(o['updated_at']?.toString() ?? '') ??
-          DateTime.tryParse(o['created_at']?.toString() ?? '') ??
-          DateTime.fromMillisecondsSinceEpoch(0);
+  static DateTime _touchedAt(Map<String, dynamic> o) => DateTime.tryParse(o['updated_at']?.toString() ?? '') ?? DateTime.tryParse(o['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+  static const Duration syncReminderAfter = Duration(minutes: 2);
+
 
   @override
   void onInit() {
@@ -55,6 +56,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       if (Get.isRegistered<PrinterController>()) {
         Get.find<PrinterController>().syncPrinterAssignmentsFromHub();
       }
+      Future.delayed(const Duration(seconds: 1), checkSyncReminder);
     }
   }
 
@@ -69,6 +71,60 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         Get.find<PrinterController>().syncPrinterAssignmentsFromHub();
       }
     });
+  }
+
+  Future<void> checkSyncReminder() async {
+    // Clients in local mode never sync to live, so skip them
+    if (DeviceConfig.isLocal && DeviceConfig.role == DeviceRole.client) return;
+    if (Get.isDialogOpen == true) return;
+
+    final s = await _dbHelper.getUnsyncedOrderSummary();
+    final int count = s['count'] as int;
+    final DateTime? oldest = s['oldest'] as DateTime?;
+    if (count == 0 || oldest == null) return;
+
+    final age = DateTime.now().difference(oldest);
+    if (age < syncReminderAfter) return;
+
+    Get.dialog(
+      AlertDialog(
+        title: const Row(children: [
+          Icon(Icons.warning_amber_rounded, color: Colors.orange),
+          SizedBox(width: 8),
+          Text('Sync Required'),
+        ]),
+        content: Text(
+          '$count order(s) have not been synced to the live server for '
+              '${_ageText(age)}. Please sync now to avoid data loss.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Get.back(), child: const Text('Later')),
+          ElevatedButton(
+            onPressed: () async {
+              Get.back();
+              await syncPendingOrders();
+              final after = await _dbHelper.getUnsyncedOrderSummary();
+              Get.snackbar(
+                (after['count'] as int) == 0 ? 'Sync Complete' : 'Sync Partial',
+                (after['count'] as int) == 0
+                    ? 'All orders synced to live.'
+                    : '${after['count']} order(s) still pending. Check your internet.',
+                snackPosition: SnackPosition.BOTTOM,
+              );
+            },
+            child: const Text('Sync Now'),
+          ),
+        ],
+      ),
+      barrierDismissible: false,
+    );
+  }
+
+  String _ageText(Duration d) {
+    if (d.inDays >= 1) return '${d.inDays} day(s)';
+    if (d.inHours >= 1) return '${d.inHours} hour(s)';
+    if (d.inMinutes >= 1) return '${d.inMinutes} minute(s)';
+    return '${d.inSeconds} second(s)';
   }
 
   static int _createdKey(Map<String, dynamic> o) {

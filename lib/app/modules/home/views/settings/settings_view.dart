@@ -11,6 +11,8 @@ import '../../../../theme/app_typography.dart';
 import '../../controller/settings_controller.dart';
 
 class SettingsView extends GetView<SettingsController> {
+  const SettingsView({super.key});
+
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
@@ -113,7 +115,7 @@ class SettingsView extends GetView<SettingsController> {
           // ============================================================
           Obx(() {
             // Only show live sync preferences to Host or when in Online Mode
-            if (controller.isLocalMode && controller.isClient) {
+            if (controller.isLocalMode && controller.isClient || controller.isOnlineMode) {
               return const SizedBox.shrink();
             }
 
@@ -167,8 +169,6 @@ class SettingsView extends GetView<SettingsController> {
       ),
     );
   }
-
-  const SettingsView({super.key});
 
   Widget _buildOperationModeCard(BuildContext context) {
     final colors = AppColors.of(context);
@@ -316,9 +316,6 @@ class SettingsView extends GetView<SettingsController> {
       child: Obx(
             () => Column(
           children: [
-            // ----------------------------------------------------------
-            // ROLE PICKER — new
-            // ----------------------------------------------------------
             ListTile(
               onTap: controller.isChangingRole.value ? null : () => controller.becomeHost(),
               leading: CircleAvatar(
@@ -366,21 +363,6 @@ class SettingsView extends GetView<SettingsController> {
             ),
             Divider(height: 1, color: colors.border),
 
-            // ----------------------------------------------------------
-            // DEVICE ID — unchanged
-            // ----------------------------------------------------------
-            // ListTile(
-            //   leading: Icon(Icons.fingerprint, color: colors.subtext),
-            //   title: Text("Device ID", style: TextStyle(color: colors.text)),
-            //   subtitle: Text(
-            //     controller.deviceId.value.isEmpty ? "Not configured" : controller.deviceId.value,
-            //     style: TextStyle(color: colors.subtext),
-            //   ),
-            // ),
-
-            // ----------------------------------------------------------
-            // HOST INFORMATION
-            // ----------------------------------------------------------
             if (controller.isHost) ...[
               Divider(height: 1, color: colors.border),
               ListTile(
@@ -407,9 +389,6 @@ class SettingsView extends GetView<SettingsController> {
               _buildConnectedDevicesTile(context),
             ],
 
-            // ----------------------------------------------------------
-            // CLIENT INFORMATION
-            // ----------------------------------------------------------
             if (controller.isClient) ...[
               Divider(height: 1, color: colors.border),
               ListTile(
@@ -543,24 +522,28 @@ class SettingsView extends GetView<SettingsController> {
       ),
       child: Column(
         children: [
-          Obx(() => ListTile(
-            onTap: (controller.isSyncingOrders.value || controller.pendingCount.value == 0) 
-                ? null 
-                : () => controller.syncOrdersToLive(),
-            leading: CircleAvatar(
-              backgroundColor: Colors.blue.withOpacity(0.1),
-              child: controller.isSyncingOrders.value
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.cloud_upload_outlined, color: Colors.blue),
-            ),
-            title: Text("Sync Pending Orders", style: TextStyle(color: colors.text)),
-            subtitle: Text(
-              controller.isSyncingOrders.value 
-                  ? "Syncing ${controller.pendingCount.value} items..." 
-                  : "${controller.pendingCount.value} orders/payments pending.",
-              style: TextStyle(color: colors.subtext),
-            ),
-          )),
+          Obx(() {
+            final count = controller.pendingCount.value;
+            final isSyncing = controller.isSyncingOrders.value;
+            return ListTile(
+              onTap: (isSyncing || count == 0)
+                  ? null
+                  : () => controller.syncOrdersToLive(),
+              leading: CircleAvatar(
+                backgroundColor: Colors.blue.withOpacity(0.1),
+                child: isSyncing
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.cloud_upload_outlined, color: Colors.blue),
+              ),
+              title: Text("Sync Pending Orders", style: TextStyle(color: colors.text)),
+              subtitle: Text(
+                isSyncing
+                    ? "Syncing $count ${count == 1 ? 'order' : 'orders'}..."
+                    : "$count ${count == 1 ? 'order' : 'orders'} pending to sync.",
+                style: TextStyle(color: colors.subtext),
+              ),
+            );
+          }),
           Divider(height: 1, color: colors.border),
           Obx(() => ListTile(
             onTap: controller.isMasterSyncing.value ? null : controller.performManualMasterSync,

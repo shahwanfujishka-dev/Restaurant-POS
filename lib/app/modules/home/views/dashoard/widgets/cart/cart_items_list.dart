@@ -20,18 +20,22 @@ class CartItemList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Obx(() {
-      final visibleItems = controller.cartItems.where((item) => !item.isDeleted.value).toList();
+      final visibleItems = controller.cartItems
+          .where((item) => !item.isDeleted.value)
+          .toList();
 
       return ListView.builder(
         padding: EdgeInsets.all(2.w),
         itemCount: visibleItems.length,
         itemBuilder: (context, index) {
           final cartItem = visibleItems[index];
-          final itemKey = "${cartItem.product.id}_${cartItem.unit.unitId}_${cartItem.subId ?? index}";
-          
+          final itemKey =
+              "${cartItem.product.id}_${cartItem.unit.unitId}_${cartItem.subId ?? index}";
+
           return Dismissible(
             key: ValueKey(itemKey),
             direction: DismissDirection.endToStart,
+            confirmDismiss: (_) async => !controller.blockIfProcessing(),
             background: Container(
               alignment: Alignment.centerRight,
               padding: EdgeInsets.only(right: 20.w),
@@ -40,7 +44,11 @@ class CartItemList extends StatelessWidget {
                 color: Colors.red.shade400,
                 borderRadius: BorderRadius.circular(8.r),
               ),
-              child: Icon(Icons.delete_outline, color: Colors.white, size: 8.sp),
+              child: Icon(
+                Icons.delete_outline,
+                color: Colors.white,
+                size: 8.sp,
+              ),
             ),
             onDismissed: (direction) {
               controller.removeItem(cartItem);
@@ -90,11 +98,14 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
     );
 
     _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
-        CurvedAnimation(parent: _animationController, curve: Curves.easeInOut));
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
     _slideAnimation = Tween<double>(begin: 0.0, end: 100.0).animate(
-        CurvedAnimation(parent: _animationController, curve: Curves.easeInOut));
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
     _scaleAnimation = Tween<double>(begin: 1.0, end: 0.5).animate(
-        CurvedAnimation(parent: _animationController, curve: Curves.easeInOut));
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
   }
 
   @override
@@ -120,10 +131,7 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
           opacity: _fadeAnimation.value,
           child: Transform.translate(
             offset: Offset(_slideAnimation.value, 0),
-            child: Transform.scale(
-              scale: _scaleAnimation.value,
-              child: child,
-            ),
+            child: Transform.scale(scale: _scaleAnimation.value, child: child),
           ),
         );
       },
@@ -135,8 +143,12 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
     final colors = AppColors.of(context);
     return GestureDetector(
       onTap: () {
+        if (widget.controller.blockIfProcessing()) return;
         final dashboardController = Get.find<DashboardController>();
-        dashboardController.onProductTapped(widget.cartItem.product, existingItem: widget.cartItem);
+        dashboardController.onProductTapped(
+          widget.cartItem.product,
+          existingItem: widget.cartItem,
+        );
       },
       child: Container(
         margin: EdgeInsets.symmetric(vertical: 1.h),
@@ -153,19 +165,19 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
           ],
         ),
         child: Padding(
-      padding: EdgeInsets.symmetric(horizontal: 2.w, vertical: 1.5.h),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          productImage(),
-          SizedBox(width: 2.w),
-          productDetails(),
-          quantityControls(),
-          // SizedBox(width: 2.w),
-          priceDisplay(),
-        ],
-      ),
-    ),
+          padding: EdgeInsets.symmetric(horizontal: 2.w, vertical: 1.5.h),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              productImage(),
+              SizedBox(width: 2.w),
+              productDetails(),
+              quantityControls(),
+              // SizedBox(width: 2.w),
+              priceDisplay(),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -176,16 +188,18 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
       borderRadius: BorderRadius.circular(8.r),
       child: widget.cartItem.product.image.isNotEmpty
           ? CachedNetworkImage(
-        imageUrl: widget.cartItem.product.image,
-        width: 12.w,
-        height: 12.w,
-        fit: BoxFit.cover,
-        placeholder: (context, url) => Container(
-          color: colors.textField,
-          child: const Center(child: CircularProgressIndicator(strokeWidth: 1)),
-        ),
-        errorWidget: (context, url, error) => paceHolder(),
-      )
+              imageUrl: widget.cartItem.product.image,
+              width: 12.w,
+              height: 12.w,
+              fit: BoxFit.cover,
+              placeholder: (context, url) => Container(
+                color: colors.textField,
+                child: const Center(
+                  child: CircularProgressIndicator(strokeWidth: 1),
+                ),
+              ),
+              errorWidget: (context, url, error) => paceHolder(),
+            )
           : paceHolder(),
     );
   }
@@ -248,7 +262,8 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
               }),
             ),
           Obx(() {
-            if (widget.cartItem.note.value.isEmpty) return const SizedBox.shrink();
+            if (widget.cartItem.note.value.isEmpty)
+              return const SizedBox.shrink();
             return Padding(
               padding: EdgeInsets.only(top: 0.5.h),
               child: Text(
@@ -272,9 +287,7 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
       decoration: BoxDecoration(
         color: colors.textField,
         borderRadius: BorderRadius.circular(8.r),
-        border: Border.all(
-          color: colors.border,
-        ),
+        border: Border.all(color: colors.border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -286,19 +299,27 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
             color: colors.subtext,
           ),
           InkWell(
-            onTap: () => QuantityDialog.show(widget.cartItem, widget.controller),
-            child: Obx(() => Text(
-              '${widget.cartItem.quantity.value}',
-              style: AppTypography.cardSubtitle.copyWith(
+            onTap: () {
+              if (widget.controller.blockIfProcessing()) return;
+              QuantityDialog.show(widget.cartItem, widget.controller);
+            },
+            child: Obx(
+              () => Text(
+                '${widget.cartItem.quantity.value}',
+                style: AppTypography.cardSubtitle.copyWith(
                   fontWeight: FontWeight.bold,
                   fontSize: 4.sp,
-                  color: colors.text),
-            )),
+                  color: colors.text,
+                ),
+              ),
+            ),
           ),
           quantityButton(
             icon: Icons.add,
-            onPressed: () =>
-                widget.controller.updateQuantity(widget.cartItem, widget.cartItem.quantity.value + 1),
+            onPressed: () => widget.controller.updateQuantity(
+              widget.cartItem,
+              widget.cartItem.quantity.value + 1,
+            ),
             color: AppTheme.primaryGreen,
           ),
         ],
@@ -310,15 +331,17 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
     final colors = AppColors.of(context);
     return SizedBox(
       width: AppTypography.iconXL,
-      child: Obx(() => Text(
-        widget.cartItem.subtotalWithTax.toStringAsFixed(2),
-        textAlign: TextAlign.right,
-        style: AppTypography.cardTitle.copyWith(
-          color: colors.text,
-          fontWeight: FontWeight.bold,
-          fontSize: AppTypography.smallText,
+      child: Obx(
+        () => Text(
+          widget.cartItem.subtotalWithTax.toStringAsFixed(2),
+          textAlign: TextAlign.right,
+          style: AppTypography.cardTitle.copyWith(
+            color: colors.text,
+            fontWeight: FontWeight.bold,
+            fontSize: AppTypography.smallText,
+          ),
         ),
-      )),
+      ),
     );
   }
 
@@ -334,11 +357,7 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
         borderRadius: BorderRadius.circular(8.r),
         child: Container(
           padding: EdgeInsets.all(3.w),
-          child: Icon(
-            icon,
-            size: 4.sp,
-            color: color,
-          ),
+          child: Icon(icon, size: 4.sp, color: color),
         ),
       ),
     );
@@ -351,20 +370,13 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
       height: 12.w,
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            colors.textField,
-            colors.border,
-          ],
+          colors: [colors.textField, colors.border],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(12.r),
       ),
-      child: Icon(
-        Icons.restaurant_menu,
-        color: colors.subtext,
-        size: 10.sp,
-      ),
+      child: Icon(Icons.restaurant_menu, color: colors.subtext, size: 10.sp),
     );
   }
 }

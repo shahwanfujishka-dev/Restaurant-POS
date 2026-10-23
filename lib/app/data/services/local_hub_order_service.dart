@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
+import 'package:intl/intl.dart';
 import '../utils/AppState.dart';
 import 'database_helper.dart';
 import '../../modules/home/controller/order_controller.dart';
@@ -79,6 +81,7 @@ class LocalHubOrderService {
               : ''),
       'sales_odr_branch_inv': payload['branch_inv'] ?? '',
       'created_by_device_id': payload['created_by_device_id'] ?? '',
+      'sales_odr_token_no': payload['sales_odr_token_no'],
       'sales_odr_order_type': orderTypeId,
       'sales_odr_pos_status': posStatus,
       'sales_odr_table_id': payload['table_id'] ?? (payload['res_table']?['rt_id']) ?? '',
@@ -113,6 +116,22 @@ class LocalHubOrderService {
     return n;
   }
 
+  String _nextToken() {
+    final box = GetStorage();
+    final int openMins = (box.read('opening_time_minutes') as int?) ?? 0;
+    final String day = DateFormat('yyyy-MM-dd')
+        .format(DateTime.now().subtract(Duration(minutes: openMins)));
+
+    int seq = (box.read('offline_token_seq') as int?) ?? 0;
+    if (box.read('offline_token_date') != day) {
+      seq = 0;
+      box.write('offline_token_date', day);
+    }
+    seq++;
+    box.write('offline_token_seq', seq);
+    return 'o-$seq';
+  }
+
   Future<Map<String, dynamic>> createOrder({required Map<String, dynamic> payload}) async {
     debugPrint('[LocalHubOrderService] createOrder called for uuid: ${payload['uuid']}');
     final String uuid = (payload['uuid'] ?? '').toString().trim();
@@ -121,17 +140,22 @@ class LocalHubOrderService {
     final existingOrders = await _step('findOrder', () => _findOrder(uuid));
 
     if (existingOrders.isNotEmpty) {
-      debugPrint('[LocalHubOrderService] createOrder: order already exists for uuid: $uuid');
+      String? existingToken;
+      try {
+        existingToken = (jsonDecode(existingOrders.first['payload']?.toString() ?? '{}')
+        as Map)['sales_odr_token_no']?.toString();
+      } catch (_) {}
       return {
         'success': true,
         'duplicate': true,
         'message': 'Order already exists',
-        'order': _injectStatus(existingOrders.first),
+        'order': {..._injectStatus(existingOrders.first), 'token_no': existingToken},
       };
     }
 
     final int resStatus = _toInt(payload['res_status']);
     final bool placeAndSettle = resStatus == 3;
+    final String token = _nextToken();
 
     // Step 1 number: SO number, always generated
     final String soNumber = await _step(
@@ -150,6 +174,7 @@ class LocalHubOrderService {
       'branch_inv': finalBranch,
       'branch_ref_no': finalBranch,
       'is_mob_restaurant': 1,
+      'sales_odr_token_no': token,
     };
 
     // Create payload (step 1): unsettled, carrying the SO number
@@ -231,7 +256,7 @@ class LocalHubOrderService {
       'success': true,
       'duplicate': false,
       'message': 'Order created successfully',
-      'order': {..._injectStatus(order), 'offline_seq': offlineSeq},
+      'order': {..._injectStatus(order), 'offline_seq': offlineSeq, 'token_no': token},
     };
   }
 

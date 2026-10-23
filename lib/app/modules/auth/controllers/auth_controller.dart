@@ -10,6 +10,7 @@ import 'package:get/get_rx/src/rx_types/rx_types.dart';
 import 'package:get/get_state_manager/src/simple/get_controllers.dart';
 import 'package:get_storage/get_storage.dart';
 
+import '../../../../helper/snackbar_helper.dart';
 import '../../../data/services/api_services.dart';
 import '../../../data/utils/AppState.dart';
 
@@ -138,13 +139,13 @@ class AuthController extends GetxController {
       if (parsed is Map<String, dynamic>) {
         await updateBranchConfig(parsed);
       } else {
-        Get.snackbar("Error", "Invalid configuration format", backgroundColor: Colors.red, colorText: Colors.white);
+        showSafeSnackbar("Error", "Invalid configuration format");
       }
     } catch (e) {
       debugPrint("❌ Manual Entry Error: $e");
       // Only show snackbar if it's not a background/empty trigger
       if (trimmed.length > 5) {
-        Get.snackbar("Error", "Invalid configuration code", backgroundColor: Colors.red, colorText: Colors.white);
+        showSafeSnackbar("Error", "Invalid configuration code");
       }
     }
   }
@@ -156,7 +157,7 @@ class AuthController extends GetxController {
     final String bId = config['branch_id']?.toString() ?? '';
 
     if (url.isEmpty || code.isEmpty || bId.isEmpty) {
-      Get.snackbar("Error", "Invalid Branch Configuration", backgroundColor: Colors.red, colorText: Colors.white);
+      showSafeSnackbar("Error", "Invalid Branch Configuration");
       return;
     }
 
@@ -281,17 +282,17 @@ class AuthController extends GetxController {
 
           verified = true;
           isVerified.value = true;
-          Get.snackbar("✓ Verified", "Branch verified: $code", backgroundColor: Colors.green, colorText: Colors.white);
+          showSafeSnackbar("✓ Verified", "Branch verified: $code");
           qrCodeController.clear();
         }
       }
 
       if (!verified) {
-        Get.snackbar("Error", "Branch verification failed", backgroundColor: Colors.red, colorText: Colors.white);
+        showSafeSnackbar("Error", "Branch verification failed");
       }
     } catch (e) {
       debugPrint("❌ Verification Error: $e");
-      Get.snackbar("Error", "Verification failed", backgroundColor: Colors.red, colorText: Colors.white);
+      showSafeSnackbar("Error", "Verification failed");
     } finally {
       if (!verified) {
         // Roll back so a bad/failed config never overwrites the working server URL
@@ -308,10 +309,16 @@ class AuthController extends GetxController {
   }
 
   Future<void> login() async {
+    if (isLoading.value) return;
+
     final username = usernameController.text.trim();
     final password = passwordController.text.trim();
 
-    if (username.isEmpty || password.isEmpty) return;
+    if (username.isEmpty || password.isEmpty) {
+      showSafeSnackbar("Error", "Please enter username and password");
+      return;
+    }
+    
     isLoading.value = true;
 
     try {
@@ -374,11 +381,9 @@ class AuthController extends GetxController {
         } else {
           debugPrint("❌ API ERROR: ${data['error']}");
 
-          Get.snackbar(
+          showSafeSnackbar(
             "Error",
             data['error'] ?? "Login failed",
-            backgroundColor: Colors.red,
-            colorText: Colors.white,
           );
         }
       }
@@ -386,11 +391,9 @@ class AuthController extends GetxController {
       debugPrint("❌ LOGIN EXCEPTION: $e");
       debugPrint("📌 STACKTRACE: $stackTrace");
 
-      Get.snackbar(
+      showSafeSnackbar(
         "Error",
         "Login failed",
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
       );
     } finally {
       isLoading.value = false;
