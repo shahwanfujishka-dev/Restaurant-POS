@@ -1,3 +1,5 @@
+import 'package:get/get.dart';
+
 enum OrderType {
   dineIn,
   delivery,
@@ -6,11 +8,11 @@ enum OrderType {
   String get displayName {
     switch (this) {
       case OrderType.dineIn:
-        return 'Dine In';
+        return 'dine_in'.tr;
       case OrderType.delivery:
-        return 'Delivery';
+        return 'delivery'.tr;
       case OrderType.pickUp:
-        return 'Pick Up';
+        return 'pickup'.tr;
     }
   }
 

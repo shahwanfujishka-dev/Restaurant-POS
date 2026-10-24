@@ -1,10 +1,10 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:get/get.dart';
 
 import '../../../../../theme/app_theme.dart';
 import '../../../../../theme/app_typography.dart';
-import '../../../controller/order_controller.dart';
 
 class AnimatedTabBar extends StatefulWidget {
   final TabController tabController;
@@ -15,12 +15,27 @@ class AnimatedTabBar extends StatefulWidget {
 }
 
 class _AnimatedTabBarState extends State<AnimatedTabBar> {
-
   static const _tabs = [
-    _TabItem(icon: Icons.restaurant_outlined,      label: 'Dine In',     color: Colors.orange),
-    _TabItem(icon: Icons.delivery_dining_outlined,  label: 'Delivery',    color: Colors.blue),
-    _TabItem(icon: Icons.shopping_bag_outlined,    label: 'Pick Up',     color: AppTheme.primaryGreen),
-    _TabItem(icon: Icons.check_circle_outline,     label: 'Paid',        color: Colors.teal),
+    _TabItem(
+      icon: Icons.restaurant_outlined,
+      label: 'dine_in',
+      color: Colors.orange,
+    ),
+    _TabItem(
+      icon: Icons.delivery_dining_outlined,
+      label: 'delivery',
+      color: Colors.blue,
+    ),
+    _TabItem(
+      icon: Icons.shopping_bag_outlined,
+      label: 'pickup',
+      color: AppTheme.primaryGreen,
+    ),
+    _TabItem(
+      icon: Icons.check_circle_outline,
+      label: 'paid',
+      color: Colors.teal,
+    ),
   ];
 
   @override
@@ -77,12 +92,12 @@ class _AnimatedTabBarState extends State<AnimatedTabBar> {
                     borderRadius: BorderRadius.circular(5.r),
                     boxShadow: isActive
                         ? [
-                      BoxShadow(
-                        color: tabColor.withOpacity(0.35),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      )
-                    ]
+                            BoxShadow(
+                              color: tabColor.withOpacity(0.35),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
                         : [],
                   ),
                   child: Row(
@@ -97,7 +112,7 @@ class _AnimatedTabBarState extends State<AnimatedTabBar> {
                       ),
                       SizedBox(width: 4.w),
                       Text(
-                        _tabs[i].label,
+                        _tabs[i].label.tr,
                         style: AppTypography.button.copyWith(
                           fontWeight: FontWeight.w600,
                           color: isActive
@@ -121,5 +136,9 @@ class _TabItem {
   final IconData icon;
   final String label;
   final Color color;
-  const _TabItem({required this.icon, required this.label, required this.color});
+  const _TabItem({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
 }

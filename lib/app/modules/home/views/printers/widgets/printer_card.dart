@@ -5,7 +5,11 @@ import '../../../controller/printer_controller.dart';
 class PrintIssueBadge extends StatelessWidget {
   final String orderId;
   final bool compact;
-  const PrintIssueBadge({super.key, required this.orderId, this.compact = false});
+  const PrintIssueBadge({
+    super.key,
+    required this.orderId,
+    this.compact = false,
+  });
 
   Future<void> _retry(BuildContext ctx, PrinterController c) async {
     final failures = await c.retryPrintIssues(orderId);
@@ -20,7 +24,7 @@ class PrintIssueBadge extends StatelessWidget {
       context: ctx,
       builder: (d) => AlertDialog(
         icon: const Icon(Icons.print_disabled, color: Colors.red, size: 36),
-        title: const Text('Printer not reachable'),
+        title: Text('printer_not_reachable'.tr),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -31,27 +35,26 @@ class PrintIssueBadge extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(f.target,
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    Text(
+                      f.target,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     Text(f.error),
                   ],
                 ),
               ),
             const SizedBox(height: 4),
-            const Text(
-              'Make sure the printer is switched on, in range, and not '
-                  'connected to another device.',
-            ),
+            Text('printer_not_found_msg'.tr),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(d, false),
-            child: const Text('Close'),
+            child: Text('close'.tr),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(d, true),
-            child: const Text('Try again'),
+            child: Text('retry'.tr),
           ),
         ],
       ),
@@ -81,13 +84,16 @@ class PrintIssueBadge extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.print_disabled, size: 14, color: Colors.red),
-              if (!compact) ...const [
-                SizedBox(width: 4),
-                Text('Not printed',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.red,
-                        fontWeight: FontWeight.w600)),
+              if (!compact) ...[
+                const SizedBox(width: 4),
+                Text(
+                  'not_printed'.tr,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Colors.red,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ],
           ),
@@ -102,7 +108,7 @@ class PrintIssueBadge extends StatelessWidget {
       builder: (ctx) => Obx(() {
         final issues = c.printIssues[orderId] ?? const <PrintIssue>[];
         return AlertDialog(
-          title: const Text('Print problems'),
+          title: Text('print_problems'.tr),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -120,22 +126,24 @@ class PrintIssueBadge extends StatelessWidget {
                 c.clearPrintIssues(orderId);
                 Navigator.pop(ctx);
               },
-              child: const Text('Dismiss'),
+              child: Text('dismiss'.tr),
             ),
             if (issues.any((i) => i.canRetry))
               TextButton(
-                onPressed: c.isRetryingPrint.value ? null : () => _retry(ctx, c),
+                onPressed: c.isRetryingPrint.value
+                    ? null
+                    : () => _retry(ctx, c),
                 child: c.isRetryingPrint.value
                     ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-                    : const Text('Retry'),
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text('retry'.tr),
               ),
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Close'),
+              child: Text('close'.tr),
             ),
           ],
         );

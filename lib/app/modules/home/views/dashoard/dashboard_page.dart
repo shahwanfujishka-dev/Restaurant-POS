@@ -22,26 +22,17 @@ class DashboardPage extends GetView<DashboardController> {
         builder: (context, double value, child) {
           return Transform.translate(
             offset: Offset(value, 0),
-            child: Opacity(
-              opacity: 1 - (value / 30),
-              child: child,
-            ),
+            child: Opacity(opacity: 1 - (value / 30), child: child),
           );
         },
         child: ScreenType.isMobile()
             ? const MainContent()
             : Row(
-          children: const [
-            Expanded(
-              flex: 7,
-              child: MainContent(),
-            ),
-            Expanded(
-              flex: 3,
-              child: CartPanel(),
-            ),
-          ],
-        ),
+                children: const [
+                  Expanded(flex: 7, child: MainContent()),
+                  Expanded(flex: 3, child: CartPanel()),
+                ],
+              ),
       ),
     );
   }

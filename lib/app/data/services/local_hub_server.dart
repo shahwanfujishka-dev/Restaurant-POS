@@ -25,14 +25,15 @@ class LocalHubServer {
   bool get isRunning => _server != null;
   String? get hostAddress => lanIp;
   final Map<String, String> _deviceTokens = {};
-  final Map<String, Map<String, dynamic>> _deviceInfo = {};   // ← new
+  final Map<String, Map<String, dynamic>> _deviceInfo = {}; // ← new
 
-  List<Map<String, dynamic>> get connectedDevices =>          // ← new
-  _deviceInfo.values.toList();
+  List<Map<String, dynamic>> get connectedDevices => // ← new
+      _deviceInfo.values.toList();
 
   bool _isAuthorized(Request request) {
     final authorization = request.headers['authorization'];
-    if (authorization == null || !authorization.startsWith('Bearer ')) return false;
+    if (authorization == null || !authorization.startsWith('Bearer '))
+      return false;
     final token = authorization.substring(7).trim();
     return token.isNotEmpty && _deviceTokens.containsValue(token);
   }
@@ -80,25 +81,34 @@ class LocalHubServer {
           final role = body['role']?.toString().trim() ?? '';
 
           if (deviceId.isEmpty || role.isEmpty) {
-            debugPrint('[LocalHubServer] POST /device/register missing deviceId or role');
-            return _errorResponse('Device ID and role required', statusCode: 400);
+            debugPrint(
+              '[LocalHubServer] POST /device/register missing deviceId or role',
+            );
+            return _errorResponse(
+              'Device ID and role required',
+              statusCode: 400,
+            );
           }
           if (role != 'client') {
-            debugPrint('[LocalHubServer] POST /device/register only clients can register, got role: $role');
+            debugPrint(
+              '[LocalHubServer] POST /device/register only clients can register, got role: $role',
+            );
             return _errorResponse('Only clients can register', statusCode: 400);
           }
 
           final authToken = _generateAuthToken();
           _deviceTokens[deviceId] = authToken;
-          _deviceInfo[deviceId] = {                              // ← new
+          _deviceInfo[deviceId] = {
+            // ← new
             'deviceId': deviceId,
             'deviceName': body['device_name']?.toString() ?? 'Unnamed Device',
             'userName': body['user_name']?.toString() ?? '',
             'connectedAt': DateTime.now().toIso8601String(),
           };
 
-
-          debugPrint('[LocalHubServer] POST /device/register success for deviceId: $deviceId');
+          debugPrint(
+            '[LocalHubServer] POST /device/register success for deviceId: $deviceId',
+          );
           return _jsonResponse({
             'success': true,
             'message': 'Device registered successfully',
@@ -111,7 +121,10 @@ class LocalHubServer {
           });
         } catch (e) {
           debugPrint('[LocalHubServer] POST /device/register exception: $e');
-          return _errorResponse('Invalid registration request', statusCode: 400);
+          return _errorResponse(
+            'Invalid registration request',
+            statusCode: 400,
+          );
         }
       });
 
@@ -122,11 +135,17 @@ class LocalHubServer {
           return _errorResponse('Unauthorized', statusCode: 401);
         }
         try {
-          final assignments = await DatabaseHelper.instance.getAllTokenPrinterAssignments();
+          final assignments = await DatabaseHelper.instance
+              .getAllTokenPrinterAssignments();
           return _jsonResponse({'success': true, 'data': assignments});
         } catch (e) {
-          debugPrint('[LocalHubServer] GET /printers/assignments exception: $e');
-          return _errorResponse('Failed to fetch printer assignments: $e', statusCode: 500);
+          debugPrint(
+            '[LocalHubServer] GET /printers/assignments exception: $e',
+          );
+          return _errorResponse(
+            'Failed to fetch printer assignments: $e',
+            statusCode: 500,
+          );
         }
       });
 
@@ -142,8 +161,12 @@ class LocalHubServer {
         }
         try {
           final body = await _readJson(request);
-          debugPrint('[LocalHubServer] POST /orders/create body: ${jsonEncode(body)}');
-          final result = await LocalHubOrderService.instance.createOrder(payload: body);
+          debugPrint(
+            '[LocalHubServer] POST /orders/create body: ${jsonEncode(body)}',
+          );
+          final result = await LocalHubOrderService.instance.createOrder(
+            payload: body,
+          );
           return _jsonResponse(result);
         } catch (e) {
           debugPrint('[LocalHubServer] POST /orders/create exception: $e');
@@ -159,8 +182,12 @@ class LocalHubServer {
         }
         try {
           final body = await _readJson(request);
-          debugPrint('[LocalHubServer] POST /orders/update body: ${jsonEncode(body)}');
-          final result = await LocalHubOrderService.instance.updateOrder(payload: body);
+          debugPrint(
+            '[LocalHubServer] POST /orders/update body: ${jsonEncode(body)}',
+          );
+          final result = await LocalHubOrderService.instance.updateOrder(
+            payload: body,
+          );
           return _jsonResponse(result);
         } catch (e) {
           debugPrint('[LocalHubServer] POST /orders/update exception: $e');
@@ -191,11 +218,17 @@ class LocalHubServer {
           return _errorResponse('Unauthorized', statusCode: 401);
         }
         try {
-          final result = await LocalHubOrderService.instance.fetchOrders(status: 'paid', date: date);
+          final result = await LocalHubOrderService.instance.fetchOrders(
+            status: 'paid',
+            date: date,
+          );
           return _jsonResponse(result);
         } catch (e) {
           debugPrint('[LocalHubServer] GET /orders/sold exception: $e');
-          return _errorResponse('Failed to fetch sold orders: $e', statusCode: 500);
+          return _errorResponse(
+            'Failed to fetch sold orders: $e',
+            statusCode: 500,
+          );
         }
       });
 
@@ -207,12 +240,18 @@ class LocalHubServer {
           return _errorResponse('Unauthorized', statusCode: 401);
         }
         try {
-          if (id == null) return _errorResponse('Order ID required', statusCode: 400);
-          final result = await LocalHubOrderService.instance.getOrderDetails(id);
+          if (id == null)
+            return _errorResponse('Order ID required', statusCode: 400);
+          final result = await LocalHubOrderService.instance.getOrderDetails(
+            id,
+          );
           return _jsonResponse(result);
         } catch (e) {
           debugPrint('[LocalHubServer] GET /orders/details exception: $e');
-          return _errorResponse('Failed to get order details: $e', statusCode: 500);
+          return _errorResponse(
+            'Failed to get order details: $e',
+            statusCode: 500,
+          );
         }
       });
 
@@ -227,11 +266,15 @@ class LocalHubServer {
           return _errorResponse('Unauthorized', statusCode: 401);
         }
         try {
-          final result = await LocalHubOrderService.instance.fetchMasterTables();
+          final result = await LocalHubOrderService.instance
+              .fetchMasterTables();
           return _jsonResponse(result);
         } catch (e) {
           debugPrint('[LocalHubServer] GET /master/tables exception: $e');
-          return _errorResponse('Failed to fetch master tables: $e', statusCode: 500);
+          return _errorResponse(
+            'Failed to fetch master tables: $e',
+            statusCode: 500,
+          );
         }
       });
 
@@ -242,11 +285,15 @@ class LocalHubServer {
           return _errorResponse('Unauthorized', statusCode: 401);
         }
         try {
-          final result = await LocalHubOrderService.instance.fetchMasterCategories();
+          final result = await LocalHubOrderService.instance
+              .fetchMasterCategories();
           return _jsonResponse(result);
         } catch (e) {
           debugPrint('[LocalHubServer] GET /master/categories exception: $e');
-          return _errorResponse('Failed to fetch master categories: $e', statusCode: 500);
+          return _errorResponse(
+            'Failed to fetch master categories: $e',
+            statusCode: 500,
+          );
         }
       });
 
@@ -257,50 +304,77 @@ class LocalHubServer {
           return _errorResponse('Unauthorized', statusCode: 401);
         }
         try {
-          final result = await LocalHubOrderService.instance.fetchMasterCaptains();
+          final result = await LocalHubOrderService.instance
+              .fetchMasterCaptains();
           return _jsonResponse(result);
         } catch (e) {
           debugPrint('[LocalHubServer] GET /master/captains exception: $e');
-          return _errorResponse('Failed to fetch master captains: $e', statusCode: 500);
+          return _errorResponse(
+            'Failed to fetch master captains: $e',
+            statusCode: 500,
+          );
         }
       });
 
       router.get('/master/products', (Request request) async {
         final categoryId = request.url.queryParameters['category_id'];
-        final priceGroupId = int.tryParse(request.url.queryParameters['price_group_id'] ?? '0') ?? 0;
-        debugPrint('[LocalHubServer] GET /master/products called with categoryId: $categoryId, priceGroupId: $priceGroupId');
+        final priceGroupId =
+            int.tryParse(
+              request.url.queryParameters['price_group_id'] ?? '0',
+            ) ??
+            0;
+        debugPrint(
+          '[LocalHubServer] GET /master/products called with categoryId: $categoryId, priceGroupId: $priceGroupId',
+        );
         if (!_isAuthorized(request)) {
           debugPrint('[LocalHubServer] GET /master/products Unauthorized');
           return _errorResponse('Unauthorized', statusCode: 401);
         }
         try {
-          final result = await LocalHubOrderService.instance.fetchMasterProducts(
-            categoryId: categoryId,
-            priceGroupId: priceGroupId,
-          );
+          final result = await LocalHubOrderService.instance
+              .fetchMasterProducts(
+                categoryId: categoryId,
+                priceGroupId: priceGroupId,
+              );
           return _jsonResponse(result);
         } catch (e) {
           debugPrint('[LocalHubServer] GET /master/products exception: $e');
-          return _errorResponse('Failed to fetch master products: $e', statusCode: 500);
+          return _errorResponse(
+            'Failed to fetch master products: $e',
+            statusCode: 500,
+          );
         }
       });
 
       router.get('/master/product-units', (Request request) async {
         final productIdStr = request.url.queryParameters['product_id'];
-        final priceGroupId = int.tryParse(request.url.queryParameters['price_group_id'] ?? '0') ?? 0;
-        debugPrint('[LocalHubServer] GET /master/product-units called with product_id: $productIdStr, price_group_id: $priceGroupId');
+        final priceGroupId =
+            int.tryParse(
+              request.url.queryParameters['price_group_id'] ?? '0',
+            ) ??
+            0;
+        debugPrint(
+          '[LocalHubServer] GET /master/product-units called with product_id: $productIdStr, price_group_id: $priceGroupId',
+        );
         if (!_isAuthorized(request)) {
           debugPrint('[LocalHubServer] GET /master/product-units Unauthorized');
           return _errorResponse('Unauthorized', statusCode: 401);
         }
         try {
-          if (productIdStr == null) return _errorResponse('Product ID required', statusCode: 400);
+          if (productIdStr == null)
+            return _errorResponse('Product ID required', statusCode: 400);
           final productId = int.tryParse(productIdStr) ?? 0;
-          final result = await LocalHubOrderService.instance.fetchMasterProductUnits(productId, priceGroupId);
+          final result = await LocalHubOrderService.instance
+              .fetchMasterProductUnits(productId, priceGroupId);
           return _jsonResponse(result);
         } catch (e) {
-          debugPrint('[LocalHubServer] GET /master/product-units exception: $e');
-          return _errorResponse('Failed to fetch master product units: $e', statusCode: 500);
+          debugPrint(
+            '[LocalHubServer] GET /master/product-units exception: $e',
+          );
+          return _errorResponse(
+            'Failed to fetch master product units: $e',
+            statusCode: 500,
+          );
         }
       });
 
@@ -309,8 +383,14 @@ class LocalHubServer {
         return _jsonResponse({'success': true, 'message': 'KOT received'});
       });
 
-      final handler = const Pipeline().addMiddleware(logRequests()).addHandler(router.call);
-      _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, defaultPort,);
+      final handler = const Pipeline()
+          .addMiddleware(logRequests())
+          .addHandler(router.call);
+      _server = await shelf_io.serve(
+        handler,
+        InternetAddress.anyIPv4,
+        defaultPort,
+      );
       lanIp = await LocalHubNetwork.getLocalIp();
 
       debugPrint('LOCAL HUB SERVER STARTED ON $serverUrl');
@@ -339,10 +419,20 @@ class LocalHubServer {
   }
 
   Response _jsonResponse(Map<String, dynamic> data, {int statusCode = 200}) {
-    return Response(statusCode, body: jsonEncode(data), headers: {'content-type': 'application/json', 'access-control-allow-origin': '*'});
+    return Response(
+      statusCode,
+      body: jsonEncode(data),
+      headers: {
+        'content-type': 'application/json',
+        'access-control-allow-origin': '*',
+      },
+    );
   }
 
   Response _errorResponse(String message, {int statusCode = 500}) {
-    return _jsonResponse({'success': false, 'message': message}, statusCode: statusCode);
+    return _jsonResponse({
+      'success': false,
+      'message': message,
+    }, statusCode: statusCode);
   }
 }

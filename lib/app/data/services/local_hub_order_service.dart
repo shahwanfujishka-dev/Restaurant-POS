@@ -14,7 +14,6 @@ class LocalHubOrderService {
 
   final DatabaseHelper _db = DatabaseHelper.instance;
 
-
   Future<T> _step<T>(String name, Future<T> Function() fn) async {
     debugPrint('[LocalHubOrderService] → $name');
     try {
@@ -27,55 +26,110 @@ class LocalHubOrderService {
     }
   }
 
-  Map<String, dynamic> _buildPreviewMap(String uuid, Map<String, dynamic> payload) {
-    final List<dynamic> saleItems = payload['sale_items'] ?? payload['sales_order_sub'] ?? [];
+  Map<String, dynamic> _buildPreviewMap(
+    String uuid,
+    Map<String, dynamic> payload,
+  ) {
+    final List<dynamic> saleItems =
+        payload['sale_items'] ?? payload['sales_order_sub'] ?? [];
     List<Map<String, dynamic>> salesOrderSub = [];
 
     for (var item in saleItems) {
       if (item is Map) {
         final itemMap = Map<String, dynamic>.from(item);
-        final bool isDeletedItem = (itemMap['is_deleted'] == 1) || (itemMap['is_deleted'] == '1');
-        final num qtyNum = (itemMap['sales_ord_sub_qty'] ?? itemMap['salesub_qty'] ?? 0) as num;
+        final bool isDeletedItem =
+            (itemMap['is_deleted'] == 1) || (itemMap['is_deleted'] == '1');
+        final num qtyNum =
+            (itemMap['sales_ord_sub_qty'] ?? itemMap['salesub_qty'] ?? 0)
+                as num;
         if (isDeletedItem || qtyNum <= 0) continue;
         salesOrderSub.add({
-          'sales_ord_sub_id': _toInt(itemMap['sales_ord_sub_id'] ?? itemMap['salesub_id'] ?? 0),
-          'sales_ord_sub_prod_id': itemMap['sales_ord_sub_prod_id'] ?? itemMap['salesub_prd_id'] ?? 0,
-          'sales_ord_sub_unit_id': itemMap['sales_ord_sub_unit_id'] ?? itemMap['salesub_unit_id'] ?? 0,
-          'sales_ord_sub_qty': itemMap['sales_ord_sub_qty'] ?? itemMap['salesub_qty'] ?? 1,
-          'sales_ord_sub_rate': itemMap['sales_ord_sub_rate'] ?? itemMap['salesub_rate'] ?? itemMap['rate'] ?? 0.0,
-          'unit_base_qty': itemMap['unit_base_qty'] ?? itemMap['base_qty'] ?? 1.0,
+          'sales_ord_sub_id': _toInt(
+            itemMap['sales_ord_sub_id'] ?? itemMap['salesub_id'] ?? 0,
+          ),
+          'sales_ord_sub_prod_id':
+              itemMap['sales_ord_sub_prod_id'] ??
+              itemMap['salesub_prd_id'] ??
+              0,
+          'sales_ord_sub_unit_id':
+              itemMap['sales_ord_sub_unit_id'] ??
+              itemMap['salesub_unit_id'] ??
+              0,
+          'sales_ord_sub_qty':
+              itemMap['sales_ord_sub_qty'] ?? itemMap['salesub_qty'] ?? 1,
+          'sales_ord_sub_rate':
+              itemMap['sales_ord_sub_rate'] ??
+              itemMap['salesub_rate'] ??
+              itemMap['rate'] ??
+              0.0,
+          'unit_base_qty':
+              itemMap['unit_base_qty'] ?? itemMap['base_qty'] ?? 1.0,
           'sales_ord_sub_cgst_rate': itemMap['sales_ord_sub_cgst_rate'] ?? 0.0,
           'sales_ord_sub_sgst_rate': itemMap['sales_ord_sub_sgst_rate'] ?? 0.0,
-          'cat_token_printer': itemMap['cat_token_printer'] ?? itemMap['token_printer_id'] ?? 0,
+          'cat_token_printer':
+              itemMap['cat_token_printer'] ?? itemMap['token_printer_id'] ?? 0,
           'prd_name': itemMap['prd_name'] ?? '',
-          'salesub_unit_display': itemMap['salesub_unit_display'] ?? itemMap['unit_display'] ?? '',
-          'unit_display': itemMap['unit_display'] ?? itemMap['salesub_unit_display'] ?? '',
-          'sales_ord_sub_flags': itemMap['sales_ord_sub_flags'] ?? ((itemMap['is_deleted'] == 1) ? 0 : 1),
-          'item_desc': itemMap['item_desc'] ?? itemMap['sales_ord_sub_notes'] ?? '',
-          'sales_odr_sub_is_addon': itemMap['sales_odr_sub_is_addon'] ?? itemMap['is_addon'] ?? 0,
-          'sales_odr_sub_addon_parent_prd_id': itemMap['sales_odr_sub_addon_parent_prd_id'] ?? itemMap['addon_parent_prd_id'] ?? 0,
-          'sales_odr_sub_addon_parent_unit_id': itemMap['sales_odr_sub_addon_parent_unit_id'] ?? itemMap['addon_parent_unit_id'] ?? 0,
-          'sales_ord_sub_tax_per': itemMap['sales_ord_sub_tax_per'] ?? itemMap['salesub_tax_per'] ?? 0.0,
-          'sales_ord_sub_taxcat_id': itemMap['sales_ord_sub_taxcat_id'] ?? itemMap['prd_tax_cat_id'] ?? 0,
+          'salesub_unit_display':
+              itemMap['salesub_unit_display'] ?? itemMap['unit_display'] ?? '',
+          'unit_display':
+              itemMap['unit_display'] ?? itemMap['salesub_unit_display'] ?? '',
+          'sales_ord_sub_flags':
+              itemMap['sales_ord_sub_flags'] ??
+              ((itemMap['is_deleted'] == 1) ? 0 : 1),
+          'item_desc':
+              itemMap['item_desc'] ?? itemMap['sales_ord_sub_notes'] ?? '',
+          'sales_odr_sub_is_addon':
+              itemMap['sales_odr_sub_is_addon'] ?? itemMap['is_addon'] ?? 0,
+          'sales_odr_sub_addon_parent_prd_id':
+              itemMap['sales_odr_sub_addon_parent_prd_id'] ??
+              itemMap['addon_parent_prd_id'] ??
+              0,
+          'sales_odr_sub_addon_parent_unit_id':
+              itemMap['sales_odr_sub_addon_parent_unit_id'] ??
+              itemMap['addon_parent_unit_id'] ??
+              0,
+          'sales_ord_sub_tax_per':
+              itemMap['sales_ord_sub_tax_per'] ??
+              itemMap['salesub_tax_per'] ??
+              0.0,
+          'sales_ord_sub_taxcat_id':
+              itemMap['sales_ord_sub_taxcat_id'] ??
+              itemMap['prd_tax_cat_id'] ??
+              0,
         });
       }
     }
 
-    int orderTypeId = _toInt(payload['order_type_id'] ?? payload['pos_odr_type'] ?? 0);
+    int orderTypeId = _toInt(
+      payload['order_type_id'] ?? payload['pos_odr_type'] ?? 0,
+    );
     int rawResStatus = _toInt(payload['res_status']);
-    String statusStr = payload['status'] ?? (rawResStatus == 0 ? 'draft' : (rawResStatus == 2 ? 'billed' : (rawResStatus == 3 ? 'paid' : 'pending')));
+    String statusStr =
+        payload['status'] ??
+        (rawResStatus == 0
+            ? 'draft'
+            : (rawResStatus == 2
+                  ? 'billed'
+                  : (rawResStatus == 3 ? 'paid' : 'pending')));
     int posStatus = 1;
     if (statusStr == 'draft' || rawResStatus == 0) posStatus = 0;
     if (statusStr == 'billed' || rawResStatus == 2) posStatus = 2;
     if (statusStr == 'paid' || rawResStatus == 3) posStatus = 3;
 
     final now = DateTime.now();
-    String dateStr = payload['date'] ?? payload['saleqt_date'] ?? "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
-    String timeStr = payload['time'] ?? payload['saleqt_time'] ?? "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}";
+    String dateStr =
+        payload['date'] ??
+        payload['saleqt_date'] ??
+        "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+    String timeStr =
+        payload['time'] ??
+        payload['saleqt_time'] ??
+        "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}";
 
     return {
       'sales_odr_id': uuid,
-      'sales_odr_inv_no': payload['inv_no'] ??
+      'sales_odr_inv_no':
+          payload['inv_no'] ??
           ((payload['sq_inv_no'] != null && payload['sq_inv_no'] != 0)
               ? payload['sq_inv_no'].toString()
               : ''),
@@ -84,14 +138,30 @@ class LocalHubOrderService {
       'sales_odr_token_no': payload['sales_odr_token_no'],
       'sales_odr_order_type': orderTypeId,
       'sales_odr_pos_status': posStatus,
-      'sales_odr_table_id': payload['table_id'] ?? (payload['res_table']?['rt_id']) ?? '',
-      'sales_odr_table_name': payload['customer_name'] ?? payload['cust_name'] ?? payload['table_name'] ?? '',
-      'sales_odr_no_seats': _toInt(payload['no_seats'] ?? payload['sales_odr_no_seats'] ?? (payload['res_table']?['rt_seat_count']) ?? 0),
-      'sales_odr_total': _toDouble(payload['total_amount'] ?? payload['sq_total']),
+      'sales_odr_table_id':
+          payload['table_id'] ?? (payload['res_table']?['rt_id']) ?? '',
+      'sales_odr_table_name':
+          payload['customer_name'] ??
+          payload['cust_name'] ??
+          payload['table_name'] ??
+          '',
+      'sales_odr_no_seats': _toInt(
+        payload['no_seats'] ??
+            payload['sales_odr_no_seats'] ??
+            (payload['res_table']?['rt_seat_count']) ??
+            0,
+      ),
+      'sales_odr_total': _toDouble(
+        payload['total_amount'] ?? payload['sq_total'],
+      ),
       'sales_odr_tax': _toDouble(payload['total_tax'] ?? payload['sq_tax']),
       'sales_odr_date': dateStr,
       'sales_odr_time': timeStr,
-      'agent_name': payload['agent_name'] ?? payload['sale_agent_name'] ?? payload['captain_name'] ?? '',
+      'agent_name':
+          payload['agent_name'] ??
+          payload['sale_agent_name'] ??
+          payload['captain_name'] ??
+          '',
       'sales_order_sub': salesOrderSub,
       'offline': true,
       'local_uuid': uuid,
@@ -101,10 +171,14 @@ class LocalHubOrderService {
   /// Returns the sale invoice number reserved for this order, creating it once.
   Future<String> reserveInvoiceNumber(String orderId) async {
     final rows = await _findOrder(orderId);
-    final String uuid = rows.isNotEmpty ? rows.first['uuid'].toString() : orderId;
+    final String uuid = rows.isNotEmpty
+        ? rows.first['uuid'].toString()
+        : orderId;
 
     // Already carries a real invoice number (not an SO number): reuse it
-    final String current = rows.isNotEmpty ? (rows.first['branch_inv']?.toString() ?? '') : '';
+    final String current = rows.isNotEmpty
+        ? (rows.first['branch_inv']?.toString() ?? '')
+        : '';
     if (current.isNotEmpty && !current.contains('/SO/')) return current;
 
     final key = 'reserved_inv_$uuid';
@@ -119,8 +193,9 @@ class LocalHubOrderService {
   String _nextToken() {
     final box = GetStorage();
     final int openMins = (box.read('opening_time_minutes') as int?) ?? 0;
-    final String day = DateFormat('yyyy-MM-dd')
-        .format(DateTime.now().subtract(Duration(minutes: openMins)));
+    final String day = DateFormat(
+      'yyyy-MM-dd',
+    ).format(DateTime.now().subtract(Duration(minutes: openMins)));
 
     int seq = (box.read('offline_token_seq') as int?) ?? 0;
     if (box.read('offline_token_date') != day) {
@@ -132,8 +207,12 @@ class LocalHubOrderService {
     return 'o-$seq';
   }
 
-  Future<Map<String, dynamic>> createOrder({required Map<String, dynamic> payload}) async {
-    debugPrint('[LocalHubOrderService] createOrder called for uuid: ${payload['uuid']}');
+  Future<Map<String, dynamic>> createOrder({
+    required Map<String, dynamic> payload,
+  }) async {
+    debugPrint(
+      '[LocalHubOrderService] createOrder called for uuid: ${payload['uuid']}',
+    );
     final String uuid = (payload['uuid'] ?? '').toString().trim();
     if (uuid.isEmpty) throw Exception('Order UUID is required');
 
@@ -142,14 +221,19 @@ class LocalHubOrderService {
     if (existingOrders.isNotEmpty) {
       String? existingToken;
       try {
-        existingToken = (jsonDecode(existingOrders.first['payload']?.toString() ?? '{}')
-        as Map)['sales_odr_token_no']?.toString();
+        existingToken =
+            (jsonDecode(existingOrders.first['payload']?.toString() ?? '{}')
+                    as Map)['sales_odr_token_no']
+                ?.toString();
       } catch (_) {}
       return {
         'success': true,
         'duplicate': true,
         'message': 'Order already exists',
-        'order': {..._injectStatus(existingOrders.first), 'token_no': existingToken},
+        'order': {
+          ..._injectStatus(existingOrders.first),
+          'token_no': existingToken,
+        },
       };
     }
 
@@ -159,7 +243,9 @@ class LocalHubOrderService {
 
     // Step 1 number: SO number, always generated
     final String soNumber = await _step(
-        'soNumber', () => _db.generateLocalSoNumber(AppState.branchDisName));
+      'soNumber',
+      () => _db.generateLocalSoNumber(AppState.branchDisName),
+    );
 
     // Step 2 number: invoice number, only for settled orders (reserved per uuid, stable on retry)
     final String? invNumber = placeAndSettle
@@ -180,7 +266,8 @@ class LocalHubOrderService {
     // Create payload (step 1): unsettled, carrying the SO number
     Map<String, dynamic> createPayload = payload;
     if (placeAndSettle) {
-      final double gross = _toDouble(payload['sq_total']) +
+      final double gross =
+          _toDouble(payload['sq_total']) +
           _toDouble(payload['sq_disc']) -
           _toDouble(payload['sales_roundoff']);
       createPayload = {
@@ -204,7 +291,9 @@ class LocalHubOrderService {
       };
     }
 
-    final List<dynamic> rawItems = payload['items'] is List ? payload['items'] as List : [];
+    final List<dynamic> rawItems = payload['items'] is List
+        ? payload['items'] as List
+        : [];
     final List<Map<String, dynamic>> items = rawItems
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
@@ -218,37 +307,58 @@ class LocalHubOrderService {
       'inv_no': payload['inv_no'],
       'branch_inv': finalBranch,
       'created_by_device_id': payload['created_by_device_id'],
-      'order_type_id': _toInt(payload['order_type_id'] ?? payload['pos_odr_type'] ?? 0),
+      'order_type_id': _toInt(
+        payload['order_type_id'] ?? payload['pos_odr_type'] ?? 0,
+      ),
       'table_id': payload['table_id'] ?? (payload['res_table']?['rt_id']) ?? 0,
-      'customer_name': payload['customer_name'] ?? payload['cust_name'] ?? payload['table_name'],
+      'customer_name':
+          payload['customer_name'] ??
+          payload['cust_name'] ??
+          payload['table_name'],
       'customer_phone': payload['customer_phone'] ?? payload['phone_no'],
       'total_amount': _toDouble(payload['total_amount'] ?? payload['sq_total']),
       'total_tax': _toDouble(payload['total_tax'] ?? payload['sq_tax']),
-      'status': payload['status'] ??
+      'status':
+          payload['status'] ??
           (resStatus == 0
               ? 'draft'
-              : (resStatus == 2 ? 'billed' : (resStatus == 3 ? 'paid' : 'pending'))),
+              : (resStatus == 2
+                    ? 'billed'
+                    : (resStatus == 3 ? 'paid' : 'pending'))),
       'is_synced': 0,
-      'payload': jsonEncode(payload),               // settle payload (res_status 3, invoice no.)
-      'create_payload': jsonEncode(createPayload),  // step 1 payload (res_status 1, SO no.)
+      'payload': jsonEncode(
+        payload,
+      ), // settle payload (res_status 3, invoice no.)
+      'create_payload': jsonEncode(
+        createPayload,
+      ), // step 1 payload (res_status 1, SO no.)
       'created_at': payload['created_at'] ?? now,
     };
 
     await _step('saveOrderOffline', () => _db.saveOrderOffline(order, items));
 
-    final offlineSeq = await _step('offlineSeq', () => _db.assignOfflineSeqForOrder(uuid));
+    final offlineSeq = await _step(
+      'offlineSeq',
+      () => _db.assignOfflineSeqForOrder(uuid),
+    );
 
     try {
       if (Get.isRegistered<OrdersController>()) {
         final oc = Get.find<OrdersController>();
         oc.updateExistingOrder(
-            oc.parseOrderResponse({'preview': _buildPreviewMap(uuid, payload), 'offline': true}));
+          oc.parseOrderResponse({
+            'preview': _buildPreviewMap(uuid, payload),
+            'offline': true,
+          }),
+        );
       }
       if (Get.isRegistered<TablesController>()) {
         Get.find<TablesController>().fetchTables(silent: true);
       }
     } catch (e, st) {
-      debugPrint('[LocalHubOrderService] UI refresh failed (order already saved): $e\n$st');
+      debugPrint(
+        '[LocalHubOrderService] UI refresh failed (order already saved): $e\n$st',
+      );
     }
 
     debugPrint('[LocalHubOrderService] createOrder success for uuid: $uuid');
@@ -256,17 +366,29 @@ class LocalHubOrderService {
       'success': true,
       'duplicate': false,
       'message': 'Order created successfully',
-      'order': {..._injectStatus(order), 'offline_seq': offlineSeq, 'token_no': token},
+      'order': {
+        ..._injectStatus(order),
+        'offline_seq': offlineSeq,
+        'token_no': token,
+      },
     };
   }
 
-  Future<Map<String, dynamic>> updateOrder({required Map<String, dynamic> payload}) async {
-    debugPrint('[LocalHubOrderService] updateOrder called for uuid: ${payload['uuid']}');
-    final String uuid = (payload['uuid'] ?? payload['local_uuid'] ?? '').toString().trim();
+  Future<Map<String, dynamic>> updateOrder({
+    required Map<String, dynamic> payload,
+  }) async {
+    debugPrint(
+      '[LocalHubOrderService] updateOrder called for uuid: ${payload['uuid']}',
+    );
+    final String uuid = (payload['uuid'] ?? payload['local_uuid'] ?? '')
+        .toString()
+        .trim();
     if (uuid.isEmpty) throw Exception('Order UUID is required for update');
 
     final existing = await _findOrder(uuid);
-    final Map<String, dynamic>? ex = existing.isNotEmpty ? existing.first : null;
+    final Map<String, dynamic>? ex = existing.isNotEmpty
+        ? existing.first
+        : null;
 
     final String? createdAt = ex?['created_at']?.toString();
     final String? existingBranchInv = ex?['branch_inv']?.toString();
@@ -274,7 +396,8 @@ class LocalHubOrderService {
     final String? existingInvNo = ex?['inv_no']?.toString();
 
     final int resStatus = _toInt(payload['res_status']);
-    final bool alreadySynced = existingServerId != null &&
+    final bool alreadySynced =
+        existingServerId != null &&
         existingServerId.isNotEmpty &&
         !existingServerId.startsWith('ORD-');
 
@@ -312,7 +435,8 @@ class LocalHubOrderService {
     // }
 
     // ── Branch number: SO format until paid, invoice format once paid ───────
-    final String candidate = (existingBranchInv != null && existingBranchInv.isNotEmpty)
+    final String candidate =
+        (existingBranchInv != null && existingBranchInv.isNotEmpty)
         ? existingBranchInv
         : (payload['branch_inv']?.toString() ?? '');
 
@@ -334,7 +458,9 @@ class LocalHubOrderService {
       'is_mob_restaurant': 1,
     };
 
-    final List<dynamic> rawItems = payload['items'] is List ? payload['items'] as List : [];
+    final List<dynamic> rawItems = payload['items'] is List
+        ? payload['items'] as List
+        : [];
     final List<Map<String, dynamic>> items = rawItems
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
@@ -343,19 +469,31 @@ class LocalHubOrderService {
 
     final Map<String, dynamic> orderRow = {
       'uuid': uuid,
-      'server_id': (existingServerId?.isNotEmpty ?? false) ? existingServerId : payload['server_id'],
+      'server_id': (existingServerId?.isNotEmpty ?? false)
+          ? existingServerId
+          : payload['server_id'],
       'inv_no': (existingInvNo?.isNotEmpty ?? false)
           ? existingInvNo
           : (payload['inv_no'] ?? payload['sq_inv_no']?.toString()),
       'branch_inv': resolvedBranchInv,
-      'order_type_id': _toInt(payload['order_type_id'] ?? payload['pos_odr_type'] ?? 0),
+      'order_type_id': _toInt(
+        payload['order_type_id'] ?? payload['pos_odr_type'] ?? 0,
+      ),
       'table_id': payload['table_id'] ?? (payload['res_table']?['rt_id']) ?? 0,
-      'customer_name': payload['customer_name'] ?? payload['cust_name'] ?? payload['table_name'],
+      'customer_name':
+          payload['customer_name'] ??
+          payload['cust_name'] ??
+          payload['table_name'],
       'customer_phone': payload['customer_phone'] ?? payload['phone_no'],
       'total_amount': _toDouble(payload['total_amount'] ?? payload['sq_total']),
       'total_tax': _toDouble(payload['total_tax'] ?? payload['sq_tax']),
-      'status': payload['status'] ??
-          (resStatus == 0 ? 'draft' : (resStatus == 2 ? 'billed' : (resStatus == 3 ? 'paid' : 'pending'))),
+      'status':
+          payload['status'] ??
+          (resStatus == 0
+              ? 'draft'
+              : (resStatus == 2
+                    ? 'billed'
+                    : (resStatus == 3 ? 'paid' : 'pending'))),
       'is_synced': 0,
       'payload': jsonEncode(payload),
     };
@@ -369,7 +507,9 @@ class LocalHubOrderService {
     if (Get.isRegistered<OrdersController>()) {
       final oc = Get.find<OrdersController>();
       final previewMap = _buildPreviewMap(uuid, payload);
-      oc.updateExistingOrder(oc.parseOrderResponse({'preview': previewMap, 'offline': true}));
+      oc.updateExistingOrder(
+        oc.parseOrderResponse({'preview': previewMap, 'offline': true}),
+      );
     }
 
     if (Get.isRegistered<TablesController>()) {
@@ -384,12 +524,15 @@ class LocalHubOrderService {
     };
   }
 
-  Future<Map<String, dynamic>> fetchOrders({String? status, String? date}) async {
+  Future<Map<String, dynamic>> fetchOrders({
+    String? status,
+    String? date,
+  }) async {
     try {
       final db = await _db.database;
       String where = '1=1';
       List<dynamic> whereArgs = [];
-      
+
       if (status != null) {
         where += ' AND status = ?';
         whereArgs.add(status);
@@ -397,13 +540,18 @@ class LocalHubOrderService {
         where += ' AND status NOT IN (?, ?)';
         whereArgs.addAll(['paid', 'cancelled']);
       }
-      
+
       if (date != null) {
         where += ' AND created_at LIKE ?';
         whereArgs.add('$date%');
       }
 
-      final List<Map<String, dynamic>> orders = await db.query('orders', where: where, whereArgs: whereArgs, orderBy: 'created_at DESC');
+      final List<Map<String, dynamic>> orders = await db.query(
+        'orders',
+        where: where,
+        whereArgs: whereArgs,
+        orderBy: 'created_at DESC',
+      );
       final mappedOrders = orders.map((o) => _injectStatus(o)).toList();
       return {'success': true, 'data': mappedOrders};
     } catch (e) {
@@ -426,7 +574,9 @@ class LocalHubOrderService {
       }
 
       final order = Map<String, dynamic>.from(orders.first);
-      final List<Map<String, dynamic>> items = await _db.getOrderItemsByUuid(order['uuid']);
+      final List<Map<String, dynamic>> items = await _db.getOrderItemsByUuid(
+        order['uuid'],
+      );
       order['order_items'] = items;
 
       return {'success': true, 'data': _injectStatus(order)};
@@ -449,7 +599,9 @@ class LocalHubOrderService {
 
   Map<String, dynamic> _injectStatus(Map<String, dynamic> row) {
     final Map<String, dynamic> newRow = Map<String, dynamic>.from(row);
-    newRow['sales_odr_pos_status'] = _statusToPosStatus(row['status']?.toString());
+    newRow['sales_odr_pos_status'] = _statusToPosStatus(
+      row['status']?.toString(),
+    );
     return newRow;
   }
 
@@ -474,19 +626,21 @@ class LocalHubOrderService {
         if (payloadStr != null && payloadStr.isNotEmpty) {
           try {
             final payload = jsonDecode(payloadStr);
-            seats = _toInt(payload['no_seats'] ?? payload['sales_odr_no_seats']);
+            seats = _toInt(
+              payload['no_seats'] ?? payload['sales_odr_no_seats'],
+            );
           } catch (e) {}
         }
-        
+
         // Fallback for seats if payload missing it
         if (seats == 0) {
-            seats = _toInt(order['total_seats'] ?? 0);
+          seats = _toInt(order['total_seats'] ?? 0);
         }
 
         if (!hubOccupancy.containsKey(tableId)) {
           hubOccupancy[tableId] = [];
         }
-        
+
         hubOccupancy[tableId]!.add({
           'sales_odr_id': order['uuid'],
           'sq_id': order['server_id'],
@@ -494,7 +648,9 @@ class LocalHubOrderService {
           'sq_inv_no': _toInt(order['inv_no']),
           'sales_odr_no_seats': seats,
           'status': order['status'],
-          'sales_odr_pos_status': _statusToPosStatus(order['status']?.toString()),
+          'sales_odr_pos_status': _statusToPosStatus(
+            order['status']?.toString(),
+          ),
           'branch_inv': order['branch_inv'],
         });
       }
@@ -510,35 +666,45 @@ class LocalHubOrderService {
           'ra_prcgrp_id': area['price_group_id'],
           'pos_tables': tables.map((t) {
             final tId = _toInt(t['id']);
-            
+
             // Start with static processing table from server
             List<dynamic> combined = [];
-            final cloudProcessing = t['processing_table'] is String 
-                ? jsonDecode(t['processing_table']) 
+            final cloudProcessing = t['processing_table'] is String
+                ? jsonDecode(t['processing_table'])
                 : (t['processing_table'] is List ? t['processing_table'] : []);
             combined.addAll(cloudProcessing);
-            
+
             // Merge with local hub orders
             if (hubOccupancy.containsKey(tId)) {
               for (var hubOrder in hubOccupancy[tId]!) {
                 final hUuid = hubOrder['sales_odr_id']?.toString();
                 final hServerId = hubOrder['sq_id']?.toString();
-                
+
                 // Use findIndex or similar to update existing if found
                 int existingIdx = combined.indexWhere((c) {
-                  final cUuid = (c['sales_odr_id'] ?? c['local_uuid'] ?? c['uuid'])?.toString();
-                  final cServerId = (c['sq_id'] ?? c['sales_odr_id'])?.toString();
-                  
-                  bool matchUuid = (hUuid != null && hUuid.isNotEmpty && hUuid == cUuid);
-                  bool matchServerId = (hServerId != null && hServerId.isNotEmpty && hServerId == cServerId);
+                  final cUuid =
+                      (c['sales_odr_id'] ?? c['local_uuid'] ?? c['uuid'])
+                          ?.toString();
+                  final cServerId = (c['sq_id'] ?? c['sales_odr_id'])
+                      ?.toString();
+
+                  bool matchUuid =
+                      (hUuid != null && hUuid.isNotEmpty && hUuid == cUuid);
+                  bool matchServerId =
+                      (hServerId != null &&
+                      hServerId.isNotEmpty &&
+                      hServerId == cServerId);
                   return matchUuid || matchServerId;
                 });
 
                 if (existingIdx != -1) {
                   // Update existing entry with fresh status info from Hub
-                  final existing = Map<String, dynamic>.from(combined[existingIdx]);
+                  final existing = Map<String, dynamic>.from(
+                    combined[existingIdx],
+                  );
                   existing['status'] = hubOrder['status'];
-                  existing['sales_odr_pos_status'] = hubOrder['sales_odr_pos_status'];
+                  existing['sales_odr_pos_status'] =
+                      hubOrder['sales_odr_pos_status'];
                   combined[existingIdx] = existing;
                 } else {
                   combined.add(hubOrder);
@@ -555,7 +721,9 @@ class LocalHubOrderService {
           }).toList(),
         });
       }
-      debugPrint('[LocalHubOrderService] fetchMasterTables returning ${dataList.length} areas');
+      debugPrint(
+        '[LocalHubOrderService] fetchMasterTables returning ${dataList.length} areas',
+      );
       return {'success': true, 'data': dataList};
     } catch (e) {
       debugPrint('[LocalHubOrderService] fetchMasterTables error: $e');
@@ -581,35 +749,44 @@ class LocalHubOrderService {
     }
   }
 
-  Future<Map<String, dynamic>> fetchMasterProducts({String? categoryId, int priceGroupId = 0}) async {
+  Future<Map<String, dynamic>> fetchMasterProducts({
+    String? categoryId,
+    int priceGroupId = 0,
+  }) async {
     try {
-      final products = await _db.getProducts(categoryId: categoryId, priceGroupId: priceGroupId);
+      final products = await _db.getProducts(
+        categoryId: categoryId,
+        priceGroupId: priceGroupId,
+      );
       return {'success': true, 'data': products};
     } catch (e) {
       return {'success': false, 'message': 'Failed to fetch products: $e'};
     }
   }
 
-  Future<Map<String, dynamic>> fetchMasterProductUnits(int productId, int priceGroupId) async {
+  Future<Map<String, dynamic>> fetchMasterProductUnits(
+    int productId,
+    int priceGroupId,
+  ) async {
     try {
-      final List<Map<String, dynamic>> localBulkUnits = await _db.getBulkProductUnits(productId);
-      
+      final List<Map<String, dynamic>> localBulkUnits = await _db
+          .getBulkProductUnits(productId);
+
       if (localBulkUnits.isNotEmpty) {
-        return {
-          'success': true, 
-          'data': localBulkUnits,
-          'source': 'bulk'
-        };
+        return {'success': true, 'data': localBulkUnits, 'source': 'bulk'};
       }
 
-      final units = await _db.getProductUnits(productId.toString(), priceGroupId);
+      final units = await _db.getProductUnits(
+        productId.toString(),
+        priceGroupId,
+      );
       final commonAddons = await _db.getCommonAddons();
 
       return {
         'success': true,
         'data': units,
         'commonAddon': commonAddons,
-        'source': 'standard'
+        'source': 'standard',
       };
     } catch (e) {
       return {'success': false, 'message': 'Failed to fetch product units: $e'};
@@ -618,7 +795,12 @@ class LocalHubOrderService {
 
   Future<List<Map<String, dynamic>>> _findOrder(String uuid) async {
     final db = await _db.database;
-    return await db.query('orders', where: 'uuid = ? OR server_id = ?', whereArgs: [uuid, uuid], limit: 1);
+    return await db.query(
+      'orders',
+      where: 'uuid = ? OR server_id = ?',
+      whereArgs: [uuid, uuid],
+      limit: 1,
+    );
   }
 
   double _toDouble(dynamic value) {

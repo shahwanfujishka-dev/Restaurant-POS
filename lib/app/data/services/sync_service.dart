@@ -27,9 +27,11 @@ class SyncService extends GetxService with WidgetsBindingObserver {
   final masterSyncProgress = 0.0.obs;
   final isHubSyncing = false.obs;
   Timer? _syncTimer;
-  static DateTime _touchedAt(Map<String, dynamic> o) => DateTime.tryParse(o['updated_at']?.toString() ?? '') ?? DateTime.tryParse(o['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+  static DateTime _touchedAt(Map<String, dynamic> o) =>
+      DateTime.tryParse(o['updated_at']?.toString() ?? '') ??
+      DateTime.tryParse(o['created_at']?.toString() ?? '') ??
+      DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration syncReminderAfter = Duration(minutes: 2);
-
 
   @override
   void onInit() {
@@ -88,14 +90,16 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
     Get.dialog(
       AlertDialog(
-        title: const Row(children: [
-          Icon(Icons.warning_amber_rounded, color: Colors.orange),
-          SizedBox(width: 8),
-          Text('Sync Required'),
-        ]),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Sync Required'),
+          ],
+        ),
         content: Text(
           '$count order(s) have not been synced to the live server for '
-              '${_ageText(age)}. Please sync now to avoid data loss.',
+          '${_ageText(age)}. Please sync now to avoid data loss.',
         ),
         actions: [
           TextButton(onPressed: () => Get.back(), child: const Text('Later')),
@@ -130,20 +134,29 @@ class SyncService extends GetxService with WidgetsBindingObserver {
   static int _createdKey(Map<String, dynamic> o) {
     final m = RegExp(r'^ORD-(\d+)-').firstMatch(o['uuid']?.toString() ?? '');
     if (m != null) return int.parse(m.group(1)!);
-    return DateTime.tryParse(o['created_at']?.toString() ?? '')
-        ?.millisecondsSinceEpoch ?? 0;
+    return DateTime.tryParse(
+          o['created_at']?.toString() ?? '',
+        )?.millisecondsSinceEpoch ??
+        0;
   }
 
   /// add_sales_order only. Saves the result so step 2 can run later. Returns null on failure.
   Future<Map<String, dynamic>?> _runStep1(
-      Map<String, dynamic> order, String createStr) async {
+    Map<String, dynamic> order,
+    String createStr,
+  ) async {
     final String uuid = order['uuid'];
     final create = Map<String, dynamic>.from(jsonDecode(createStr));
     create['is_pos_edit'] = false;
     create['client_uuid'] = uuid;
-    log("SyncService: [STEP 1] add_sales_order for $uuid (branch_ref_no: ${create['branch_ref_no']})");
+    log(
+      "SyncService: [STEP 1] add_sales_order for $uuid (branch_ref_no: ${create['branch_ref_no']})",
+    );
 
-    final res = await _apiService.post("mobileapp/pos/add_sales_order", data: create);
+    final res = await _apiService.post(
+      "mobileapp/pos/add_sales_order",
+      data: create,
+    );
     if (res.statusCode != 200) return null;
     dynamic d = res.data;
     if (d is String) d = jsonDecode(d);
@@ -152,11 +165,20 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       log("SyncService: ❌ Step 1 rejected: ${msg['msg']}");
       return null;
     }
-    final preview = (msg is Map ? msg['preview'] : null) ?? (d is Map ? d['preview'] : null);
-    final String serverId = preview?['sq_id']?.toString() ?? preview?['sales_odr_id']?.toString() ?? '';
-    final String invNo = preview?['sq_inv_no']?.toString() ?? preview?['sales_odr_inv_no']?.toString() ?? '';
-    String firstNonEmpty(List<dynamic> v) =>
-        v.map((e) => e?.toString() ?? '').firstWhere((s) => s.isNotEmpty, orElse: () => '');
+    final preview =
+        (msg is Map ? msg['preview'] : null) ??
+        (d is Map ? d['preview'] : null);
+    final String serverId =
+        preview?['sq_id']?.toString() ??
+        preview?['sales_odr_id']?.toString() ??
+        '';
+    final String invNo =
+        preview?['sq_inv_no']?.toString() ??
+        preview?['sales_odr_inv_no']?.toString() ??
+        '';
+    String firstNonEmpty(List<dynamic> v) => v
+        .map((e) => e?.toString() ?? '')
+        .firstWhere((s) => s.isNotEmpty, orElse: () => '');
 
     if (serverId.isEmpty || serverId == '0') {
       log("SyncService: ⚠️ Step 1 returned no serverId, will retry");
@@ -173,19 +195,28 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       'subs': preview?['sales_order_sub'] ?? [],
     };
     await _dbHelper.saveSetting('sync_step1_$uuid', jsonEncode(step1));
-    await _dbHelper.updateOrderStatusByUuid(uuid, order['status'],
-        isSynced: 0, serverId: serverId, invNo: invNo);
+    await _dbHelper.updateOrderStatusByUuid(
+      uuid,
+      order['status'],
+      isSynced: 0,
+      serverId: serverId,
+      invNo: invNo,
+    );
     log("SyncService: [STEP 1] ✅ serverId: $serverId invNo: $invNo");
     return step1;
   }
 
-  static List<Map<String, dynamic>> oldestFirst(List<Map<String, dynamic>> rows) {
+  static List<Map<String, dynamic>> oldestFirst(
+    List<Map<String, dynamic>> rows,
+  ) {
     final list = List<Map<String, dynamic>>.from(rows);
     list.sort((a, b) {
       final c = _touchedAt(a).compareTo(_touchedAt(b));
       if (c != 0) return c;
-      final ia = int.tryParse((a['local_id'] ?? a['id'])?.toString() ?? '') ?? 0;
-      final ib = int.tryParse((b['local_id'] ?? b['id'])?.toString() ?? '') ?? 0;
+      final ia =
+          int.tryParse((a['local_id'] ?? a['id'])?.toString() ?? '') ?? 0;
+      final ib =
+          int.tryParse((b['local_id'] ?? b['id'])?.toString() ?? '') ?? 0;
       return ia.compareTo(ib);
     });
     return list;
@@ -201,16 +232,20 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
   Future<void> syncPendingHubOrders() async {
     if (isHubSyncing.value) return;
-    if (!(DeviceConfig.isLocal && DeviceConfig.role == DeviceRole.client)) return;
+    if (!(DeviceConfig.isLocal && DeviceConfig.role == DeviceRole.client))
+      return;
 
     final hostIp = DeviceConfig.hostIp;
-    if (hostIp == null || hostIp.trim().isEmpty || !DeviceConfig.hasAuthToken) return;
+    if (hostIp == null || hostIp.trim().isEmpty || !DeviceConfig.hasAuthToken)
+      return;
 
     final pending = await _dbHelper.getOrdersPendingHubSync();
     if (pending.isEmpty) return;
 
     isHubSyncing.value = true;
-    log("SyncService: ${pending.length} order(s) pending hub sync, retrying...");
+    log(
+      "SyncService: ${pending.length} order(s) pending hub sync, retrying...",
+    );
 
     try {
       for (var order in pending) {
@@ -265,18 +300,24 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       dynamic d = res.data;
       if (d is String) d = jsonDecode(d);
       final data = d is Map ? d['data'] : null;
-      final src = (data is Map && data['preview'] is Map) ? data['preview'] : data;
-      final List allSubs = (src is Map ? src['sales_order_sub'] : null) as List? ?? [];
+      final src = (data is Map && data['preview'] is Map)
+          ? data['preview']
+          : data;
+      final List allSubs =
+          (src is Map ? src['sales_order_sub'] : null) as List? ?? [];
       if (allSubs.isEmpty) return false;
 
       // Tolerant field readers: this endpoint's field names can differ
       // from the add_sales_order response.
       int subIdOf(Map s) => _toInt(s['sales_ord_sub_id'] ?? s['salesub_id']);
-      int prdOf(Map s) => _toInt(s['sales_ord_sub_prod_id'] ?? s['salesub_prd_id']);
-      int unitOf(Map s) =>
-          _toInt(s['sales_ord_sub_unit_id'] ?? s['salesub_unit_id'] ?? s['sqs_unit_id']);
-      int parentOf(Map s) =>
-          _toInt(s['sales_odr_sub_addon_parent_prd_id'] ?? s['addon_parent_prd_id']);
+      int prdOf(Map s) =>
+          _toInt(s['sales_ord_sub_prod_id'] ?? s['salesub_prd_id']);
+      int unitOf(Map s) => _toInt(
+        s['sales_ord_sub_unit_id'] ?? s['salesub_unit_id'] ?? s['sqs_unit_id'],
+      );
+      int parentOf(Map s) => _toInt(
+        s['sales_odr_sub_addon_parent_prd_id'] ?? s['addon_parent_prd_id'],
+      );
       String keyOf(int prd, int unit, int parent) => '$prd|$unit|$parent';
 
       // ignore voided rows (flags == 0)
@@ -285,21 +326,25 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         return f == null || _toInt(f) != 0;
       }).toList();
 
-      log("SyncService: server sub keys → "
-          "${subs.map((s) => '${keyOf(prdOf(s), unitOf(s), parentOf(s))}=${subIdOf(s)}').toList()}");
+      log(
+        "SyncService: server sub keys → "
+        "${subs.map((s) => '${keyOf(prdOf(s), unitOf(s), parentOf(s))}=${subIdOf(s)}').toList()}",
+      );
 
       final serverIds = subs.map(subIdOf).toSet();
 
       bool needs(dynamic v) =>
           v == null ||
-              v.toString().isEmpty ||
-              v.toString() == 'null' ||
-              !serverIds.contains(_toInt(v));
+          v.toString().isEmpty ||
+          v.toString() == 'null' ||
+          !serverIds.contains(_toInt(v));
 
       // Pool of server sub ids per key
       final Map<String, List<int>> pool = {};
       for (final s in subs) {
-        pool.putIfAbsent(keyOf(prdOf(s), unitOf(s), parentOf(s)), () => []).add(subIdOf(s));
+        pool
+            .putIfAbsent(keyOf(prdOf(s), unitOf(s), parentOf(s)), () => [])
+            .add(subIdOf(s));
       }
 
       // Remove ids the payload already uses, from ALL pools
@@ -340,7 +385,9 @@ class SyncService extends GetxService with WidgetsBindingObserver {
             i['is_edited'] = _toInt(i['salesub_qty']) != _toInt(i['oldqty']);
           }
         } else {
-          log("SyncService: no server row for $prd|$unit|$parent (${i['prd_name']}) — will be sent as new");
+          log(
+            "SyncService: no server row for $prd|$unit|$parent (${i['prd_name']}) — will be sent as new",
+          );
         }
       }
       return true;
@@ -366,27 +413,42 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       for (final o in byPlaced) {
         final sid = o['server_id']?.toString() ?? '';
         final onServer = sid.isNotEmpty && !sid.startsWith('ORD-');
-        if (onServer) continue; // edits/settles of server orders belong to pass 2
+        if (onServer)
+          continue; // edits/settles of server orders belong to pass 2
         final uuid = o['uuid'].toString();
         if (await _isGivenUp(uuid)) continue;
 
         if (_needsTwoStep(o)) {
           final saved = await _dbHelper.getSetting('sync_step1_$uuid');
           if (saved == null || saved.isEmpty) {
-            await _runStep1(o, o['create_payload'].toString()); // add only, settle later
+            await _runStep1(
+              o,
+              o['create_payload'].toString(),
+            ); // add only, settle later
           }
         } else {
-          await _syncOrder(o); // plain create (or place-and-settle): full add now
+          await _syncOrder(
+            o,
+          ); // plain create (or place-and-settle): full add now
         }
       }
 
       // ── PASS 2: settles/edits in LAST-TOUCHED order (decides invoice numbers) ──
-      final remaining = await _dbHelper.getUnsyncedOrders(); // already sorted by last touched
-      for (final o in remaining) { await _syncOrder(o); }
+      final remaining = await _dbHelper
+          .getUnsyncedOrders(); // already sorted by last touched
+      for (final o in remaining) {
+        await _syncOrder(o);
+      }
 
       final unsyncedPayments = await _dbHelper.getUnsyncedPayments();
-      for (final p in unsyncedPayments) { await _syncPayment(p); }
-      try { await fillMissingProductUnits(); } catch (e) { log("$e"); }
+      for (final p in unsyncedPayments) {
+        await _syncPayment(p);
+      }
+      try {
+        await fillMissingProductUnits();
+      } catch (e) {
+        log("$e");
+      }
     } catch (e) {
       log("SyncService Error: $e");
     } finally {
@@ -395,10 +457,13 @@ class SyncService extends GetxService with WidgetsBindingObserver {
   }
 
   Future<bool> _isGivenUp(String uuid) async =>
-      (int.tryParse(await _dbHelper.getSetting('sync_fail_$uuid') ?? '0') ?? 0) >= 3;
+      (int.tryParse(await _dbHelper.getSetting('sync_fail_$uuid') ?? '0') ??
+          0) >=
+      3;
 
   Future<void> _registerFailure(String uuid) async {
-    final n = int.tryParse(await _dbHelper.getSetting('sync_fail_$uuid') ?? '0') ?? 0;
+    final n =
+        int.tryParse(await _dbHelper.getSetting('sync_fail_$uuid') ?? '0') ?? 0;
     await _dbHelper.saveSetting('sync_fail_$uuid', '${n + 1}');
   }
 
@@ -408,7 +473,6 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     if (value is String) return int.tryParse(value) ?? 0;
     return 0;
   }
-
 
   Future<void> _fetchAddonsPaginated(int userId) async {
     const int pageLimit = 1000;
@@ -433,14 +497,18 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       );
 
       if (response.statusCode != 200) {
-        log("SyncService: Addon page part_no=$partNo returned ${response.statusCode}, stopping.");
+        log(
+          "SyncService: Addon page part_no=$partNo returned ${response.statusCode}, stopping.",
+        );
         break;
       }
 
       final List<dynamic> pageData = response.data['data'] ?? [];
 
       if (pageData.isEmpty) {
-        log("SyncService: Addon page part_no=$partNo returned empty, stopping.");
+        log(
+          "SyncService: Addon page part_no=$partNo returned empty, stopping.",
+        );
         break;
       }
 
@@ -452,11 +520,15 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
       await _dbHelper.insertBulkProductUnits(pageData);
       totalFetched += pageData.length;
-      log("SyncService: Fetched ${pageData.length} addon records (part_no=$partNo), total so far: $totalFetched");
+      log(
+        "SyncService: Fetched ${pageData.length} addon records (part_no=$partNo), total so far: $totalFetched",
+      );
 
       // If the server returned fewer records than the page size, we're done
       if (pageData.length < pageLimit) {
-        log("SyncService: Last addon page reached (${pageData.length} < $pageLimit). Done.");
+        log(
+          "SyncService: Last addon page reached (${pageData.length} < $pageLimit). Done.",
+        );
         break;
       }
 
@@ -466,7 +538,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     log("SyncService: Addon fetch complete — $totalFetched total records.");
   }
 
-  /// Clears the current cart and table selection to ensure new master data 
+  /// Clears the current cart and table selection to ensure new master data
   /// doesn't conflict with existing session state.
   void _clearCartState() {
     try {
@@ -482,10 +554,10 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
   Future<void> syncMasterData() async {
     if (isMasterSyncing.value) return;
-    
+
     // Clear cart and table selection at the start of master sync
     _clearCartState();
-    
+
     isMasterSyncing.value = true;
     masterSyncProgress.value = 0.0;
 
@@ -494,76 +566,122 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       final int userId = int.tryParse(AppState.userId) ?? 0;
 
       // 1. Start slow background calls
-      log("SyncService: Initiating background fetch for units, addons and rates...");
+      log(
+        "SyncService: Initiating background fetch for units, addons and rates...",
+      );
 
+      final unitsFuture = _apiService
+          .post(
+            "mobileapp/unit/download",
+            data: {"part_no": 0, "limit": "", "sync_time": ""},
+          )
+          .catchError((e) {
+            log("SyncService: Error in mobileapp/unit/download: $e");
+            throw e;
+          });
 
-      final unitsFuture = _apiService.post("mobileapp/unit/download", data: {
-        "part_no": 0,
-        "limit": "",
-        "sync_time": "",
-      }).catchError((e) {
-        log("SyncService: Error in mobileapp/unit/download: $e");
-        throw e;
-      });
-
-      final stockRatesFuture = _apiService.post("mobileapp/stock_unit_rates/download", data: {
-        "part_no": 0,
-        "limit": "",
-        "sync_time": "",
-      }).catchError((e) {
-        log("SyncService: Error in mobileapp/stock_unit_rates/download: $e");
-        throw e;
-      });
+      final stockRatesFuture = _apiService
+          .post(
+            "mobileapp/stock_unit_rates/download",
+            data: {"part_no": 0, "limit": "", "sync_time": ""},
+          )
+          .catchError((e) {
+            log(
+              "SyncService: Error in mobileapp/stock_unit_rates/download: $e",
+            );
+            throw e;
+          });
 
       // 2. Parallelize metadata calls
       final apiResults = await Future.wait([
-        _apiService.post("mobileapp/category/download", data: {
-          "part_no": 0,
-          "limit": 1000,
-          "sync_time": "",
-        }).catchError((e) { log("SyncService: Error in mobileapp/category/download: $e"); throw e; }),
-        
-        _apiService.post('mobileapp/pos/get_pos_table', data: {
-          "usr_id": userId,
-        }).catchError((e) { log("SyncService: Error in mobileapp/pos/get_pos_table: $e"); throw e; }),
-        
-        _apiService.post("mobileapp/pos/list_favorite", data: {
-          "usr_id": userId,
-        }).catchError((e) { log("SyncService: Error in mobileapp/pos/list_favorite: $e"); throw e; }),
-        
-        _apiService.post("mobileapp/sales_settings/vat_type", data: {
-          "part_no": 0,
-          "limit": 500,
-          "sync_time": "",
-        }).catchError((e) { log("SyncService: Error in mobileapp/sales_settings/vat_type: $e"); throw e; }),
-        
-        _apiService.post('mobileapp/sales/get_branch_all_cash_account', data: {
-          "usr_id": userId,
-        }).catchError((e) { log("SyncService: Error in mobileapp/sales/get_branch_all_cash_account: $e"); throw e; }),
-        
-        _apiService.post('mobileapp/sales/get_branch_bank_account', data: {
-          "usr_id": userId,
-        }).catchError((e) { log("SyncService: Error in mobileapp/sales/get_branch_bank_account: $e"); throw e; }),
-        
-        _apiService.post('mobileapp/sales/get_all_captains', data: {
-          "usr_id": userId,
-        }).catchError((e) { log("SyncService: Error in mobileapp/sales/get_all_captains: $e"); throw e; }),
+        _apiService
+            .post(
+              "mobileapp/category/download",
+              data: {"part_no": 0, "limit": 1000, "sync_time": ""},
+            )
+            .catchError((e) {
+              log("SyncService: Error in mobileapp/category/download: $e");
+              throw e;
+            }),
 
-        _apiService.post('mobileapp/general_settings/get_upi_enable_status_and_upi_id', data: {
-          "usr_id" : userId,
-        }).catchError((e) { log("SyncService: Error in UPI settings: $e"); throw e; }),
+        _apiService
+            .post('mobileapp/pos/get_pos_table', data: {"usr_id": userId})
+            .catchError((e) {
+              log("SyncService: Error in mobileapp/pos/get_pos_table: $e");
+              throw e;
+            }),
+
+        _apiService
+            .post("mobileapp/pos/list_favorite", data: {"usr_id": userId})
+            .catchError((e) {
+              log("SyncService: Error in mobileapp/pos/list_favorite: $e");
+              throw e;
+            }),
+
+        _apiService
+            .post(
+              "mobileapp/sales_settings/vat_type",
+              data: {"part_no": 0, "limit": 500, "sync_time": ""},
+            )
+            .catchError((e) {
+              log(
+                "SyncService: Error in mobileapp/sales_settings/vat_type: $e",
+              );
+              throw e;
+            }),
+
+        _apiService
+            .post(
+              'mobileapp/sales/get_branch_all_cash_account',
+              data: {"usr_id": userId},
+            )
+            .catchError((e) {
+              log(
+                "SyncService: Error in mobileapp/sales/get_branch_all_cash_account: $e",
+              );
+              throw e;
+            }),
+
+        _apiService
+            .post(
+              'mobileapp/sales/get_branch_bank_account',
+              data: {"usr_id": userId},
+            )
+            .catchError((e) {
+              log(
+                "SyncService: Error in mobileapp/sales/get_branch_bank_account: $e",
+              );
+              throw e;
+            }),
+
+        _apiService
+            .post('mobileapp/sales/get_all_captains', data: {"usr_id": userId})
+            .catchError((e) {
+              log("SyncService: Error in mobileapp/sales/get_all_captains: $e");
+              throw e;
+            }),
+
+        _apiService
+            .post(
+              'mobileapp/general_settings/get_upi_enable_status_and_upi_id',
+              data: {"usr_id": userId},
+            )
+            .catchError((e) {
+              log("SyncService: Error in UPI settings: $e");
+              throw e;
+            }),
       ]);
 
       masterSyncProgress.value = 0.1;
 
       final categoryResponse = apiResults[0];
-      final tablesResponse   = apiResults[1];
+      final tablesResponse = apiResults[1];
       final favoritesResponse = apiResults[2];
-      final vatResponse       = apiResults[3];
-      final cashAccResponse   = apiResults[4];
-      final bankAccResponse   = apiResults[5];
-      final captainsResponse  = apiResults[6];
-      final upiResponse       = apiResults[7];
+      final vatResponse = apiResults[3];
+      final cashAccResponse = apiResults[4];
+      final bankAccResponse = apiResults[5];
+      final captainsResponse = apiResults[6];
+      final upiResponse = apiResults[7];
 
       // Save UPI Settings
       if (upiResponse.statusCode == 200) {
@@ -583,10 +701,10 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
           storage.write('as_upi_enable', upiEnable);
           storage.write('as_upi_id', upiId);
-          
+
           await _dbHelper.saveSetting('as_upi_enable', upiEnable.toString());
           await _dbHelper.saveSetting('as_upi_id', upiId);
-          
+
           log("SyncService: Saved UPI Settings: Enable=$upiEnable, ID=$upiId");
         }
       }
@@ -602,19 +720,27 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       // Save Cash & Bank Accounts
       if (cashAccResponse.statusCode == 200) {
         final List<dynamic> data = cashAccResponse.data['data'] ?? [];
-        await _dbHelper.insertLedgers(data.cast<Map<String, dynamic>>(), 'cash');
+        await _dbHelper.insertLedgers(
+          data.cast<Map<String, dynamic>>(),
+          'cash',
+        );
         log("SyncService: Cached ${data.length} cash accounts.");
       }
       if (bankAccResponse.statusCode == 200) {
         final List<dynamic> data = bankAccResponse.data['data'] ?? [];
-        await _dbHelper.insertLedgers(data.cast<Map<String, dynamic>>(), 'bank');
+        await _dbHelper.insertLedgers(
+          data.cast<Map<String, dynamic>>(),
+          'bank',
+        );
         log("SyncService: Cached ${data.length} bank accounts.");
       }
 
       // Save Captains
       if (captainsResponse.statusCode == 200) {
         final List<dynamic> captainsData = captainsResponse.data['data'] ?? [];
-        await _dbHelper.insertCaptains(captainsData.cast<Map<String, dynamic>>());
+        await _dbHelper.insertCaptains(
+          captainsData.cast<Map<String, dynamic>>(),
+        );
         log("SyncService: Cached ${captainsData.length} captains.");
       }
 
@@ -625,11 +751,12 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         for (int i = 0; i < data.length; i++) {
           final json = data[i];
           categoriesList.add({
-            'id':               (json['cat_id']            ?? '').toString().trim(),
-            'name':             (json['cat_name']          ?? '').toString(),
-            'cat_pos':          (json['cat_pos']           ?? '').toString(),
-            'token_printer_id': (json['cat_token_printer'] as num? ?? 0).toInt(),
-            'sort_order':       i,
+            'id': (json['cat_id'] ?? '').toString().trim(),
+            'name': (json['cat_name'] ?? '').toString(),
+            'cat_pos': (json['cat_pos'] ?? '').toString(),
+            'token_printer_id': (json['cat_token_printer'] as num? ?? 0)
+                .toInt(),
+            'sort_order': i,
           });
         }
       }
@@ -654,8 +781,13 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           if (fId != null) {
             favoritesData.add({
               'id': fId,
-              'name': json['fav_name'] ?? json['favp_name'] ?? json['name'] ?? '',
-              'image': json['fav_img_url'] ?? json['favp_img_url'] ?? json['image'] ?? '',
+              'name':
+                  json['fav_name'] ?? json['favp_name'] ?? json['name'] ?? '',
+              'image':
+                  json['fav_img_url'] ??
+                  json['favp_img_url'] ??
+                  json['image'] ??
+                  '',
             });
           }
         }
@@ -684,10 +816,16 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         log("SyncService Error processing units: $e");
       }
 
-      final posCategories = categoriesList.where((c) => c['cat_pos'] == "1").toList();
+      final posCategories = categoriesList
+          .where((c) => c['cat_pos'] == "1")
+          .toList();
 
       // 7. Sync Products
-      await _syncProductsInParallel(priceGroupIds, posCategories, favoritesData);
+      await _syncProductsInParallel(
+        priceGroupIds,
+        posCategories,
+        favoritesData,
+      );
 
       // 8. Process Stock Unit Rates (New)
       try {
@@ -715,7 +853,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       }
 
       log("SyncService: Master data sync complete.");
-      
+
       // Refresh CartController if it's active so it picks up the new captains/ledgers
       if (Get.isRegistered<CartController>()) {
         Get.find<CartController>().loadCaptains();
@@ -729,43 +867,66 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _syncProductsInParallel(Set<int> priceGroupIds, List<Map<String, dynamic>> posCategories, List<Map<String, dynamic>> favorites) async {
+  Future<void> _syncProductsInParallel(
+    Set<int> priceGroupIds,
+    List<Map<String, dynamic>> posCategories,
+    List<Map<String, dynamic>> favorites,
+  ) async {
     final pgList = priceGroupIds.toList();
-    int totalToSync = pgList.length * (1 + posCategories.length + favorites.length);
+    int totalToSync =
+        pgList.length * (1 + posCategories.length + favorites.length);
     int syncedSoFar = 0;
 
     const pgChunkSize = 2;
     for (int i = 0; i < pgList.length; i += pgChunkSize) {
-      final pgChunk = pgList.sublist(i, (i + pgChunkSize > pgList.length) ? pgList.length : i + pgChunkSize);
+      final pgChunk = pgList.sublist(
+        i,
+        (i + pgChunkSize > pgList.length) ? pgList.length : i + pgChunkSize,
+      );
 
-      await Future.wait(pgChunk.map((pgId) async {
-        await _fetchAndInsertProducts(pgId: pgId);
-        syncedSoFar++;
-        _updateMasterProgress(syncedSoFar, totalToSync);
-
-        // Categories
-        const catChunkSize = 5;
-        for (int j = 0; j < posCategories.length; j += catChunkSize) {
-          final catChunk = posCategories.sublist(j, (j + catChunkSize > posCategories.length) ? posCategories.length : j + catChunkSize);
-          await Future.wait(catChunk.map((cat) async {
-            final catId = cat['id'] as String;
-            await _fetchAndInsertProducts(pgId: pgId, catId: catId, forceCatId: catId);
-            syncedSoFar++;
-            _updateMasterProgress(syncedSoFar, totalToSync);
-          }));
-        }
-
-        // Favorites
-        for (var fav in favorites) {
-          final dynamic fId = fav['id'] ?? fav['fav_id'] ?? fav['favp_id'];
-          final int favId = fId is int ? fId : int.tryParse(fId.toString()) ?? 0;
-          if (favId > 0) {
-            await _fetchAndInsertProducts(pgId: pgId, favId: favId);
-          }
+      await Future.wait(
+        pgChunk.map((pgId) async {
+          await _fetchAndInsertProducts(pgId: pgId);
           syncedSoFar++;
           _updateMasterProgress(syncedSoFar, totalToSync);
-        }
-      }));
+
+          // Categories
+          const catChunkSize = 5;
+          for (int j = 0; j < posCategories.length; j += catChunkSize) {
+            final catChunk = posCategories.sublist(
+              j,
+              (j + catChunkSize > posCategories.length)
+                  ? posCategories.length
+                  : j + catChunkSize,
+            );
+            await Future.wait(
+              catChunk.map((cat) async {
+                final catId = cat['id'] as String;
+                await _fetchAndInsertProducts(
+                  pgId: pgId,
+                  catId: catId,
+                  forceCatId: catId,
+                );
+                syncedSoFar++;
+                _updateMasterProgress(syncedSoFar, totalToSync);
+              }),
+            );
+          }
+
+          // Favorites
+          for (var fav in favorites) {
+            final dynamic fId = fav['id'] ?? fav['fav_id'] ?? fav['favp_id'];
+            final int favId = fId is int
+                ? fId
+                : int.tryParse(fId.toString()) ?? 0;
+            if (favId > 0) {
+              await _fetchAndInsertProducts(pgId: pgId, favId: favId);
+            }
+            syncedSoFar++;
+            _updateMasterProgress(syncedSoFar, totalToSync);
+          }
+        }),
+      );
     }
   }
 
@@ -782,21 +943,25 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       log("SyncService: No missing product units, nothing to fill.");
       return;
     }
-    log("SyncService: ${missingIds.length} products missing unit data, fetching...");
+    log(
+      "SyncService: ${missingIds.length} products missing unit data, fetching...",
+    );
 
     final int userId = int.tryParse(AppState.userId) ?? 0;
     const chunkSize = 50;
 
     for (int i = 0; i < missingIds.length; i += chunkSize) {
       final chunk = missingIds.sublist(
-        i, (i + chunkSize > missingIds.length) ? missingIds.length : i + chunkSize,
+        i,
+        (i + chunkSize > missingIds.length) ? missingIds.length : i + chunkSize,
       );
       try {
         final response = await _apiService.post(
           "mobileapp/product_unit/get_prd_unit_and_addon",
           data: {
             "usr_id": userId,
-            "prd_ids": chunk, // adjust param name to match your actual endpoint contract
+            "prd_ids":
+                chunk, // adjust param name to match your actual endpoint contract
             "limit": chunkSize,
             "sync_time": "",
           },
@@ -821,9 +986,9 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     int? favId,
   }) async {
     final requestData = <String, dynamic>{
-      "usr_id":         int.tryParse(AppState.userId) ?? 0,
+      "usr_id": int.tryParse(AppState.userId) ?? 0,
       "price_group_id": pgId,
-      "keyword":        "",
+      "keyword": "",
     };
     if (catId != null) requestData["category_id"] = int.tryParse(catId) ?? 0;
     if (favId != null) requestData["fav_id"] = favId;
@@ -849,36 +1014,39 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         final String prdId = (json['prd_id'] ?? '').toString();
 
         String imgUrl = json['prd_img_url']?.toString() ?? '';
-        if (imgUrl.isNotEmpty && baseUrl.isNotEmpty && !imgUrl.startsWith('http')) {
+        if (imgUrl.isNotEmpty &&
+            baseUrl.isNotEmpty &&
+            !imgUrl.startsWith('http')) {
           imgUrl = baseUrl + imgUrl;
         }
 
         products.add({
-          'id':             prdId,
+          'id': prdId,
           'price_group_id': pgId,
-          'name':           (json['prd_name']        ?? '').toString(),
-          'category_id':    forceCatId ?? (json['prd_cat_id'] ?? '').toString().trim(),
-          'price':          (json['sale_rate']        as num? ?? 0.0).toDouble(),
-          'prd_tax':        (json['prd_tax']          as num? ?? 0.0).toDouble(),
-          'image':          imgUrl,
-          'unit_display':   (json['unit_display']     ?? '').toString(),
-          'tax_cat_id':     (json['prd_tax_cat_id']   as num? ?? 0).toInt(),
-          'tax_per':        (json['tax_per']           as num? ?? 0.0).toDouble(),
-          'is_veg':         int.tryParse(json['prd_is_veg']?.toString() ?? "0") ?? 0,
-          'sort_order':     i,
+          'name': (json['prd_name'] ?? '').toString(),
+          'category_id':
+              forceCatId ?? (json['prd_cat_id'] ?? '').toString().trim(),
+          'price': (json['sale_rate'] as num? ?? 0.0).toDouble(),
+          'prd_tax': (json['prd_tax'] as num? ?? 0.0).toDouble(),
+          'image': imgUrl,
+          'unit_display': (json['unit_display'] ?? '').toString(),
+          'tax_cat_id': (json['prd_tax_cat_id'] as num? ?? 0).toInt(),
+          'tax_per': (json['tax_per'] as num? ?? 0.0).toDouble(),
+          'is_veg': int.tryParse(json['prd_is_veg']?.toString() ?? "0") ?? 0,
+          'sort_order': i,
         });
 
         final double saleRate = (json['sale_rate'] as num? ?? 0.0).toDouble();
         final String unitDisplay = (json['unit_display'] ?? '').toString();
         basicUnits.add({
-          'prd_id':         prdId,
+          'prd_id': prdId,
           'price_group_id': pgId,
-          'unit_id':        0,
-          'unit_name':      unitDisplay.isNotEmpty ? unitDisplay : 'Unit',
-          'unit_display':   unitDisplay.isNotEmpty ? unitDisplay : 'Unit',
-          'rate':           saleRate,
-          'unit_base_qty':  1.0,
-          'exist_addons':   '[]',
+          'unit_id': 0,
+          'unit_name': unitDisplay.isNotEmpty ? unitDisplay : 'Unit',
+          'unit_display': unitDisplay.isNotEmpty ? unitDisplay : 'Unit',
+          'rate': saleRate,
+          'unit_base_qty': 1.0,
+          'exist_addons': '[]',
         });
 
         if (favId != null) {
@@ -897,7 +1065,9 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         await _dbHelper.insertFavoriteProducts(favId, pgId, favoriteProductIds);
       }
     } catch (e) {
-      log("SyncService: Failed to fetch products (pgId=$pgId, catId=$catId): $e");
+      log(
+        "SyncService: Failed to fetch products (pgId=$pgId, catId=$catId): $e",
+      );
     }
   }
 
@@ -906,9 +1076,10 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       final createStr = order['create_payload']?.toString();
       if (createStr == null || createStr.isEmpty) return false;
       final sid = order['server_id']?.toString();
-      if (sid != null && sid.isNotEmpty && !sid.startsWith('ORD-')) return false; // already on server
+      if (sid != null && sid.isNotEmpty && !sid.startsWith('ORD-'))
+        return false; // already on server
       final payload = jsonDecode(order['payload'] as String);
-      if (_safeInt(payload['res_status']) != 3) return false;                      // not settled
+      if (_safeInt(payload['res_status']) != 3) return false; // not settled
       final c = jsonDecode(createStr) as Map<String, dynamic>;
       final createAlreadySettled =
           _safeInt(c['res_status']) == 3 || _safeInt(c['sale_pay_type']) != 0;
@@ -919,11 +1090,11 @@ class SyncService extends GetxService with WidgetsBindingObserver {
   }
 
   Future<void> _syncTwoStep(
-      Map<String, dynamic> order,
-      Map<String, dynamic> settle,
-      String createStr,
-      String? savedStep1,
-      ) async {
+    Map<String, dynamic> order,
+    Map<String, dynamic> settle,
+    String createStr,
+    String? savedStep1,
+  ) async {
     final String uuid = order['uuid'];
     Map<String, dynamic> step1;
 
@@ -945,16 +1116,20 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     final List subs = (step1['subs'] as List?) ?? [];
     final Map<String, List<int>> pool = {};
     for (final s in subs) {
-      final key = '${s['sales_ord_sub_prod_id']}|${s['sales_odr_sub_is_addon']}|${s['sales_odr_sub_addon_parent_prd_id'] ?? 0}';
+      final key =
+          '${s['sales_ord_sub_prod_id']}|${s['sales_odr_sub_is_addon']}|${s['sales_odr_sub_addon_parent_prd_id'] ?? 0}';
       pool.putIfAbsent(key, () => []).add(_toInt(s['sales_ord_sub_id']));
     }
 
     final List<Map<String, dynamic>> items = [];
     for (final raw in (settle['sale_items'] as List)) {
       final si = Map<String, dynamic>.from(raw);
-      final key = '${si['salesub_prd_id']}|${si['is_addon'] ?? 0}|${si['addon_parent_prd_id'] ?? 0}';
+      final key =
+          '${si['salesub_prd_id']}|${si['is_addon'] ?? 0}|${si['addon_parent_prd_id'] ?? 0}';
       final ids = pool[key];
-      si['sales_ord_sub_id'] = (ids != null && ids.isNotEmpty) ? ids.removeAt(0) : "";
+      si['sales_ord_sub_id'] = (ids != null && ids.isNotEmpty)
+          ? ids.removeAt(0)
+          : "";
       si['is_edited'] = false;
       si['oldqty'] = si['salesub_qty'];
       si['is_deleted'] = 0;
@@ -974,7 +1149,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         "sq_inv_no": sqInv,
         "sales_odr_branch_inv": step1['so_branch'],
         "total_amount": settle['sq_total'],
-      }
+      },
     ];
 
     final body = {
@@ -985,8 +1160,13 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       'sq_inv_no': sqInv,
     };
 
-    log("SyncService: [STEP 2] update_sales_order for $uuid (sq_id: $sqId, branch_ref_no: ${body['branch_ref_no']})");
-    final res2 = await _apiService.post("mobileapp/pos/update_sales_order", data: body);
+    log(
+      "SyncService: [STEP 2] update_sales_order for $uuid (sq_id: $sqId, branch_ref_no: ${body['branch_ref_no']})",
+    );
+    final res2 = await _apiService.post(
+      "mobileapp/pos/update_sales_order",
+      data: body,
+    );
     if (res2.statusCode != 200) return;
     dynamic d2 = res2.data;
     if (d2 is String) d2 = jsonDecode(d2);
@@ -995,13 +1175,22 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       log("SyncService: ❌ Step 2 rejected: ${msg2['msg']}");
       return;
     }
-    final preview2 = (msg2 is Map ? msg2['preview'] : null) ?? (d2 is Map ? d2['preview'] : null);
-    final String? finalBranch = preview2?['sales_odr_sales_branch_inv']?.toString() ??
+    final preview2 =
+        (msg2 is Map ? msg2['preview'] : null) ??
+        (d2 is Map ? d2['preview'] : null);
+    final String? finalBranch =
+        preview2?['sales_odr_sales_branch_inv']?.toString() ??
         preview2?['sales_odr_branch_inv']?.toString() ??
         preview2?['sq_branch_qt_no']?.toString();
 
-    await _dbHelper.updateOrderStatusByUuid(uuid, order['status'],
-        isSynced: 1, serverId: step1['sq_id'].toString(), invNo: step1['inv_no'].toString(), branchInv: finalBranch);
+    await _dbHelper.updateOrderStatusByUuid(
+      uuid,
+      order['status'],
+      isSynced: 1,
+      serverId: step1['sq_id'].toString(),
+      invNo: step1['inv_no'].toString(),
+      branchInv: finalBranch,
+    );
     await _dbHelper.saveSetting('sync_step1_$uuid', '');
     log("SyncService: [STEP 2] ✅ $uuid settled, branchInv: $finalBranch");
   }
@@ -1028,7 +1217,8 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
       // A real server id always means update, never add
       final String? serverIdInDb = order['server_id'];
-      final bool isRealServerOrder = serverIdInDb != null &&
+      final bool isRealServerOrder =
+          serverIdInDb != null &&
           serverIdInDb.isNotEmpty &&
           !serverIdInDb.startsWith('ORD-');
 
@@ -1046,7 +1236,8 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         try {
           final c = jsonDecode(createStr) as Map<String, dynamic>;
           createAlreadySettled =
-              _safeInt(c['res_status']) == 3 || _safeInt(c['sale_pay_type']) != 0;
+              _safeInt(c['res_status']) == 3 ||
+              _safeInt(c['sale_pay_type']) != 0;
         } catch (_) {}
       }
 
@@ -1062,7 +1253,9 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
       // Payload says edit but there is no server id -> treat as new order
       if (payload['is_pos_edit'] == true && !isRealServerOrder) {
-        log("SyncService: Order $uuid marked as edit but no server ID found. Falling back to add_sales_order.");
+        log(
+          "SyncService: Order $uuid marked as edit but no server ID found. Falling back to add_sales_order.",
+        );
         payload['is_pos_edit'] = false;
         payload.remove('sq_id');
         payload.remove('sq_inv_no');
@@ -1074,16 +1267,24 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           ? "mobileapp/pos/update_sales_order"
           : "mobileapp/pos/add_sales_order";
 
-      log("SyncService: Syncing $uuid via $endpoint (isEdit: $isEdit, sq_inv_no: ${payload['sq_inv_no']})");
+      log(
+        "SyncService: Syncing $uuid via $endpoint (isEdit: $isEdit, sq_inv_no: ${payload['sq_inv_no']})",
+      );
 
       if (payload['sale_items'] != null) {
         final List items = payload['sale_items'];
-        log("SyncService: [PAYLOAD CHECK] Order $uuid contains ${items.length} items.");
+        log(
+          "SyncService: [PAYLOAD CHECK] Order $uuid contains ${items.length} items.",
+        );
         for (int i = 0; i < items.length; i++) {
-          log("  - Item #$i: ${items[i]['prd_name']} | Qty: ${items[i]['salesub_qty']} | Rate: ${items[i]['salesub_rate']}");
+          log(
+            "  - Item #$i: ${items[i]['prd_name']} | Qty: ${items[i]['salesub_qty']} | Rate: ${items[i]['salesub_rate']}",
+          );
         }
       } else {
-        log("SyncService: ⚠️ WARNING! No sale_items found in payload for $uuid");
+        log(
+          "SyncService: ⚠️ WARNING! No sale_items found in payload for $uuid",
+        );
       }
 
       // Repair edit payload using values stored on the row
@@ -1094,18 +1295,22 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           payload['sq_inv_no'] = inv;
           final rt = Map<String, dynamic>.from(payload['res_table'] ?? {});
           final List pt = (rt['processing_table'] as List?) ?? [];
-          final Map<String, dynamic> first =
-          pt.isNotEmpty ? Map<String, dynamic>.from(pt.first) : {};
+          final Map<String, dynamic> first = pt.isNotEmpty
+              ? Map<String, dynamic>.from(pt.first)
+              : {};
           rt['processing_table'] = [
             {
               ...first,
               'sq_id': sid,
               'sq_inv_no': inv,
-              'sales_odr_branch_inv': order['branch_inv'] ?? payload['branch_ref_no'],
-            }
+              'sales_odr_branch_inv':
+                  order['branch_inv'] ?? payload['branch_ref_no'],
+            },
           ];
           payload['res_table'] = rt;
-          log("SyncService: Repaired edit payload for $uuid → sq_id $sid, inv $inv");
+          log(
+            "SyncService: Repaired edit payload for $uuid → sq_id $sid, inv $inv",
+          );
         }
       }
 
@@ -1115,19 +1320,25 @@ class SyncService extends GetxService with WidgetsBindingObserver {
             (payload['res_table']?['processing_table'] as List?) ?? [];
 
         if (sqInvNo == 0 || processingTable.isEmpty) {
-          log("SyncService: ⚠️ Skipping edit $uuid — invalid payload. NOT marking as synced.");
+          log(
+            "SyncService: ⚠️ Skipping edit $uuid — invalid payload. NOT marking as synced.",
+          );
           return;
         }
 
         final ok = await _fillSubIdsFromServer(payload);
         if (!ok) {
-          log("SyncService: Could not resolve sub ids for $uuid, skipping this round.");
+          log(
+            "SyncService: Could not resolve sub ids for $uuid, skipping this round.",
+          );
           return;
         }
       }
 
       log("SyncService: About to POST ${payload.length} fields to $endpoint");
-      log("SyncService: Full payload sale_items: ${jsonEncode(payload['sale_items'])}");
+      log(
+        "SyncService: Full payload sale_items: ${jsonEncode(payload['sale_items'])}",
+      );
       final response = await _apiService.post(endpoint, data: payload);
 
       if (response.statusCode == 200) {
@@ -1146,20 +1357,24 @@ class SyncService extends GetxService with WidgetsBindingObserver {
 
         if (data is Map) {
           final message = data['message'];
-          final preview = (message is Map ? message['preview'] : null) ?? data['preview'];
+          final preview =
+              (message is Map ? message['preview'] : null) ?? data['preview'];
 
-          final String serverId = preview?['sq_id']?.toString() ??
+          final String serverId =
+              preview?['sq_id']?.toString() ??
               preview?['sales_odr_id']?.toString() ??
               data['id']?.toString() ??
               data['sales_odr_id']?.toString() ??
               '';
 
-          final String? invNo = preview?['sq_inv_no']?.toString() ??
+          final String? invNo =
+              preview?['sq_inv_no']?.toString() ??
               preview?['sales_odr_inv_no']?.toString() ??
               data['inv_no']?.toString() ??
               data['sales_odr_inv_no']?.toString();
 
-          final String? branchInv = preview?['sales_odr_sales_branch_inv']?.toString() ??
+          final String? branchInv =
+              preview?['sales_odr_sales_branch_inv']?.toString() ??
               preview?['sales_odr_branch_inv']?.toString() ??
               data['sales_odr_branch_inv']?.toString();
 
@@ -1172,12 +1387,16 @@ class SyncService extends GetxService with WidgetsBindingObserver {
               invNo: invNo,
               branchInv: branchInv,
             );
-            log("SyncService: ✅ Synced $uuid → serverId: $serverId, invNo: $invNo, branchInv: $branchInv");
+            log(
+              "SyncService: ✅ Synced $uuid → serverId: $serverId, invNo: $invNo, branchInv: $branchInv",
+            );
             if (Get.isRegistered<OrdersController>()) {
               Get.find<OrdersController>().fetchOrdersSafely();
             }
           } else {
-            log("SyncService: ⚠️ Server returned 200 but no serverId for $uuid — will retry");
+            log(
+              "SyncService: ⚠️ Server returned 200 but no serverId for $uuid — will retry",
+            );
             log("SyncService: Response keys were: ${data.keys.toList()}");
           }
         }
@@ -1195,7 +1414,8 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     final String orderUuid = payment['order_uuid'];
     final int localPaymentId = payment['id'];
 
-    if (!_inFlightPayments.add(localPaymentId)) return; // already syncing this payment
+    if (!_inFlightPayments.add(localPaymentId))
+      return; // already syncing this payment
 
     try {
       final db = await _dbHelper.database;
@@ -1206,7 +1426,9 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       );
 
       if (orders.isEmpty) {
-        log("SyncService: No order found for payment uuid=$orderUuid, marking done.");
+        log(
+          "SyncService: No order found for payment uuid=$orderUuid, marking done.",
+        );
         await _dbHelper.updatePaymentSyncStatus(localPaymentId, 1);
         return;
       }
@@ -1224,7 +1446,9 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           final int payType = _toInt(orderPayload['sale_pay_type']);
 
           if (resStatus == 3 || payType != 0) {
-            log("SyncService: Payment for $orderUuid is already carried in order payload (res_status: $resStatus). Marking payment sync done.");
+            log(
+              "SyncService: Payment for $orderUuid is already carried in order payload (res_status: $resStatus). Marking payment sync done.",
+            );
             await _dbHelper.updatePaymentSyncStatus(localPaymentId, 1);
             return;
           }
@@ -1237,13 +1461,20 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       final String? invNo = order['inv_no']?.toString();
 
       if (serverId == null || serverId.isEmpty || serverId.startsWith('ORD-')) {
-        log("SyncService: Order $orderUuid not yet synced, skipping payment API call.");
+        log(
+          "SyncService: Order $orderUuid not yet synced, skipping payment API call.",
+        );
         return;
       }
 
       // Only reached for orders placed as draft/pending and paid separately
       final Map<String, int> payTypeMap = {
-        'cash': 2, 'card': 5, 'bank': 3, 'credit': 1, 'multiple': 4, 'compliment': 2,
+        'cash': 2,
+        'card': 5,
+        'bank': 3,
+        'credit': 1,
+        'multiple': 4,
+        'compliment': 2,
       };
 
       final String method = payment['method'].toString().toLowerCase();
@@ -1260,16 +1491,21 @@ class SyncService extends GetxService with WidgetsBindingObserver {
         "settle_date": payment['created_at'].toString().split('T')[0],
         "sale_acc_ledger_id_cash": payment['cash_ledger_id'],
         "sale_acc_ledger_id_bank": payment['bank_ledger_id'],
-        "sq_disc": isCompliment ? payment['amount'] : payment['discount_amount'] ?? 0,
+        "sq_disc": isCompliment
+            ? payment['amount']
+            : payment['discount_amount'] ?? 0,
         "is_compliment": isCompliment ? 1 : 0,
       };
 
       if (order['payload'] != null) {
         try {
           final payload = jsonDecode(order['payload'] as String);
-          if (payload['sale_items'] != null && (payload['sale_items'] as List).isNotEmpty) {
+          if (payload['sale_items'] != null &&
+              (payload['sale_items'] as List).isNotEmpty) {
             body['sale_items'] = payload['sale_items'];
-            log("SyncService: [SETTLEMENT] Attaching ${(payload['sale_items'] as List).length} items.");
+            log(
+              "SyncService: [SETTLEMENT] Attaching ${(payload['sale_items'] as List).length} items.",
+            );
           }
         } catch (e) {
           log("SyncService: Error extracting sale_items: $e");
@@ -1277,7 +1513,10 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       }
 
       log("SyncService: Sending settlement for order $serverId...");
-      final response = await _apiService.post("mobileapp/pos/settle_sales_order", data: body);
+      final response = await _apiService.post(
+        "mobileapp/pos/settle_sales_order",
+        data: body,
+      );
 
       if (response.statusCode == 200) {
         await _dbHelper.updatePaymentSyncStatus(localPaymentId, 1);

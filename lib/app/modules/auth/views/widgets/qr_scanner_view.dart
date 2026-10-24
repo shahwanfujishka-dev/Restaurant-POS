@@ -13,7 +13,6 @@ class QrScannerView extends StatefulWidget {
 
 class _QrScannerViewState extends State<QrScannerView>
     with SingleTickerProviderStateMixin {
-
   late AnimationController _controller;
   late Animation<double> _animation;
   bool isScanned = false;
@@ -147,10 +146,7 @@ class _QrScannerViewState extends State<QrScannerView>
                         top: _animation.value,
                         left: 0,
                         right: 0,
-                        child: Container(
-                          height: 2,
-                          color: Colors.green,
-                        ),
+                        child: Container(height: 2, color: Colors.green),
                       );
                     },
                   ),

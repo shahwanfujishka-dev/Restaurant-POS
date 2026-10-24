@@ -51,9 +51,7 @@ class PrimaryButton extends StatelessWidget {
       style: ElevatedButton.styleFrom(
         backgroundColor: buttonColor,
         minimumSize: Size(width ?? 0, height ?? 50.h),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8.r),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
         disabledBackgroundColor: buttonColor.withOpacity(0.6),
         padding: icon != null ? EdgeInsets.symmetric(horizontal: 12.w) : null,
       ),
@@ -65,10 +63,7 @@ class PrimaryButton extends StatelessWidget {
             Icon(icon, size: AppTypography.sizeText, color: Colors.white),
             SizedBox(width: 1.w),
           ],
-          Text(
-            text,
-            style: style ?? AppTypography.button,
-          ),
+          Text(text, style: style ?? AppTypography.button),
         ],
       ),
     );

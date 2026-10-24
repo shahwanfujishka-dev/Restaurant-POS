@@ -9,7 +9,6 @@ import 'package:restaurant_pos/helper/screen_type.dart';
 
 import '../../../../data/utils/AppState.dart';
 
-
 class CashierView extends GetView<CashierController> {
   const CashierView({super.key});
 
@@ -21,7 +20,7 @@ class CashierView extends GetView<CashierController> {
       backgroundColor: colors.bg,
       appBar: AppBar(
         title: Text(
-          "Checkout",
+          "checkout".tr,
           style: AppTypography.appBarTitle.copyWith(
             color: colors.text,
             fontWeight: FontWeight.bold,
@@ -64,12 +63,6 @@ class CashierView extends GetView<CashierController> {
               const SizedBox(height: 10),
               Divider(height: 1, color: colors.border.withOpacity(0.5)),
               const SizedBox(height: 16),
-              // Column(
-              //   children: [
-              //     _cashSection(colors),
-              //     const SizedBox(height: 100),
-              //   ],
-              // ),
             ],
           ),
         ),
@@ -84,10 +77,7 @@ class CashierView extends GetView<CashierController> {
     );
   }
 
-  // ─────────────────────────────────────────────
-  //  HEADER
-  // ─────────────────────────────────────────────
-
+  // Header
   Widget _minimalHeader(dynamic colors) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -153,7 +143,7 @@ class CashierView extends GetView<CashierController> {
                     if (showDropdowns) ...[
                       if (showCash)
                         CashierWidgets.minimalDropdown(
-                          "Cash Account",
+                          "cash_account",
                           controller.cashAccounts,
                           controller.selectedCashLedgerId.value,
                           (val) => controller.selectedCashLedgerId.value = val!,
@@ -163,8 +153,8 @@ class CashierView extends GetView<CashierController> {
                       if (showBank)
                         CashierWidgets.minimalDropdown(
                           method == 'Multiple'
-                              ? "Bank Account"
-                              : "Select $method Account",
+                              ? "bank_account"
+                              : "select_acc",
                           controller.bankAccounts,
                           controller.selectedBankLedgerId.value,
                           (val) => controller.selectedBankLedgerId.value = val!,
@@ -173,21 +163,9 @@ class CashierView extends GetView<CashierController> {
                       SizedBox(height: 10.h),
                     ],
 
-                    // if (method == 'Card' || method == 'Bank') ...[
-                    //   CashierWidgets.inlineAmountField(
-                    //     "$method Amount",
-                    //     controller.bankAmountController,
-                    //     controller.updateBankReceivedAmount,
-                    //     colors,
-                    //     highlightColor: Colors.blue,
-                    //     readOnly: true,
-                    //   ),
-                    //   SizedBox(height: 10.h),
-                    // ],
-
                     if (method == 'Multiple') ...[
                       CashierWidgets.inlineAmountField(
-                        "Cash Amount",
+                        "cash_amount",
                         controller.multiCashController,
                         controller.updateMultiCashAmount,
                         colors,
@@ -196,7 +174,7 @@ class CashierView extends GetView<CashierController> {
                       ),
                       SizedBox(height: 8.h),
                       CashierWidgets.inlineAmountField(
-                        "Bank Amount",
+                        "bank_amount",
                         controller.multiBankController,
                         controller.updateMultiBankAmount,
                         colors,
@@ -225,26 +203,26 @@ class CashierView extends GetView<CashierController> {
                 () => Column(
                   children: [
                     CashierWidgets.summaryRow(
-                      "Subtotal",
+                      "subtotal",
                       controller.subtotal.toStringAsFixed(2),
                       colors,
                     ),
                     SizedBox(height: 8.h),
                     if (AppState.cmpTaxType == 1) ...[
                       CashierWidgets.summaryRow(
-                        "Tax",
+                        "tax",
                         controller.tax.toStringAsFixed(2),
                         colors,
                       ),
                     ] else ...[
                       CashierWidgets.summaryRow(
-                        "CGST",
+                        "cgst",
                         (controller.tax / 2).toStringAsFixed(2),
                         colors,
                       ),
                       SizedBox(height: 8.h),
                       CashierWidgets.summaryRow(
-                        "SGST",
+                        "sgst",
                         (controller.tax / 2).toStringAsFixed(2),
                         colors,
                       ),
@@ -268,7 +246,7 @@ class CashierView extends GetView<CashierController> {
                       child: Divider(height: 1, color: colors.border),
                     ),
                     CashierWidgets.summaryRow(
-                      "Grand Total",
+                      "grand_total",
                       controller.totalToPay.toStringAsFixed(2),
                       colors,
                       isTotal: true,
@@ -282,7 +260,7 @@ class CashierView extends GetView<CashierController> {
                 return Column(
                   children: [
                     CashierWidgets.inputFieldRow(
-                      "Split Count",
+                      "split_count",
                       controller.splitCountController,
                       controller.updateSplitCount,
                       colors,
@@ -290,10 +268,11 @@ class CashierView extends GetView<CashierController> {
                     ),
                     SizedBox(height: 8.h),
                     Text(
-                      "Individual Amounts",
+                      "individual_amounts".tr,
                       style: AppTypography.cardSubtitle.copyWith(
                         color: colors.subtext,
-                        fontWeight: FontWeight.bold, fontSize: AppTypography.sizeText
+                        fontWeight: FontWeight.bold,
+                        fontSize: AppTypography.sizeText,
                       ),
                     ),
                     SizedBox(height: 8.h),
@@ -365,7 +344,7 @@ class CashierView extends GetView<CashierController> {
                   ),
                   icon: const Icon(Icons.card_giftcard),
                   label: Text(
-                    "COMPLIMENT",
+                    "compliment".tr,
                     style: AppTypography.button.copyWith(
                       fontWeight: FontWeight.w900,
                       fontSize: AppTypography.sizeCategory,
@@ -398,7 +377,7 @@ class CashierView extends GetView<CashierController> {
                           ),
                         )
                       : Text(
-                          "SETTLE ORDER",
+                          "settle_order".tr,
                           style: AppTypography.button.copyWith(
                             fontWeight: FontWeight.w900,
                             fontSize: AppTypography.sizeCategory,

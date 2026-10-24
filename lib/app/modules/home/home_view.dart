@@ -2,14 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/get_instance/src/extension_instance.dart';
-import 'package:get/get_navigation/src/extension_navigation.dart';
-import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
-import 'package:get/get_state_manager/src/simple/get_view.dart';
-import 'package:get/get_utils/src/extensions/internacionalization.dart';
-import 'package:google_nav_bar/google_nav_bar.dart';
-
+import 'package:get/get.dart' hide ScreenType;
 import '../../../helper/screen_type.dart';
 import '../../data/Device_Roles/device_roles.dart';
 import '../../data/models/order_type.dart';
@@ -45,16 +38,16 @@ class HomeView extends GetView<HomeController> {
 
     final shouldExit = await Get.dialog<bool>(
       AlertDialog(
-        title: const Text("Exit App"),
-        content: const Text("Are you sure you want to exit?"),
+        title: Text('exit_app'.tr),
+        content: Text('exit_confirm_msg'.tr),
         actions: [
           TextButton(
             onPressed: () => Get.back(result: false),
-            child: const Text("Cancel"),
+            child: Text('cancel'.tr),
           ),
           ElevatedButton(
             onPressed: () => Get.back(result: true),
-            child: const Text("Exit"),
+            child: Text('exit'.tr),
           ),
         ],
       ),
@@ -75,253 +68,250 @@ class HomeView extends GetView<HomeController> {
     } else {
       controller.setOrientation(isMobile: false);
     }
-    return Obx(
-      () {
-        final currentType = orderTypeController.selectedType.value ?? AppState.orderType;
-        final showTables = currentType == OrderType.dineIn;
+    return Obx(() {
+      final currentType =
+          orderTypeController.selectedType.value ?? AppState.orderType;
+      final showTables = currentType == OrderType.dineIn;
 
-        // Map the real index to the visible index for the BottomNavigationBar
-        int getVisibleIndex() {
-          int realIndex = controller.selectedIndex.value;
-          if (showTables) {
-            return realIndex < 4 ? realIndex : 0;
-          } else {
-            if (realIndex == 0) return 0;
-            if (realIndex == 2) return 1; // Orders
-            if (realIndex == 3) return 2; // Printers
-            return 0;
-          }
-        }
-
-        // Map the tapped visible index back to the real index
-        void handleTap(int visibleIndex) {
-          if (showTables) {
-            controller.changeIndex(visibleIndex);
-          } else {
-            if (visibleIndex == 0) controller.changeIndex(0);
-            if (visibleIndex == 1) controller.changeIndex(2); // Orders
-            if (visibleIndex == 2) controller.changeIndex(3); // Printers
-          }
-        }
-
-        return WillPopScope(
-          onWillPop: _onWillPop,
-          child: Scaffold(
-            appBar: AppBar(
-              backgroundColor: colors.card,
-              elevation: 0,
-              iconTheme: IconThemeData(color: colors.text),
-              title: Row(
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            controller.pageTitle.tr,
-                            style: AppTypography.appBarTitle.copyWith(
-                              color: colors.text,
-                              fontSize: ScreenType.isMobile() ? 16.sp : null,
-                            ),
-                          ),
-                          SizedBox(width: 8.w),
-                          _buildStatusBadge(context),
-                        ],
-                      ),
-                      if (ScreenType.isMobile())
-                        Container(
-                          margin: EdgeInsets.only(top: 2.h),
-                          padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primaryGreen.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(4.r),
-                          ),
-                          child: Text(
-                            currentType.displayName.toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 9.sp,
-                              color: AppTheme.primaryGreen,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  // SizedBox(width: 8.w),
-                  // Obx(() => syncService.isSyncing.value
-                  //     ? SizedBox(
-                  //         width: 16.w,
-                  //         height: 16.w,
-                  //         child: CircularProgressIndicator(
-                  //           strokeWidth: 2.w,
-                  //           valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryGreen),
-                  //         ),
-                  //       )
-                  //     : const SizedBox.shrink()),
-                ],
-              ),
-              actions: [
-                if (ScreenType.isTabletOrDesktop())
-                  Padding(
-                    padding: EdgeInsets.only(right: 12.w),
-                    child: Row(
+      return WillPopScope(
+        onWillPop: _onWillPop,
+        child: Scaffold(
+          appBar: AppBar(
+            backgroundColor: colors.card,
+            elevation: 0,
+            iconTheme: IconThemeData(color: colors.text),
+            title: Row(
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        ...OrderType.values.map((type) {
-                          final isSelected = currentType == type;
-                          return Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 2.w),
-                            child: InkWell(
-                              onTap: () => orderTypeController.selectOrderType(type, navigate: false),
-                              borderRadius: BorderRadius.circular(4.r),
-                              child: Container(
-                                padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 7.h),
-                                decoration: BoxDecoration(
-                                  color: isSelected ? AppTheme.primaryGreen : AppTheme.primaryGreen.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(4.r),
-                                ),
-                                child: Text(
-                                  type.displayName.toUpperCase(),
-                                  style: TextStyle(
-                                    fontSize: 5.sp,
-                                    fontWeight: FontWeight.bold,
-                                    color: isSelected ? Colors.white : AppTheme.primaryGreen,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                        SizedBox(width: 4.w),
                         Text(
-                          AppState.username.toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 4.sp,
-                            fontWeight: FontWeight.w600,
+                          controller.pageTitle.tr,
+                          style: AppTypography.appBarTitle.copyWith(
                             color: colors.text,
+                            fontSize: ScreenType.isMobile() ? 16.sp : null,
                           ),
                         ),
-                        SizedBox(width: 2.w),
-                        _buildThemeToggle(context),
-                        _buildLanguageToggle(context),
+                        SizedBox(width: 8.w),
+                        _buildStatusBadge(context),
                       ],
                     ),
-                  ),
-                if (ScreenType.isMobile() && controller.selectedIndex.value == 0)
-                  Padding(
-                    padding: EdgeInsets.only(right: 8.w),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        IconButton(
-                          icon: Icon(Icons.shopping_cart, color: colors.text),
-                          onPressed: () {
-                            Get.toNamed(Routes.CART);
-                          },
+                    if (ScreenType.isMobile())
+                      Container(
+                        margin: EdgeInsets.only(top: 2.h),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 6.w,
+                          vertical: 2.h,
                         ),
-                        Obx(() {
-                          int count = cartController.totalItemsCount;
-                          if (count == 0) return const SizedBox.shrink();
-                          return Positioned(
-                            right: 8,
-                            top: 8,
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryGreen.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4.r),
+                        ),
+                        child: Text(
+                          currentType.displayName.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 9.sp,
+                            color: AppTheme.primaryGreen,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+            actions: [
+              if (ScreenType.isTabletOrDesktop())
+                Padding(
+                  padding: EdgeInsets.only(right: 12.w),
+                  child: Row(
+                    children: [
+                      ...OrderType.values.map((type) {
+                        final isSelected = currentType == type;
+                        return Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 2.w),
+                          child: InkWell(
+                            onTap: () => orderTypeController.selectOrderType(
+                              type,
+                              navigate: false,
+                            ),
+                            borderRadius: BorderRadius.circular(4.r),
                             child: Container(
-                              padding: const EdgeInsets.all(2),
-                              decoration: BoxDecoration(
-                                color: Colors.red,
-                                borderRadius: BorderRadius.circular(10),
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 6.w,
+                                vertical: 7.h,
                               ),
-                              constraints: BoxConstraints(
-                                minWidth: 16.w,
-                                minHeight: 16.w,
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? AppTheme.primaryGreen
+                                    : AppTheme.primaryGreen.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(4.r),
                               ),
                               child: Text(
-                                '$count',
+                                type.displayName.toUpperCase(),
                                 style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10.sp,
+                                  fontSize: 5.sp,
                                   fontWeight: FontWeight.bold,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : AppTheme.primaryGreen,
                                 ),
-                                textAlign: TextAlign.center,
                               ),
                             ),
-                          );
-                        }),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-            drawer: ScreenType.isMobile()
-                ? AppDrawer(
-                    userName: AppState.username, // or from your auth state
-                    onLogout: controller.logout,
-                    onSettings: () => Get.toNamed(Routes.SETTINGS),
-                    onChangeOrderType: () {
-                      Get.toNamed(Routes.ORDER_TYPE);
-                    }, // Removed Order Type navigation
-                    onToggleLanguage: _toggleLanguage,
-                    isArabic: Get.locale?.languageCode == 'ar',
-                  )
-                : null,
-            body: Row(
-              children: [
-                if (ScreenType.isTabletOrDesktop())
-                  PosSidebar(
-                    selectedIndex: controller.selectedIndex.value,
-                    onItemSelected: controller.changeIndex,
-                    onLogout: controller.logout,
-                    showTables: showTables,
-                  ),
-                Expanded(
-                  child: Container(
-                    color: colors.bg,
-                    child: IndexedStack(
-                      index: controller.selectedIndex.value,
-                      children: controller.pages,
-                    ),
+                          ),
+                        );
+                      }).toList(),
+                      SizedBox(width: 4.w),
+                      Text(
+                        AppState.username.toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 4.sp,
+                          fontWeight: FontWeight.w600,
+                          color: colors.text,
+                        ),
+                      ),
+                      SizedBox(width: 2.w),
+                      _buildThemeToggle(context),
+                      _buildLanguageToggle(context),
+                    ],
                   ),
                 ),
-              ],
-            ),
-            bottomNavigationBar: ScreenType.isMobile()
-                ? Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: colors.card.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.05),
+              if (ScreenType.isMobile() && controller.selectedIndex.value == 0)
+                Padding(
+                  padding: EdgeInsets.only(right: 8.w),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.shopping_cart, color: colors.text),
+                        onPressed: () {
+                          Get.toNamed(Routes.CART);
+                        },
                       ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _proNavItem(Icons.dashboard, 'dashboard'.tr, 0,showTables),
-                        if (showTables)
-                          _proNavItem(Icons.table_restaurant, 'tables'.tr, 1,showTables),
-                        _proNavItem(Icons.receipt, 'orders'.tr, showTables ? 2 : 1,showTables),
-                        _proNavItem(Icons.print, 'printers'.tr, showTables ? 3 : 2,showTables),
-                      ],
-                    ),
+                      Obx(() {
+                        int count = cartController.totalItemsCount;
+                        if (count == 0) return const SizedBox.shrink();
+                        return Positioned(
+                          right: 8,
+                          top: 8,
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            constraints: BoxConstraints(
+                              minWidth: 16.w,
+                              minHeight: 16.w,
+                            ),
+                            child: Text(
+                              '$count',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10.sp,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          drawer: ScreenType.isMobile()
+              ? AppDrawer(
+                  userName: AppState.username,
+                  onLogout: controller.logout,
+                  onSettings: () => Get.toNamed(Routes.SETTINGS),
+                  onChangeOrderType: () {
+                    Get.toNamed(Routes.ORDER_TYPE);
+                  },
+                  onToggleLanguage: _toggleLanguage,
+                  isArabic: Get.locale?.languageCode == 'ar',
+                )
+              : null,
+          body: Row(
+            children: [
+              if (ScreenType.isTabletOrDesktop())
+                PosSidebar(
+                  selectedIndex: controller.selectedIndex.value,
+                  onItemSelected: controller.changeIndex,
+                  onLogout: controller.logout,
+                  showTables: showTables,
+                ),
+              Expanded(
+                child: Container(
+                  color: colors.bg,
+                  child: IndexedStack(
+                    index: controller.selectedIndex.value,
+                    children: controller.pages,
                   ),
                 ),
               ),
-            )
-                : null,
+            ],
           ),
-        );
-      },
-    );
+          bottomNavigationBar: ScreenType.isMobile()
+              ? Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: colors.card.withOpacity(0.6),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.05),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _proNavItem(
+                              Icons.dashboard,
+                              'dashboard'.tr,
+                              0,
+                              showTables,
+                            ),
+                            if (showTables)
+                              _proNavItem(
+                                Icons.table_restaurant,
+                                'tables'.tr,
+                                1,
+                                showTables,
+                              ),
+                            _proNavItem(
+                              Icons.receipt,
+                              'orders'.tr,
+                              showTables ? 2 : 1,
+                              showTables,
+                            ),
+                            _proNavItem(
+                              Icons.print,
+                              'printers'.tr,
+                              showTables ? 3 : 2,
+                              showTables,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : null,
+        ),
+      );
+    });
   }
 
   Widget _buildStatusBadge(BuildContext context) {
@@ -332,18 +322,18 @@ class HomeView extends GetView<HomeController> {
       final isOnline = settings.operationMode.value == OperationMode.online;
       final isLocal = settings.operationMode.value == OperationMode.local;
 
-      String label = isOnline ? "ONLINE" : "LOCAL";
+      String key = isOnline ? 'online' : 'local';
       Color badgeColor = isOnline ? AppTheme.primaryGreen : Colors.orange;
       IconData icon = isOnline ? Icons.cloud_done : Icons.lan;
       bool isError = false;
 
       if (isLocal) {
         if (settings.isHost) {
-          label = "HUB HOST";
+          key = 'hub_host';
           icon = Icons.hub;
         } else {
           final connected = settings.isHubConnected.value;
-          label = connected ? "CONNECTED" : "OFFLINE";
+          key = connected ? 'connected' : 'offline';
           badgeColor = connected ? AppTheme.primaryGreen : Colors.red;
           icon = connected ? Icons.lan : Icons.lan_outlined;
           isError = !connected;
@@ -358,12 +348,12 @@ class HomeView extends GetView<HomeController> {
           borderRadius: BorderRadius.circular(20.r),
           border: Border.all(color: badgeColor.withOpacity(0.4), width: 1.2),
           boxShadow: [
-            if (isError || label == "HUB HOST")
+            if (isError || key == 'hub_host')
               BoxShadow(
                 color: badgeColor.withOpacity(0.2),
                 blurRadius: 8,
                 spreadRadius: 1,
-              )
+              ),
           ],
         ),
         child: AnimatedSwitcher(
@@ -373,13 +363,17 @@ class HomeView extends GetView<HomeController> {
             child: ScaleTransition(scale: animation, child: child),
           ),
           child: Row(
-            key: ValueKey(label),
+            key: ValueKey(key),
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: ScreenType.isMobile() ? 12.sp : 5.sp, color: badgeColor),
+              Icon(
+                icon,
+                size: ScreenType.isMobile() ? 12.sp : 5.sp,
+                color: badgeColor,
+              ),
               SizedBox(width: 4.w),
               Text(
-                label,
+                key.tr,
                 style: TextStyle(
                   fontSize: ScreenType.isMobile() ? 9.sp : 4.sp,
                   color: badgeColor,
@@ -387,10 +381,6 @@ class HomeView extends GetView<HomeController> {
                   letterSpacing: 0.8,
                 ),
               ),
-              // if (isError || label == "HUB HOST") ...[
-              //   SizedBox(width: 6.w),
-              //   _BlinkingDot(color: badgeColor),
-              // ]
             ],
           ),
         ),
@@ -399,30 +389,28 @@ class HomeView extends GetView<HomeController> {
   }
 
   Widget _proNavItem(IconData icon, String label, int index, bool showTables) {
-
-    // Map the real index to the visible index for the BottomNavigationBar
     int getVisibleIndex() {
       int realIndex = controller.selectedIndex.value;
       if (showTables) {
         return realIndex < 4 ? realIndex : 0;
       } else {
         if (realIndex == 0) return 0;
-        if (realIndex == 2) return 1; // Orders
-        if (realIndex == 3) return 2; // Printers
+        if (realIndex == 2) return 1;
+        if (realIndex == 3) return 2;
         return 0;
       }
     }
 
-    // Map the tapped visible index back to the real index
     void handleTap(int visibleIndex) {
       if (showTables) {
         controller.changeIndex(visibleIndex);
       } else {
         if (visibleIndex == 0) controller.changeIndex(0);
-        if (visibleIndex == 1) controller.changeIndex(2); // Orders
-        if (visibleIndex == 2) controller.changeIndex(3); // Printers
+        if (visibleIndex == 1) controller.changeIndex(2);
+        if (visibleIndex == 2) controller.changeIndex(3);
       }
     }
+
     final isSelected = getVisibleIndex() == index;
 
     return GestureDetector(
@@ -435,11 +423,11 @@ class HomeView extends GetView<HomeController> {
           borderRadius: BorderRadius.circular(16),
           gradient: isSelected
               ? LinearGradient(
-            colors: [
-              AppTheme.primaryGreen.withOpacity(0.25),
-              AppTheme.primaryGreen.withOpacity(0.1),
-            ],
-          )
+                  colors: [
+                    AppTheme.primaryGreen.withOpacity(0.25),
+                    AppTheme.primaryGreen.withOpacity(0.1),
+                  ],
+                )
               : null,
         ),
         child: Column(
@@ -463,12 +451,8 @@ class HomeView extends GetView<HomeController> {
                 label,
                 style: TextStyle(
                   fontSize: 11,
-                  fontWeight: isSelected
-                      ? FontWeight.w600
-                      : FontWeight.w400,
-                  color: isSelected
-                      ? AppTheme.primaryGreen
-                      : Colors.grey,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  color: isSelected ? AppTheme.primaryGreen : Colors.grey,
                 ),
               ),
             ),
@@ -515,50 +499,11 @@ class HomeView extends GetView<HomeController> {
         ),
         label: Text(isArabic ? 'English' : 'العربية'),
         backgroundColor: isArabic ? AppTheme.primaryGreen : colors.textField,
-        labelStyle: TextStyle(color: isArabic ? Colors.white : colors.text, fontSize: 3.5.sp),
-        onPressed: _toggleLanguage,
-      ),
-    );
-  }
-}
-
-class _BlinkingDot extends StatefulWidget {
-  final Color color;
-  const _BlinkingDot({required this.color});
-
-  @override
-  State<_BlinkingDot> createState() => _BlinkingDotState();
-}
-
-class _BlinkingDotState extends State<_BlinkingDot> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _controller,
-      child: Container(
-        width: 6.w,
-        height: 6.w,
-        decoration: BoxDecoration(
-          color: widget.color,
-          shape: BoxShape.circle,
+        labelStyle: TextStyle(
+          color: isArabic ? Colors.white : colors.text,
+          fontSize: 3.5.sp,
         ),
+        onPressed: _toggleLanguage,
       ),
     );
   }

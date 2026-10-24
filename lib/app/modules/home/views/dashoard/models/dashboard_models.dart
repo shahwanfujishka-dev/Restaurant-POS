@@ -14,7 +14,7 @@ class CategoryModel {
     required this.cat_pos,
     required this.name,
     required this.tokenPrinterId,
-    String? initialPrinter
+    String? initialPrinter,
   }) {
     if (initialPrinter != null) printerAddress.value = initialPrinter;
   }
@@ -47,9 +47,12 @@ class FavoriteModel {
   factory FavoriteModel.fromJson(Map<String, dynamic> json) {
     return FavoriteModel(
       id: parseInt(json['fav_id'] ?? json['favp_id'] ?? json['id']),
-      name: (json['fav_name'] ?? json['favp_name'] ?? json['name'] ?? '').toString(),
-      description: (json['favp_description'] ?? json['description'])?.toString(),
-      image: (json['fav_img_url'] ?? json['favp_img_url'] ?? json['image'])?.toString(),
+      name: (json['fav_name'] ?? json['favp_name'] ?? json['name'] ?? '')
+          .toString(),
+      description: (json['favp_description'] ?? json['description'])
+          ?.toString(),
+      image: (json['fav_img_url'] ?? json['favp_img_url'] ?? json['image'])
+          ?.toString(),
       branchId: parseInt(json['branch_id']),
     );
   }
@@ -82,7 +85,10 @@ class FoodItemModel {
     this.isVeg = 0,
   });
 
-  factory FoodItemModel.fromJson(Map<String, dynamic> json, {String baseUrl = ""}) {
+  factory FoodItemModel.fromJson(
+    Map<String, dynamic> json, {
+    String baseUrl = "",
+  }) {
     String imgUrl = (json['prd_img_url'] ?? json['image'])?.toString() ?? '';
     if (imgUrl.isNotEmpty && baseUrl.isNotEmpty && !imgUrl.startsWith('http')) {
       imgUrl = baseUrl + imgUrl;
@@ -90,7 +96,10 @@ class FoodItemModel {
 
     return FoodItemModel(
       id: (json['prd_id'] ?? json['id'] ?? '').toString(),
-      name: json['prd_name']?.toString() ?? json['name']?.toString() ?? 'Unknown Item',
+      name:
+          json['prd_name']?.toString() ??
+          json['name']?.toString() ??
+          'Unknown Item',
       categoryId: (json['prd_cat_id'] ?? json['category_id'] ?? '').toString(),
       price: parseDouble(json['sale_rate'] ?? json['price'], defaultValue: 0.0),
       prd_tax: parseDouble(json['prd_tax'], defaultValue: 0.0),
@@ -98,7 +107,9 @@ class FoodItemModel {
       unitDisplay: json['unit_display']?.toString() ?? '',
       taxCatId: parseInt(json['prd_tax_cat_id'] ?? json['tax_cat_id']),
       taxPer: parseDouble(json['tax_per'], defaultValue: 0.0),
-      tokenPrinterId: parseInt(json['cat_token_printer']) == 0 ? null : parseInt(json['cat_token_printer']),
+      tokenPrinterId: parseInt(json['cat_token_printer']) == 0
+          ? null
+          : parseInt(json['cat_token_printer']),
       isVeg: parseInt(json['prd_is_veg'], defaultValue: 0),
     );
   }
@@ -153,11 +164,15 @@ class ProductUnit {
 
   factory ProductUnit.fromJson(Map<String, dynamic> json) {
     // Robust fallback for unit names
-    String name = (json['unit_name'] ?? json['prd_unit_name'])?.toString() ?? 
-                  (json['unit_display'] ?? json['prd_unit_display'])?.toString() ?? '';
+    String name =
+        (json['unit_name'] ?? json['prd_unit_name'])?.toString() ??
+        (json['unit_display'] ?? json['prd_unit_display'])?.toString() ??
+        '';
 
-    String display = (json['unit_display'] ?? json['prd_unit_display'])?.toString() ?? 
-                     (json['unit_name'] ?? json['prd_unit_name'])?.toString() ?? '';
+    String display =
+        (json['unit_display'] ?? json['prd_unit_display'])?.toString() ??
+        (json['unit_name'] ?? json['prd_unit_name'])?.toString() ??
+        '';
 
     // Handle nested addons which could be a List or a JSON String (from Local DB)
     dynamic rawExistAddons = json['existAddOn'] ?? json['exist_addons'] ?? [];
@@ -174,14 +189,15 @@ class ProductUnit {
       unitId: parseInt(json['unit_id'] ?? json['produnit_unit_id']),
       unitName: name,
       unitDisplay: display,
-      rate: parseDouble(json['sur_unit_rate'] ??
+      rate: parseDouble(
+        json['sur_unit_rate'] ??
             json['sale_rate'] ??
             json['prd_unit_rate'] ??
-            json['rate'], defaultValue: 0.0),
+            json['rate'],
+        defaultValue: 0.0,
+      ),
       unitBaseQty: parseDouble(json['unit_base_qty'], defaultValue: 1.0),
-      existAddOns: existAddonsList
-          .map((e) => AddonModel.fromJson(e))
-          .toList(),
+      existAddOns: existAddonsList.map((e) => AddonModel.fromJson(e)).toList(),
     );
   }
 }
@@ -236,10 +252,12 @@ class AddonModel {
       prdId: parseInt(json['prdaddon_prd_id'] ?? json['prd_id']),
       prdaddon_flags: parseInt(json['prdaddon_flags']),
       name: (json['prd_name'] ?? json['name'] ?? '').toString(),
-      price: parseDouble(json['sales_ord_sub_rate'] ??
-          json['bs_srate'] ??
-          json['sale_rate'], defaultValue: 0.0),
-      unitDisplay: (json['unit_display'] ?? json['prd_unit_display'] ?? '').toString(),
+      price: parseDouble(
+        json['sales_ord_sub_rate'] ?? json['bs_srate'] ?? json['sale_rate'],
+        defaultValue: 0.0,
+      ),
+      unitDisplay: (json['unit_display'] ?? json['prd_unit_display'] ?? '')
+          .toString(),
       unitId: parseInt(json['unit_id']),
       taxCatId: parseInt(json['prd_tax_cat_id']),
       taxPer: parseDouble(json['tax_per'], defaultValue: 0.0),

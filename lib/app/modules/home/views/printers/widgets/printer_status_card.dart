@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
+import 'package:get/get.dart';
 
 import '../../../../../theme/app_theme.dart';
 import '../../../../../theme/app_typography.dart';
@@ -15,7 +15,8 @@ class PrinterStatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Obx(() {
-      final total = controller.bluetoothPrinters.length + controller.wifiPrinters.length;
+      final total =
+          controller.bluetoothPrinters.length + controller.wifiPrinters.length;
       return Container(
         width: double.infinity,
         padding: EdgeInsets.all(12.w),
@@ -34,13 +35,27 @@ class PrinterStatusCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Available Printers",
-                style: AppTypography.cardTitle.copyWith(fontWeight: FontWeight.bold)),
+            Text(
+              'available_printers'.tr,
+              style: AppTypography.cardTitle.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             SizedBox(height: 12.h),
-            _buildPrinterStatusRow("Bluetooth", controller.bluetoothPrinters.length, Colors.blue),
+            _buildPrinterStatusRow(
+              'bluetooth'.tr,
+              controller.bluetoothPrinters.length,
+              Colors.blue,
+            ),
             SizedBox(height: 8.h),
-            _buildPrinterStatusRow("WiFi", controller.wifiPrinters.length, Colors.orange),
-            if (total == 0 && (controller.scanningBluetooth.value || controller.scanningWifi.value))
+            _buildPrinterStatusRow(
+              'wifi'.tr,
+              controller.wifiPrinters.length,
+              Colors.orange,
+            ),
+            if (total == 0 &&
+                (controller.scanningBluetooth.value ||
+                    controller.scanningWifi.value))
               const Padding(
                 padding: EdgeInsets.only(top: 16),
                 child: LinearProgressIndicator(color: AppTheme.primaryGreen),
@@ -55,16 +70,26 @@ class PrinterStatusCard extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: AppTypography.cardSubtitle.copyWith(color: Colors.grey.shade600)),
+        Text(
+          label,
+          style: AppTypography.cardSubtitle.copyWith(
+            color: Colors.grey.shade600,
+          ),
+        ),
         Container(
           padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 2.h),
           decoration: BoxDecoration(
             color: color.withOpacity(0.1),
             borderRadius: BorderRadius.circular(20.r),
           ),
-          child: Text("$count Found",
-              style: TextStyle(
-                  color: color, fontSize: 10.sp, fontWeight: FontWeight.bold)),
+          child: Text(
+            'n_found'.trParams({'count': count.toString()}),
+            style: TextStyle(
+              color: color,
+              fontSize: 10.sp,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ),
       ],
     );

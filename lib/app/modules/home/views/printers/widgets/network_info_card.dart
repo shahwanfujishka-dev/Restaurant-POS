@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
+import 'package:get/get.dart';
 
 import '../../../../../theme/app_theme.dart';
 import '../../../../../theme/app_typography.dart';
@@ -43,15 +43,21 @@ class NetworkInfoCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Current Network",
-                    style: AppTypography.cardSubtitle.copyWith(color: Colors.grey)),
-                Obx(() => Text(
-                  controller.currentWifiName.value.replaceAll('"', ''),
-                  style: AppTypography.cardTitle.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.primaryGreen,
+                Text(
+                  'current_network'.tr,
+                  style: AppTypography.cardSubtitle.copyWith(
+                    color: Colors.grey,
                   ),
-                )),
+                ),
+                Obx(
+                  () => Text(
+                    controller.currentWifiName.value.replaceAll('"', ''),
+                    style: AppTypography.cardTitle.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primaryGreen,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

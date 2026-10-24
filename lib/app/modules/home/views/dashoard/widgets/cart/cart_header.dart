@@ -1,10 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/get_instance/src/extension_instance.dart';
-import 'package:get/get_navigation/src/extension_navigation.dart';
-import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
+import 'package:get/get.dart';
 
 import '../../../../../../data/models/order_type.dart';
 import '../../../../../../data/utils/AppState.dart';
@@ -27,7 +24,8 @@ class CartHeader extends StatelessWidget {
     return Obx(() {
       // 1. ALWAYS access reactive variables at the top of Obx to ensure GetX tracks them as dependencies.
       // This prevents the "improper use of GetX" error even if we return early.
-      final currentType = orderTypeController.selectedType.value ?? AppState.orderType;
+      final currentType =
+          orderTypeController.selectedType.value ?? AppState.orderType;
       final tableId = controller.selectedTableId.value;
       final areaName = controller.selectedAreaName.value;
       final tableName = controller.selectedTableName.value;
@@ -47,17 +45,12 @@ class CartHeader extends StatelessWidget {
         margin: EdgeInsets.all(2.w),
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              AppTheme.primaryGreen.withOpacity(0.1),
-              Colors.white,
-            ],
+            colors: [AppTheme.primaryGreen.withOpacity(0.1), Colors.white],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(8.r),
-          border: Border.all(
-            color: AppTheme.primaryGreen.withOpacity(0.2),
-          ),
+          border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.2)),
           boxShadow: [
             BoxShadow(
               color: AppTheme.primaryGreen.withOpacity(0.05),
@@ -108,11 +101,7 @@ class CartHeader extends StatelessWidget {
           ),
         ],
       ),
-      child: Icon(
-        Icons.table_restaurant,
-        color: Colors.white,
-        size: 6.sp,
-      ),
+      child: Icon(Icons.table_restaurant, color: Colors.white, size: 6.sp),
     );
   }
 
@@ -142,13 +131,9 @@ class CartHeader extends StatelessWidget {
           SizedBox(height: 2.h),
           Row(
             children: [
-              Icon(
-                Icons.chair,
-                size: 4.sp,
-                color: Colors.grey.shade500,
-              ),
+              Icon(Icons.chair, size: 4.sp, color: Colors.grey.shade500),
               Text(
-                '  $chairs ${chairs > 1 ? 'Chairs' : 'Chair'}',
+                '  $chairs ${chairs > 1 ? 'chairs'.tr : 'chair'.tr}',
                 style: AppTypography.cardSubtitle.copyWith(
                   color: Colors.grey.shade600,
                 ),
@@ -178,22 +163,18 @@ class CartHeader extends StatelessWidget {
         borderRadius: BorderRadius.circular(8.r),
       ),
       child: IconButton(
-        icon: Icon(
-          Icons.delete_sweep,
-          size: 6.sp,
-          color: Colors.red.shade400,
-        ),
+        icon: Icon(Icons.delete_sweep, size: 6.sp, color: Colors.red.shade400),
         onPressed: () {
           Get.defaultDialog(
-            title: "Clear Cart",
+            title: 'clear_cart'.tr,
             titleStyle: AppTypography.cardTitle.copyWith(
               fontWeight: FontWeight.w600,
             ),
-            middleText: "Remove all items from current order?",
+            middleText: 'clear_cart_msg'.tr,
             middleTextStyle: AppTypography.cardSubtitle,
             radius: 16.r,
-            textConfirm: "Clear All",
-            textCancel: "Cancel",
+            textConfirm: 'clear_all'.tr,
+            textCancel: 'cancel'.tr,
             confirmTextColor: Colors.white,
             buttonColor: Colors.red,
             cancelTextColor: Colors.grey.shade700,
@@ -216,11 +197,7 @@ class CartHeader extends StatelessWidget {
         borderRadius: BorderRadius.circular(8.r),
       ),
       child: IconButton(
-        icon: Icon(
-          Icons.close,
-          size: 6.sp,
-          color: Colors.grey.shade600,
-        ),
+        icon: Icon(Icons.close, size: 6.sp, color: Colors.grey.shade600),
         onPressed: () => controller.clearTable(),
         constraints: const BoxConstraints(),
         padding: EdgeInsets.all(3.w),

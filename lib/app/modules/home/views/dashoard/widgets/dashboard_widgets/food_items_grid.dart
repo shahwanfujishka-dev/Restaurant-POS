@@ -13,13 +13,14 @@ class FoodItemsGrid extends GetView<DashboardController> {
 
   @override
   Widget build(BuildContext context) {
-
     return Obx(() {
-      if (controller.isLoadingProducts.value && controller.filteredFoodItems.isEmpty) {
+      if (controller.isLoadingProducts.value &&
+          controller.filteredFoodItems.isEmpty) {
         return const FoodItemShimmer();
       }
 
-      if (controller.filteredFoodItems.isEmpty && !controller.isLoadingProducts.value) {
+      if (controller.filteredFoodItems.isEmpty &&
+          !controller.isLoadingProducts.value) {
         return const Center(child: Text('No items in this category.'));
       }
 
@@ -39,10 +40,12 @@ class FoodItemsGrid extends GetView<DashboardController> {
               itemCount: controller.filteredFoodItems.length,
               itemBuilder: (context, index) {
                 final item = controller.filteredFoodItems[index];
-                
+
                 // Optimized animation: reduced duration and staggered delay to make search feel snappy
                 return TweenAnimationBuilder(
-                  key: ValueKey(item.id), // Use key to help Flutter recycle widgets efficiently
+                  key: ValueKey(
+                    item.id,
+                  ), // Use key to help Flutter recycle widgets efficiently
                   duration: const Duration(milliseconds: 200),
                   tween: Tween<double>(begin: 0, end: 1),
                   curve: Curves.easeOut,

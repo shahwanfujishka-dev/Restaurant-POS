@@ -21,10 +21,7 @@ class EmptyCartView extends StatelessWidget {
             decoration: BoxDecoration(
               color: colors.textField,
               shape: BoxShape.circle,
-              border: Border.all(
-                color: colors.border,
-                width: 2,
-              ),
+              border: Border.all(color: colors.border, width: 2),
             ),
             child: Icon(
               Icons.shopping_cart_outlined,

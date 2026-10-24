@@ -31,8 +31,10 @@ class AppState {
   static String get userId => _storage.read('usr_id')?.toString() ?? '';
   static String get serverUrl => _storage.read('base_url') ?? '';
   static String get ledgerId => _storage.read('ledger_id')?.toString() ?? '0';
-  static String get cashLedgerId => _storage.read('usr_cash_ledger_id')?.toString() ?? '0';
-  static String get bankLedgerId => _storage.read('usr_bank_ledger_id')?.toString() ?? '0';
+  static String get cashLedgerId =>
+      _storage.read('usr_cash_ledger_id')?.toString() ?? '0';
+  static String get bankLedgerId =>
+      _storage.read('usr_bank_ledger_id')?.toString() ?? '0';
   static int get cmpTaxType => _storage.read('cmp_tax_type') ?? 1;
   static String get upiId => _storage.read('as_upi_id') ?? '';
   static bool get isUpiEnabled => (_storage.read('as_upi_enable') ?? 0) == 1;
@@ -67,10 +69,11 @@ class AppState {
     _storage.write('usr_cash_ledger_id', profile['usr_cash_ledger_id']);
     _storage.write('usr_bank_ledger_id', profile['usr_bank_ledger_id']);
   }
+
   static bool _isSeqKey(String k) =>
       k.startsWith('local_inv_seq_') ||
-          k.startsWith('local_so_seq_') ||
-          k == 'offline_order_seq';
+      k.startsWith('local_so_seq_') ||
+      k == 'offline_order_seq';
 
   static const _deviceKeys = [
     'host_ip',
@@ -186,25 +189,25 @@ class AppState {
           title: const Text('Cannot log out'),
           content: Text(
             '$pending order/payment(s) are not synced yet. '
-                'Logging out now would lose them. Sync first, then log out.',
+            'Logging out now would lose them. Sync first, then log out.',
           ),
           actions: [
-            TextButton(
-              onPressed: () => Get.back(),
-              child: const Text('OK'),
-            ),
+            TextButton(onPressed: () => Get.back(), child: const Text('OK')),
             TextButton(
               onPressed: () async {
                 Get.back();
                 try {
                   await Get.find<SyncService>().syncPendingOrders();
                 } catch (_) {}
-                final left = await DatabaseHelper.instance.getPendingSyncTotal();
+                final left = await DatabaseHelper.instance
+                    .getPendingSyncTotal();
                 if (left == 0) {
                   await logout();
                 } else {
-                  Get.snackbar('Sync incomplete',
-                      '$left item(s) still pending. Check the connection and try again.');
+                  Get.snackbar(
+                    'Sync incomplete',
+                    '$left item(s) still pending. Check the connection and try again.',
+                  );
                 }
               },
               child: const Text('Sync now'),

@@ -21,8 +21,9 @@ class MobileCartHeader extends StatelessWidget {
     final orderTypeController = Get.find<OrderTypeController>();
 
     return Obx(() {
-      final currentType = orderTypeController.selectedType.value ?? AppState.orderType;
-      
+      final currentType =
+          orderTypeController.selectedType.value ?? AppState.orderType;
+
       if (currentType != OrderType.dineIn) {
         return const SizedBox.shrink();
       }
@@ -32,17 +33,12 @@ class MobileCartHeader extends StatelessWidget {
         margin: EdgeInsets.all(10.w),
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              AppTheme.primaryGreen.withOpacity(0.1),
-              Colors.white,
-            ],
+            colors: [AppTheme.primaryGreen.withOpacity(0.1), Colors.white],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(16.r),
-          border: Border.all(
-            color: AppTheme.primaryGreen.withOpacity(0.2),
-          ),
+          border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.2)),
           boxShadow: [
             BoxShadow(
               color: AppTheme.primaryGreen.withOpacity(0.05),
@@ -96,11 +92,7 @@ class MobileCartHeader extends StatelessWidget {
               ),
             ],
           ),
-          child: Icon(
-            Icons.table_restaurant,
-            color: Colors.white,
-            size: 22.sp,
-          ),
+          child: Icon(Icons.table_restaurant, color: Colors.white, size: 22.sp),
         ),
         if (controller.cartItems.isNotEmpty)
           Positioned(
@@ -142,14 +134,10 @@ class MobileCartHeader extends StatelessWidget {
           SizedBox(height: 4.h),
           Row(
             children: [
-              Icon(
-                Icons.chair,
-                size: 14.sp,
-                color: Colors.grey.shade500,
-              ),
+              Icon(Icons.chair, size: 14.sp, color: Colors.grey.shade500),
               SizedBox(width: 4.w),
               Text(
-                '${controller.selectedChairCount.value} ${controller.selectedChairCount.value > 1 ? 'Chairs' : 'Chair'}',
+                '${controller.selectedChairCount.value} ${controller.selectedChairCount.value > 1 ? 'chairs'.tr : 'chair'.tr}',
                 style: AppTypography.cardSubtitle.copyWith(
                   fontSize: 12.sp,
                   color: Colors.grey.shade600,
@@ -169,11 +157,7 @@ class MobileCartHeader extends StatelessWidget {
         borderRadius: BorderRadius.circular(10.r),
       ),
       child: IconButton(
-        icon: Icon(
-          Icons.close,
-          size: 18.sp,
-          color: Colors.grey.shade600,
-        ),
+        icon: Icon(Icons.close, size: 18.sp, color: Colors.grey.shade600),
         onPressed: () => controller.clearTable(),
         constraints: const BoxConstraints(),
         padding: EdgeInsets.all(8.w),

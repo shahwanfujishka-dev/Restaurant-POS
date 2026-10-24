@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
-import 'package:get/get_state_manager/src/simple/get_view.dart';
+import 'package:get/get.dart'hide ScreenType;
 import 'package:restaurant_pos/app/modules/home/views/tables/widgets/table_card.dart';
 import 'package:restaurant_pos/app/modules/home/views/tables/widgets/table_shimmer.dart';
 import 'package:restaurant_pos/helper/screen_type.dart';
@@ -43,26 +42,33 @@ class TablesPage extends GetView<TablesController> {
                 ),
                 SizedBox(height: 16.h),
                 Text(
-                  'No tables found',
+                  'no_tables_found'.tr,
                   style: AppTypography.cardTitle.copyWith(color: colors.text),
                 ),
                 SizedBox(height: 6.h),
                 Text(
-                  'Pull down to refresh or tap retry',
-                  style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+                  'pull_to_refresh_or_retry'.tr,
+                  style: AppTypography.cardSubtitle.copyWith(
+                    color: colors.subtext,
+                  ),
                 ),
                 SizedBox(height: 20.h),
                 GestureDetector(
                   onTap: controller.fetchTables,
                   child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 12.h),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 24.w,
+                      vertical: 12.h,
+                    ),
                     decoration: BoxDecoration(
                       color: AppTheme.primaryGreen,
                       borderRadius: BorderRadius.circular(50.r),
                     ),
                     child: Text(
-                      'Retry',
-                      style: AppTypography.button.copyWith(fontSize: AppTypography.sizeCategory),
+                      'retry'.tr,
+                      style: AppTypography.button.copyWith(
+                        fontSize: AppTypography.sizeCategory,
+                      ),
                     ),
                   ),
                 ),
@@ -86,7 +92,7 @@ class TablesPage extends GetView<TablesController> {
                   gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: ScreenType.isMobile() ? 200.w : 70.w,
                     mainAxisSpacing: 12.h,
-                    crossAxisSpacing: ScreenType.isMobile() ?12.w : 10.h,
+                    crossAxisSpacing: ScreenType.isMobile() ? 12.w : 10.h,
                     childAspectRatio: .92,
                   ),
                   itemCount: tables.length,
@@ -121,15 +127,12 @@ class TablesPage extends GetView<TablesController> {
 }
 
 // ── Area header with chips and live stats row ──────────────────────────────
-// NOTE: colors is resolved inside build() — NOT passed from the parent —
-// so dark-mode rebuilds and reactive Obx updates always see fresh values.
 
 class _AreaHeader extends GetView<TablesController> {
   const _AreaHeader();
 
   @override
   Widget build(BuildContext context) {
-    // Resolve colors here so every rebuild (theme change, Obx tick) is fresh.
     final colors = AppColors.of(context);
 
     return Container(
@@ -139,11 +142,6 @@ class _AreaHeader extends GetView<TablesController> {
       ),
       child: Column(
         children: [
-          // ── Area chips ──
-          // Each chip wraps its own Obx so it independently subscribes to
-          // selectedArea. The outer ListView has NO Obx — it only rebuilds
-          // when the areas list itself changes. This is the correct pattern:
-          // one reactive scope per chip, not one scope for the whole list.
           SizedBox(
             height: 52.h,
             child: ListView.builder(
@@ -155,8 +153,6 @@ class _AreaHeader extends GetView<TablesController> {
 
                 return Padding(
                   padding: EdgeInsets.only(right: 8.w),
-                  // Per-chip Obx: this chip rebuilds whenever selectedArea
-                  // changes, regardless of ListView item-caching behaviour.
                   child: Obx(() {
                     final isSelected =
                         controller.selectedArea.value?.id == area.id;
@@ -167,9 +163,7 @@ class _AreaHeader extends GetView<TablesController> {
                         duration: const Duration(milliseconds: 200),
                         padding: EdgeInsets.symmetric(horizontal: 16.w),
                         decoration: BoxDecoration(
-                          color: isSelected
-                              ? AppTheme.primaryGreen
-                              : colors.bg,
+                          color: isSelected ? AppTheme.primaryGreen : colors.bg,
                           borderRadius: BorderRadius.circular(50.r),
                           border: Border.all(
                             color: isSelected
@@ -180,10 +174,9 @@ class _AreaHeader extends GetView<TablesController> {
                         ),
                         alignment: Alignment.center,
                         child: Text(
-                          area.name,
+                          area.name.tr,
                           style: AppTypography.cardSubtitle.copyWith(
-                            color:
-                            isSelected ? Colors.white : colors.subtext,
+                            color: isSelected ? Colors.white : colors.subtext,
                             fontWeight: isSelected
                                 ? FontWeight.w700
                                 : FontWeight.w500,
@@ -198,7 +191,6 @@ class _AreaHeader extends GetView<TablesController> {
           ),
 
           // ── Stats summary row ──
-          // Single Obx reads selectedArea so it rebuilds on every area switch.
           Obx(() {
             final tables = controller.selectedArea.value?.tables ?? [];
             int vacant = 0, partial = 0, full = 0;
@@ -219,19 +211,19 @@ class _AreaHeader extends GetView<TablesController> {
               child: Row(
                 children: [
                   _StatPill(
-                    label: '$vacant Vacant',
+                    label: '$vacant ${'vacant'.tr}',
                     dot: const Color(0xFF3B5BDB),
                     bg: const Color(0xFF3B5BDB).withOpacity(.1),
                   ),
                   SizedBox(width: 8.w),
                   _StatPill(
-                    label: '$partial Partial',
+                    label: '$partial ${'partial'.tr}',
                     dot: AppTheme.primaryGreen,
                     bg: AppTheme.primaryGreen.withOpacity(.1),
                   ),
                   SizedBox(width: 8.w),
                   _StatPill(
-                    label: '$full Occupied',
+                    label: '$full ${'occupied'.tr}',
                     dot: AppTheme.redColor,
                     bg: AppTheme.redColor.withOpacity(.1),
                   ),
@@ -250,11 +242,7 @@ class _StatPill extends StatelessWidget {
   final Color dot;
   final Color bg;
 
-  const _StatPill({
-    required this.label,
-    required this.dot,
-    required this.bg,
-  });
+  const _StatPill({required this.label, required this.dot, required this.bg});
 
   @override
   Widget build(BuildContext context) {

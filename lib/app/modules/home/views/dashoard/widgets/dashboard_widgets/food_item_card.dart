@@ -2,7 +2,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get_core/src/get_main.dart';import 'package:get/get_instance/src/extension_instance.dart';
+import 'package:get/get_core/src/get_main.dart';
+import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
 
 import '../../../../../../../helper/screen_type.dart';
@@ -16,11 +17,7 @@ class FoodItemCard extends StatefulWidget {
   final FoodItemModel item;
   final VoidCallback? onTap;
 
-  const FoodItemCard({
-    super.key,
-    required this.item,
-    this.onTap,
-  });
+  const FoodItemCard({super.key, required this.item, this.onTap});
 
   @override
   State<FoodItemCard> createState() => _FoodItemCardState();
@@ -105,18 +102,19 @@ class _FoodItemCardState extends State<FoodItemCard>
                 Positioned.fill(
                   child: widget.item.image.isNotEmpty
                       ? CachedNetworkImage(
-                    imageUrl: widget.item.image,
-                    fit: BoxFit.cover,
-                    memCacheWidth: 300,
-                    memCacheHeight: 300,
-                    placeholder: (context, url) => Container(
-                      color: colors.textField,
-                      child: const Center(
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
-                    errorWidget: (context, url, error) => _buildPlaceholder(context),
-                  )
+                          imageUrl: widget.item.image,
+                          fit: BoxFit.cover,
+                          memCacheWidth: 300,
+                          memCacheHeight: 300,
+                          placeholder: (context, url) => Container(
+                            color: colors.textField,
+                            child: const Center(
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                          errorWidget: (context, url, error) =>
+                              _buildPlaceholder(context),
+                        )
                       : _buildPlaceholder(context),
                 ),
 
@@ -142,9 +140,7 @@ class _FoodItemCardState extends State<FoodItemCard>
                     left: ScreenType.isMobile()
                         ? -AppTypography.sizeText
                         : null,
-                    right: ScreenType.isMobile()
-                        ? null
-                        : 5,
+                    right: ScreenType.isMobile() ? null : 5,
                     child: Transform.rotate(
                       angle: -0.785398, // -45 degrees
                       child: Container(
@@ -152,7 +148,9 @@ class _FoodItemCardState extends State<FoodItemCard>
                         padding: EdgeInsets.symmetric(vertical: 3.h),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color:   widget.item.isVeg == 1 ? Colors.green : Colors.red.shade900,
+                          color: widget.item.isVeg == 1
+                              ? Colors.green
+                              : Colors.red.shade900,
                           border: Border.all(
                             color: widget.item.isVeg == 1
                                 ? Colors.green
@@ -165,19 +163,22 @@ class _FoodItemCardState extends State<FoodItemCard>
                           style: TextStyle(
                             fontSize: AppTypography.smallText,
                             fontWeight: FontWeight.bold,
-                            color:Colors.white,
+                            color: Colors.white,
                           ),
                         ),
                       ),
                     ),
                   ),
+
                 /// 💲 PRICE BADGE (Modern)
                 Positioned(
                   top: 10.h,
                   right: 1.w,
                   child: Container(
-                    padding:
-                    EdgeInsets.symmetric(horizontal: 4.w, vertical: 5.h),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 4.w,
+                      vertical: 5.h,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.black.withOpacity(0.6),
                       borderRadius: BorderRadius.circular(10.r),
@@ -185,7 +186,9 @@ class _FoodItemCardState extends State<FoodItemCard>
                     child: Obx(() {
                       double displayPrice = widget.item.price;
                       if (_controller.vatType.value == 0) {
-                        displayPrice = widget.item.price + (widget.item.price * widget.item.prd_tax / 100);
+                        displayPrice =
+                            widget.item.price +
+                            (widget.item.price * widget.item.prd_tax / 100);
                       }
                       return Text(
                         displayPrice.toStringAsFixed(2),
@@ -214,7 +217,6 @@ class _FoodItemCardState extends State<FoodItemCard>
                   ),
                 ),
 
-
                 Positioned(
                   bottom: 10.h,
                   right: 2.w,
@@ -230,7 +232,7 @@ class _FoodItemCardState extends State<FoodItemCard>
                       ],
                     ),
                     padding: EdgeInsets.all(1.w),
-                    child:  Icon(
+                    child: Icon(
                       Icons.add,
                       color: Colors.white,
                       size: AppTypography.sizeTable,
@@ -246,8 +248,9 @@ class _FoodItemCardState extends State<FoodItemCard>
                       builder: (context, child) {
                         return Container(
                           decoration: BoxDecoration(
-                            color: AppTheme.primaryGreen
-                                .withOpacity(0.4 * (1 - _checkController.value)),
+                            color: AppTheme.primaryGreen.withOpacity(
+                              0.4 * (1 - _checkController.value),
+                            ),
                           ),
                           child: Center(
                             child: Transform.scale(
@@ -284,11 +287,16 @@ class _FoodItemCardState extends State<FoodItemCard>
   Widget _buildPlaceholder(BuildContext context) {
     final colors = AppColors.of(context);
     return Container(
-        color: colors.textField,
-        child: Icon(Icons.fastfood,
-            color: colors.subtext.withOpacity(0.3), size: AppTypography.foodIcon));
+      color: colors.textField,
+      child: Icon(
+        Icons.fastfood,
+        color: colors.subtext.withOpacity(0.3),
+        size: AppTypography.foodIcon,
+      ),
+    );
   }
 }
+
 class _TrianglePainter extends CustomPainter {
   final Color color;
   _TrianglePainter({required this.color});
@@ -305,5 +313,6 @@ class _TrianglePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_TrianglePainter oldDelegate) => oldDelegate.color != color;
+  bool shouldRepaint(_TrianglePainter oldDelegate) =>
+      oldDelegate.color != color;
 }

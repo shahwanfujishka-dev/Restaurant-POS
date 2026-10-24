@@ -7,8 +7,6 @@ import '../controller/order_type_controller.dart';
 class OrderTypeBinding extends Bindings {
   @override
   void dependencies() {
-    Get.lazyPut<OrderTypeController>(
-          () => OrderTypeController(),
-    );
+    Get.lazyPut<OrderTypeController>(() => OrderTypeController());
   }
 }
