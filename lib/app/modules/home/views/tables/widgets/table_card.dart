@@ -80,8 +80,9 @@ class TableCard extends StatelessWidget {
         final occupied = controller.getOccupiedCountForTable(table);
         final status = table.getStatus(occupied);
         final accent = _accentColor(status);
-        final fillPct =
-        table.chairCount > 0 ? occupied / table.chairCount : 0.0;
+        final fillPct = table.chairCount > 0
+            ? occupied / table.chairCount
+            : 0.0;
 
         return AnimatedScale(
           scale: scale.value,
@@ -116,13 +117,19 @@ class TableCard extends StatelessWidget {
                       top: Radius.circular(18.r),
                     ),
                     color: accent.withOpacity(
-                        status == TableStatus.vacant ? .3 : .85),
+                      status == TableStatus.vacant ? .3 : .85,
+                    ),
                   ),
                 ),
 
                 Expanded(
                   child: Padding(
-                    padding: EdgeInsets.fromLTRB(ScreenType.isMobile() ? 14.w : 10.w, 12.h, ScreenType.isMobile() ? 14.w : 10.w, 12.h),
+                    padding: EdgeInsets.fromLTRB(
+                      ScreenType.isMobile() ? 14.w : 10.w,
+                      12.h,
+                      ScreenType.isMobile() ? 14.w : 10.w,
+                      12.h,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -136,26 +143,30 @@ class TableCard extends StatelessWidget {
                               children: [
                                 Text(
                                   table.name,
-                                  style: AppTypography.cardTitle
-                                      .copyWith(color: colors.text),
+                                  style: AppTypography.cardTitle.copyWith(
+                                    color: colors.text,
+                                  ),
                                 ),
                                 SizedBox(height: 2.h),
                                 Text(
                                   '${table.chairCount} chairs',
-                                  style: AppTypography.cardSubtitle
-                                      .copyWith(color: colors.subtext),
+                                  style: AppTypography.cardSubtitle.copyWith(
+                                    color: colors.subtext,
+                                  ),
                                 ),
                               ],
                             ),
                             // Subtle large table number
                             Text(
-                              table.name.replaceAll(RegExp(r'[^0-9]'), '')
+                              table.name
+                                  .replaceAll(RegExp(r'[^0-9]'), '')
                                   .padLeft(2, '0'),
                               style: TextStyle(
                                 fontSize: AppTypography.sizeTable,
                                 fontWeight: FontWeight.w800,
                                 color: accent.withOpacity(
-                                    status == TableStatus.vacant ? .15 : .25),
+                                  status == TableStatus.vacant ? .15 : .25,
+                                ),
                                 letterSpacing: -1,
                               ),
                             ),
@@ -168,7 +179,8 @@ class TableCard extends StatelessWidget {
                             Icons.table_restaurant_rounded,
                             size: AppTypography.iconXL,
                             color: accent.withOpacity(
-                                colors.isDark ? .35 : .55),
+                              colors.isDark ? .35 : .55,
+                            ),
                           ),
                         ),
 
@@ -186,12 +198,16 @@ class TableCard extends StatelessWidget {
                                   ),
                                   decoration: BoxDecoration(
                                     color: accent.withOpacity(
-                                        colors.isDark ? .2 : .1),
+                                      colors.isDark ? .2 : .1,
+                                    ),
                                     borderRadius: BorderRadius.circular(20.r),
                                   ),
                                   child: Text(
                                     _statusLabel(
-                                        status, occupied, table.chairCount),
+                                      status,
+                                      occupied,
+                                      table.chairCount,
+                                    ),
                                     style: AppTypography.cardInfo.copyWith(
                                       color: accent,
                                       fontWeight: FontWeight.w700,
@@ -216,8 +232,9 @@ class TableCard extends StatelessWidget {
                                 value: fillPct,
                                 minHeight: 3.5.h,
                                 backgroundColor: colors.border,
-                                valueColor:
-                                AlwaysStoppedAnimation<Color>(accent),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  accent,
+                                ),
                               ),
                             ),
                           ],

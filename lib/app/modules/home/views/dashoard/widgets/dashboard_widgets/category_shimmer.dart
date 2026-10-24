@@ -16,11 +16,15 @@ class CategoryShimmer extends StatelessWidget {
       child: Container(
         height: isHorizontal ? 45.h : null,
         width: isHorizontal ? double.infinity : 40.w,
-        padding: EdgeInsets.symmetric(vertical: 1.h, horizontal: isHorizontal ? 10.w : 1.w),
+        padding: EdgeInsets.symmetric(
+          vertical: 1.h,
+          horizontal: isHorizontal ? 10.w : 1.w,
+        ),
         child: ListView.separated(
           scrollDirection: direction,
           itemCount: 8,
-          separatorBuilder: (_, __) => isHorizontal ? SizedBox(width: 5.w) : SizedBox(height: 5.h),
+          separatorBuilder: (_, __) =>
+              isHorizontal ? SizedBox(width: 5.w) : SizedBox(height: 5.h),
           itemBuilder: (context, index) {
             return Container(
               width: isHorizontal ? 80.w : double.infinity,

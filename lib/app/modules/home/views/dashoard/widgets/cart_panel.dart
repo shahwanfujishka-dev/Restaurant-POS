@@ -14,7 +14,9 @@ class CartPanel extends GetView<CartController> {
 
   @override
   Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) => controller.loadCaptains());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => controller.loadCaptains(),
+    );
     final colors = AppColors.of(context);
     return Scaffold(
       backgroundColor: colors.bg,

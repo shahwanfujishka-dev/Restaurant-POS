@@ -2,7 +2,16 @@ import 'package:get/get_rx/src/rx_types/rx_types.dart';
 
 import '../../modules/home/views/dashoard/models/dashboard_models.dart';
 
-enum OrderStatus { pending, preparing, ready, served, paid, cancelled, draft, billed }
+enum OrderStatus {
+  pending,
+  preparing,
+  ready,
+  served,
+  paid,
+  cancelled,
+  draft,
+  billed,
+}
 
 class OrderItem {
   final int? subId;
@@ -122,7 +131,10 @@ class OrderModel {
   }) : status = status.obs;
 
   /// Returns the branch invoice if available, otherwise standard invNo
-  String get displayInvNo => (branchInv != null && branchInv!.isNotEmpty && branchInv != "null") ? branchInv! : invNo;
+  String get displayInvNo =>
+      (branchInv != null && branchInv!.isNotEmpty && branchInv != "null")
+      ? branchInv!
+      : invNo;
 
   /// Returns the final payable amount.
   /// For offline orders, totalAmount already includes roundOff.
@@ -193,11 +205,11 @@ class OrderModel {
       roundOff: roundOff ?? this.roundOff,
       paymentType: paymentType ?? this.paymentType,
       qrLink: qrLink ?? this.qrLink,
-      branchTin: branchTin?? this.branchTin,
-      branchName: branchName?? this.branchName,
-      branchPhone: branchPhone?? this.branchPhone,
-      branchMob: branchMob?? this.branchMob,
-      branchAddress: branchAddress?? this.branchAddress,
+      branchTin: branchTin ?? this.branchTin,
+      branchName: branchName ?? this.branchName,
+      branchPhone: branchPhone ?? this.branchPhone,
+      branchMob: branchMob ?? this.branchMob,
+      branchAddress: branchAddress ?? this.branchAddress,
       areaId: areaId ?? this.areaId,
       areaName: areaName ?? this.areaName,
       priceGroupId: priceGroupId ?? this.priceGroupId,

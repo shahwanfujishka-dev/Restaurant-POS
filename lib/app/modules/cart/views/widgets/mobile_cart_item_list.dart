@@ -19,23 +19,21 @@ class MobileCartItemList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     final colors = AppColors.of(context);
     return Obx(() {
-      final visibleItems = controller.cartItems.where((item) => !item.isDeleted.value).toList();
+      final visibleItems = controller.cartItems
+          .where((item) => !item.isDeleted.value)
+          .toList();
 
       if (visibleItems.isEmpty) {
         return Center(
-          child: Text(
-            "Cart is empty",
-            style: TextStyle(color: colors.subtext),
-          ),
+          child: Text("Cart is empty", style: TextStyle(color: colors.subtext)),
         );
       }
 
       return ListView.builder(
         shrinkWrap: true,
-        padding: EdgeInsets.symmetric(horizontal:  10.w),
+        padding: EdgeInsets.symmetric(horizontal: 10.w),
         itemCount: visibleItems.length,
         itemBuilder: (context, index) {
           final cartItem = visibleItems[index];
@@ -50,7 +48,10 @@ class MobileCartItemList extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         final dashboardController = Get.find<DashboardController>();
-        dashboardController.onProductTapped(cartItem.product, existingItem: cartItem);
+        dashboardController.onProductTapped(
+          cartItem.product,
+          existingItem: cartItem,
+        );
       },
       child: Container(
         margin: EdgeInsets.only(bottom: 4.h),
@@ -77,16 +78,21 @@ class MobileCartItemList extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12.r),
                     child: cartItem.product.image.isNotEmpty
                         ? CachedNetworkImage(
-                      imageUrl: cartItem.product.image,
-                      width: 60.w,
-                      height: 60.w,
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) => Container(
-                        color: colors.textField,
-                        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                      ),
-                      errorWidget: (context, url, error) => _buildPlaceholder(context),
-                    )
+                            imageUrl: cartItem.product.image,
+                            width: 60.w,
+                            height: 60.w,
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => Container(
+                              color: colors.textField,
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
+                            errorWidget: (context, url, error) =>
+                                _buildPlaceholder(context),
+                          )
                         : _buildPlaceholder(context),
                   ),
                   SizedBox(width: 12.w),
@@ -108,7 +114,10 @@ class MobileCartItemList extends StatelessWidget {
                         ),
                         // Display Unit
                         Container(
-                          padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 6.w,
+                            vertical: 2.h,
+                          ),
                           decoration: BoxDecoration(
                             color: AppTheme.primaryGreen.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(4.r),
@@ -123,14 +132,16 @@ class MobileCartItemList extends StatelessWidget {
                           ),
                         ),
                         SizedBox(height: 4.h),
-                        Obx(() => Text(
-                          '${cartItem.subtotalWithTax.toStringAsFixed(2)}',
-                          style: AppTypography.cardSubtitle.copyWith(
-                            color: colors.text,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13.sp,
+                        Obx(
+                          () => Text(
+                            '${cartItem.subtotalWithTax.toStringAsFixed(2)}',
+                            style: AppTypography.cardSubtitle.copyWith(
+                              color: colors.text,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13.sp,
+                            ),
                           ),
-                        )),
+                        ),
                         if (cartItem.selectedAddons.isNotEmpty)
                           Padding(
                             padding: EdgeInsets.only(top: 2.h),
@@ -140,7 +151,8 @@ class MobileCartItemList extends StatelessWidget {
                                   .map((a) => "${a.name} x${a.quantity.value}")
                                   .toList();
 
-                              if (addons.isEmpty) return const SizedBox.shrink();
+                              if (addons.isEmpty)
+                                return const SizedBox.shrink();
 
                               return Text(
                                 addons.join(", "),
@@ -160,9 +172,7 @@ class MobileCartItemList extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: colors.textField,
                       borderRadius: BorderRadius.circular(12.r),
-                      border: Border.all(
-                        color: colors.border,
-                      ),
+                      border: Border.all(color: colors.border),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -170,28 +180,35 @@ class MobileCartItemList extends StatelessWidget {
                         _buildQuantityButton(
                           context,
                           icon: Icons.remove,
-                          onPressed: () => controller.decreaseQuantity(cartItem),
+                          onPressed: () =>
+                              controller.decreaseQuantity(cartItem),
                           color: colors.subtext,
                         ),
                         InkWell(
-                          onTap: () => QuantityDialog.show(cartItem, controller),
+                          onTap: () =>
+                              QuantityDialog.show(cartItem, controller),
                           child: Container(
                             padding: EdgeInsets.symmetric(horizontal: 8.w),
-                            child: Obx(() => Text(
-                              '${cartItem.quantity.value}',
-                              style: AppTypography.cardTitle.copyWith(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14.sp,
-                                color: colors.text,
+                            child: Obx(
+                              () => Text(
+                                '${cartItem.quantity.value}',
+                                style: AppTypography.cardTitle.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14.sp,
+                                  color: colors.text,
+                                ),
                               ),
-                            )),
+                            ),
                           ),
                         ),
                         _buildQuantityButton(
                           context,
                           icon: Icons.add,
                           onPressed: () {
-                            controller.updateQuantity(cartItem, cartItem.quantity.value + 1);
+                            controller.updateQuantity(
+                              cartItem,
+                              cartItem.quantity.value + 1,
+                            );
                           },
                           color: AppTheme.primaryGreen,
                         ),
@@ -239,11 +256,7 @@ class MobileCartItemList extends StatelessWidget {
         borderRadius: BorderRadius.circular(8.r),
         child: Container(
           padding: EdgeInsets.all(8.w),
-          child: Icon(
-            icon,
-            size: 16.sp,
-            color: color,
-          ),
+          child: Icon(icon, size: 16.sp, color: color),
         ),
       ),
     );
@@ -256,20 +269,13 @@ class MobileCartItemList extends StatelessWidget {
       height: 60.w,
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            colors.textField,
-            colors.border,
-          ],
+          colors: [colors.textField, colors.border],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(12.r),
       ),
-      child: Icon(
-        Icons.restaurant_menu,
-        color: colors.subtext,
-        size: 24.sp,
-      ),
+      child: Icon(Icons.restaurant_menu, color: colors.subtext, size: 24.sp),
     );
   }
 }

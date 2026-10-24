@@ -1,30 +1,35 @@
-// This is a basic Flutter widgets test.
-//
-// To perform an interaction with a widgets in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widgets
-// tree, read text, and verify that the values of widgets properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:get/get.dart';
+import 'package:restaurant_pos/app/data/services/api_services.dart';
+import 'package:restaurant_pos/app/routes/app_pages.dart';
+import 'package:restaurant_pos/app/theme/theme_controller.dart';
 import 'package:restaurant_pos/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  TestWidgetsFlutterBinding.ensureInitialized();
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  setUp(() {
+    Get.testMode = true;
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+  tearDown(() {
+    Get.reset();
+  });
+
+  testWidgets('MyApp builds successfully', (WidgetTester tester) async {
+    // Register dependencies normally initialized in main().
+    Get.put(ApiService());
+    final themeController = Get.put(ThemeController());
+
+    await tester.pumpWidget(
+      MyApp(
+        initialRoute: AppPages.INITIAL,
+        themeController: themeController,
+      ),
+    );
+
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.byType(MyApp), findsOneWidget);
   });
 }

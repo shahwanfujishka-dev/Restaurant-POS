@@ -1,8 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get_navigation/src/root/parse_route.dart';
-import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
+import 'package:get/get.dart';
 
 import '../../../../../theme/app_theme.dart';
 import '../../../../../theme/app_typography.dart';
@@ -54,11 +53,11 @@ class CategoryAssignmentCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  category.name,
+                  category.name.tr,
                   style: AppTypography.cardTitle.copyWith(fontSize: 14.sp),
                 ),
                 Text(
-                  "Token ID: ${category.tokenPrinterId}",
+                  'token_id_label'.trParams({'id': category.tokenPrinterId.toString()}),
                   style: TextStyle(fontSize: 11.sp, color: Colors.grey),
                 ),
               ],
@@ -67,20 +66,30 @@ class CategoryAssignmentCard extends StatelessWidget {
           SizedBox(width: 8.w),
           Obx(() {
             final assignment = controller.tokenPrinterAssignments
-                .firstWhereOrNull((a) => a.tokenPrinterId == category.tokenPrinterId);
+                .firstWhereOrNull(
+                  (a) => a.tokenPrinterId == category.tokenPrinterId,
+                );
 
             return Container(
               padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
               decoration: BoxDecoration(
-                color: assignment != null ? AppTheme.primaryGreen.withOpacity(0.1) : Colors.grey.shade100,
+                color: assignment != null
+                    ? AppTheme.primaryGreen.withOpacity(0.1)
+                    : Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(20.r),
               ),
               child: Text(
-                assignment != null ? assignment.printerName.value : "Not Assigned",
+                assignment != null
+                    ? assignment.printerName.value
+                    : 'not_assigned'.tr,
                 style: TextStyle(
                   fontSize: 12.sp,
-                  color: assignment != null ? AppTheme.primaryGreen : Colors.grey,
-                  fontWeight: assignment != null ? FontWeight.bold : FontWeight.normal,
+                  color: assignment != null
+                      ? AppTheme.primaryGreen
+                      : Colors.grey,
+                  fontWeight: assignment != null
+                      ? FontWeight.bold
+                      : FontWeight.normal,
                 ),
               ),
             );

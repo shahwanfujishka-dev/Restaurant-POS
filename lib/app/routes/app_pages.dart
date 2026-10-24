@@ -44,10 +44,7 @@ class AppPages {
       page: () => const CartView(),
       binding: CartBinding(),
     ),
-    GetPage(
-      name: _Paths.QrScann,
-      page: () => const QrScannerView(),
-    ),
+    GetPage(name: _Paths.QrScann, page: () => const QrScannerView()),
     GetPage(
       name: _Paths.ORDER_TYPE,
       page: () => const OrderTypeView(),

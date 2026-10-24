@@ -2,12 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'package:flutter/material.dart';
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/get_instance/src/extension_instance.dart';
-import 'package:get/get_navigation/src/extension_navigation.dart';
-import 'package:get/get_rx/src/rx_types/rx_types.dart';
-import 'package:get/get_state_manager/src/simple/get_controllers.dart';
-import 'package:get/get_utils/src/extensions/internacionalization.dart';
+import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:restaurant_pos/app/modules/home/controller/printer_controller.dart';
 import 'package:restaurant_pos/app/modules/home/controller/table_controller.dart';
@@ -30,13 +25,11 @@ class OrdersController extends GetxController {
   final ApiService _apiService = Get.find<ApiService>();
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
   final orders = <OrderModel>[].obs;
-  final soldOrders = <OrderModel>[].obs; // ✅ Add separate list for sold orders
+  final soldOrders = <OrderModel>[].obs;
   final isLoading = false.obs;
 
-  // Filter for sold orders
   final selectedSoldDate = DateTime.now().obs;
 
-  // Timer for running clock
   Timer? _timer;
   final currentTime = DateTime.now().obs;
 
@@ -76,12 +69,7 @@ class OrdersController extends GetxController {
   Future<void> fetchOrders() async {
     try {
       isLoading.value = true;
-
-      // Fetch active and sold orders in parallel
-      await Future.wait([
-        _fetchActiveOrders(),
-        _fetchSoldOrders(),
-      ]);
+      await Future.wait([_fetchActiveOrders(), _fetchSoldOrders()]);
     } catch (e) {
       debugPrint("Error fetching orders: $e");
     } finally {
@@ -92,7 +80,7 @@ class OrdersController extends GetxController {
   Future<void> fetchOrdersSafely() async {
     await fetchOrders();
   }
-  /// Like ?? but also skips empty strings, not just null.
+
   String _firstNonEmptyValue(List<dynamic> values) {
     for (final v in values) {
       if (v != null && v.toString().isNotEmpty && v.toString() != 'null') {
@@ -104,28 +92,25 @@ class OrdersController extends GetxController {
 
   Future<void> _fetchActiveOrders() async {
     try {
-      // 1. Load local unsynced orders first — works fully offline
-      final bool isLocalHost = DeviceConfig.operationMode == OperationMode.local
-          && DeviceConfig.role == DeviceRole.server;
-      final bool isLocalClient = DeviceConfig.operationMode == OperationMode.local
-          && DeviceConfig.role == DeviceRole.client;
+      final bool isLocalHost =
+          DeviceConfig.operationMode == OperationMode.local &&
+          DeviceConfig.role == DeviceRole.server;
 
-      // final ordersData = isLocalHost
-      //     ? await _dbHelper.getActiveLocalOrders()
-      //     : await _dbHelper.getUnsyncedOrders();
-
-      final bool readLocalAll = isLocalHost || DeviceConfig.operationMode == OperationMode.online;
+      final bool readLocalAll =
+          isLocalHost || DeviceConfig.operationMode == OperationMode.online;
       final ordersData = readLocalAll
           ? await _dbHelper.getActiveLocalOrders()
           : await _dbHelper.getUnsyncedOrders();
 
-
       final List<OrderModel> finalOrders = ordersData
           .map((json) => _mapJsonToOrderModel(json))
-          .where((o) => o.status.value != OrderStatus.paid && o.status.value != OrderStatus.cancelled)
+          .where(
+            (o) =>
+                o.status.value != OrderStatus.paid &&
+                o.status.value != OrderStatus.cancelled,
+          )
           .toList();
 
-      // 2. Load server orders and processing tables
       List<OrderModel> allProcessingOrders = [];
       try {
         final tablesController = Get.find<TablesController>();
@@ -135,8 +120,10 @@ class OrdersController extends GetxController {
           for (var table in area.tables) {
             for (var processing in table.processingTable) {
               if (processing is Map<String, dynamic>) {
-                final orderType = (processing['sales_odr_order_type'] as num? ?? 0).toInt();
-                int posStatus = (processing['sales_odr_pos_status'] as num? ?? 0).toInt();
+                final orderType =
+                    (processing['sales_odr_order_type'] as num? ?? 0).toInt();
+                int posStatus =
+                    (processing['sales_odr_pos_status'] as num? ?? 0).toInt();
 
                 OrderStatus status;
                 if (posStatus == 1) {
@@ -147,36 +134,72 @@ class OrdersController extends GetxController {
                   status = OrderStatus.draft;
                 }
 
-                allProcessingOrders.add(OrderModel(
-                  id: (processing['sales_odr_id'] ?? '').toString(),
-                  tableId: (processing['sales_odr_table_id'] ?? table.id).toString(),
-                  invNo: (processing['sales_odr_inv_no'] ?? '').toString(),
-                  branchInv: _firstNonEmptyValue([
-                    processing['sales_odr_sales_branch_inv'],
-                    processing['sales_odr_branch_inv'],
-                    processing['sales_branch_inv'],
-                  ]),
-                  tableName: _resolveName(processing, orderType, table.name),
-                  customerName: (processing['sq_cust_name'] ?? processing['customer_name'] ?? processing['cust_name'] ??'')?.toString(),
-                  tokenNo: processing['sales_odr_token_no']?.toString(),
-                  chairNumber: (processing['sales_odr_no_seats'] as num? ?? 0).toInt(),
-                  sales_odr_pos_status: posStatus,
-                  items: [],
-                  status: status,
-                  createdAt: DateTime.tryParse(processing['sales_odr_datetime'] ?? '') ?? DateTime.now(),
-                  subTotal: (processing['tot_rate'] as num? ?? processing['sub_total'] as num? ?? 0.0).toDouble(),
-                  totalAmount: (processing['sales_odr_total'] ?? processing['tot_amount'] ?? processing['total_amount'] as num? ?? 0.0).toDouble(),
-                  areaId: area.id,
-                  areaName: area.name,
-                  priceGroupId: area.priceGroupID,
-                  totalTax: (processing['sales_odr_tax'] ?? processing['tot_tax'] ?? processing['total_tax'] as num? ?? 0.0).toDouble(),
-                  totalCgst: (processing['tot_cgst_tax'] as num? ?? 0.0).toDouble(),
-                  totalSgst: (processing['tot_sgst_tax'] as num? ?? 0.0).toDouble(),
-                  sales_odr_order_type: orderType,
-                  discount: (processing['tot_disc'] ?? processing['discount'] as num? ?? 0.0).toDouble(),
-                  roundOff: (processing['sales_odr_roundoff'] as num? ?? 0.0).toDouble(),
-                  qrLink: (processing['qr_link'] ?? processing['zatca_qr'] ?? '').toString(),
-                ));
+                allProcessingOrders.add(
+                  OrderModel(
+                    id: (processing['sales_odr_id'] ?? '').toString(),
+                    tableId: (processing['sales_odr_table_id'] ?? table.id)
+                        .toString(),
+                    invNo: (processing['sales_odr_inv_no'] ?? '').toString(),
+                    branchInv: _firstNonEmptyValue([
+                      processing['sales_odr_sales_branch_inv'],
+                      processing['sales_odr_branch_inv'],
+                      processing['sales_branch_inv'],
+                    ]),
+                    tableName: _resolveName(processing, orderType, table.name),
+                    customerName:
+                        (processing['sq_cust_name'] ??
+                                processing['customer_name'] ??
+                                processing['cust_name'] ??
+                                '')
+                            ?.toString(),
+                    tokenNo: processing['sales_odr_token_no']?.toString(),
+                    chairNumber: (processing['sales_odr_no_seats'] as num? ?? 0)
+                        .toInt(),
+                    sales_odr_pos_status: posStatus,
+                    items: [],
+                    status: status,
+                    createdAt:
+                        DateTime.tryParse(
+                          processing['sales_odr_datetime'] ?? '',
+                        ) ??
+                        DateTime.now(),
+                    subTotal:
+                        (processing['tot_rate'] as num? ??
+                                processing['sub_total'] as num? ??
+                                0.0)
+                            .toDouble(),
+                    totalAmount:
+                        (processing['sales_odr_total'] ??
+                                processing['tot_amount'] ??
+                                processing['total_amount'] as num? ??
+                                0.0)
+                            .toDouble(),
+                    areaId: area.id,
+                    areaName: area.name,
+                    priceGroupId: area.priceGroupID,
+                    totalTax:
+                        (processing['sales_odr_tax'] ??
+                                processing['tot_tax'] ??
+                                processing['total_tax'] as num? ??
+                                0.0)
+                            .toDouble(),
+                    totalCgst: (processing['tot_cgst_tax'] as num? ?? 0.0)
+                        .toDouble(),
+                    totalSgst: (processing['tot_sgst_tax'] as num? ?? 0.0)
+                        .toDouble(),
+                    sales_odr_order_type: orderType,
+                    discount:
+                        (processing['tot_disc'] ??
+                                processing['discount'] as num? ??
+                                0.0)
+                            .toDouble(),
+                    roundOff: (processing['sales_odr_roundoff'] as num? ?? 0.0)
+                        .toDouble(),
+                    qrLink:
+                        (processing['qr_link'] ?? processing['zatca_qr'] ?? '')
+                            .toString(),
+                  ),
+                );
               }
             }
           }
@@ -185,15 +208,15 @@ class OrdersController extends GetxController {
         debugPrint("fetchOrders: Could not load tables (offline?): $e");
       }
 
-      // ── 2b. Active orders from the network — cloud API when online,
-      //         LOCAL HUB when in local mode ──────────────────────────────
       List<OrderModel> fetchedOrders = [];
       bool hubFetchFailed = false;
 
       if (DeviceConfig.operationMode == OperationMode.local) {
         if (DeviceConfig.role == DeviceRole.client) {
           final hostIp = DeviceConfig.hostIp;
-          if (hostIp != null && hostIp.trim().isNotEmpty && DeviceConfig.hasAuthToken) {
+          if (hostIp != null &&
+              hostIp.trim().isNotEmpty &&
+              DeviceConfig.hasAuthToken) {
             try {
               final hubResult = await LocalHubClient.instance.fetchActiveOrders(
                 hostIp: hostIp,
@@ -202,31 +225,33 @@ class OrdersController extends GetxController {
               final List<dynamic> rows = hubResult['data'] ?? [];
               fetchedOrders = rows
                   .whereType<Map>()
-                  .map((row) => _mapJsonToOrderModel(Map<String, dynamic>.from(row)))
+                  .map(
+                    (row) =>
+                        _mapJsonToOrderModel(Map<String, dynamic>.from(row)),
+                  )
                   .toList();
-              debugPrint("🟢 LOCAL HUB: fetched ${fetchedOrders.length} active orders from host");
             } catch (e) {
               debugPrint("fetchOrders: Local Hub fetch failed (client): $e");
               hubFetchFailed = true;
             }
           } else {
-            debugPrint("fetchOrders: Local mode client but no host IP/auth token configured yet");
             hubFetchFailed = true;
           }
         }
-        // Host role: nothing more to do — its own orders are already in
-        // `finalOrders` via getActiveLocalOrders(), regardless of sync status.
       } else {
         try {
-          final response = await _apiService.post("mobileapp/pos/get_pos_order_list", data: {
-            "usr_id": int.tryParse(AppState.userId) ?? 18,
-          });
+          final response = await _apiService.post(
+            "mobileapp/pos/get_pos_order_list",
+            data: {"usr_id": int.tryParse(AppState.userId) ?? 18},
+          );
 
           if (response.statusCode == 200) {
             final List<dynamic> data = response.data['data'] ?? [];
             fetchedOrders = data.map((json) {
-              final orderType = (json['sales_odr_order_type'] as num? ?? 0).toInt();
-              int posStatus = (json['sales_odr_pos_status'] as num? ?? 0).toInt();
+              final orderType = (json['sales_odr_order_type'] as num? ?? 0)
+                  .toInt();
+              int posStatus = (json['sales_odr_pos_status'] as num? ?? 0)
+                  .toInt();
 
               OrderStatus status;
               if (posStatus == 1) {
@@ -238,12 +263,16 @@ class OrdersController extends GetxController {
               }
 
               final processingOrder = allProcessingOrders.firstWhereOrNull(
-                    (o) => o.invNo == (json['sales_odr_inv_no'] ?? '').toString(),
+                (o) => o.invNo == (json['sales_odr_inv_no'] ?? '').toString(),
               );
 
               return OrderModel(
                 id: (json['sales_odr_id'] ?? '').toString(),
-                tableId: (json['sales_odr_table_id'] ?? processingOrder?.tableId ?? '').toString(),
+                tableId:
+                    (json['sales_odr_table_id'] ??
+                            processingOrder?.tableId ??
+                            '')
+                        .toString(),
                 invNo: (json['sales_odr_inv_no'] ?? '').toString(),
                 branchInv: _firstNonEmptyValue([
                   json['sales_odr_sales_branch_inv'],
@@ -251,29 +280,86 @@ class OrdersController extends GetxController {
                   json['sales_branch_inv'],
                   processingOrder?.branchInv,
                 ]),
-                tableName: _resolveName(json, orderType, processingOrder?.tableName ?? 'Unknown Table'),
-                customerName: (json['sq_cust_name'] ?? json['customer_name'] ?? json['cust_name'] ?? processingOrder?.customerName)?.toString(),
-                tokenNo: (json['sales_odr_token_no'] ?? processingOrder?.tokenNo)?.toString(),
-                chairNumber: (json['sales_odr_no_seats'] as num? ??
-                    processingOrder?.chairNumber ?? 0).toInt(),
-                captainName: (json['usr_name'] ?? json['captain_name'] ?? json['ledger_name'])?.toString(),
+                tableName: _resolveName(
+                  json,
+                  orderType,
+                  processingOrder?.tableName ?? 'unknown_table'.tr,
+                ),
+                customerName:
+                    (json['sq_cust_name'] ??
+                            json['customer_name'] ??
+                            json['cust_name'] ??
+                            processingOrder?.customerName)
+                        ?.toString(),
+                tokenNo:
+                    (json['sales_odr_token_no'] ?? processingOrder?.tokenNo)
+                        ?.toString(),
+                chairNumber:
+                    (json['sales_odr_no_seats'] as num? ??
+                            processingOrder?.chairNumber ??
+                            0)
+                        .toInt(),
+                captainName:
+                    (json['usr_name'] ??
+                            json['captain_name'] ??
+                            json['ledger_name'])
+                        ?.toString(),
                 sales_odr_pos_status: posStatus,
                 items: [],
                 status: status,
-                createdAt: DateTime.tryParse(json['sales_odr_datetime'] ?? '') ??
-                    processingOrder?.createdAt ?? DateTime.now(),
-                subTotal: (json['tot_rate'] as num? ?? json['sub_total'] as num? ?? processingOrder?.subTotal ?? 0.0).toDouble(),
-                totalAmount: (json['sales_odr_total'] ?? json['tot_amount'] ?? json['total_amount'] as num? ?? 0.0).toDouble(),
+                createdAt:
+                    DateTime.tryParse(json['sales_odr_datetime'] ?? '') ??
+                    processingOrder?.createdAt ??
+                    DateTime.now(),
+                subTotal:
+                    (json['tot_rate'] as num? ??
+                            json['sub_total'] as num? ??
+                            processingOrder?.subTotal ??
+                            0.0)
+                        .toDouble(),
+                totalAmount:
+                    (json['sales_odr_total'] ??
+                            json['tot_amount'] ??
+                            json['total_amount'] as num? ??
+                            0.0)
+                        .toDouble(),
                 areaId: processingOrder?.areaId,
                 areaName: processingOrder?.areaName,
                 priceGroupId: processingOrder?.priceGroupId,
-                totalTax: (json['sales_odr_tax'] ?? json['tot_tax'] ?? json['total_tax'] as num? ?? 0.0).toDouble(),
-                totalCgst: (json['tot_cgst_tax'] as num? ?? processingOrder?.totalCgst ?? 0.0).toDouble(),
-                totalSgst: (json['tot_sgst_tax'] as num? ?? processingOrder?.totalSgst ?? 0.0).toDouble(),
+                totalTax:
+                    (json['sales_odr_tax'] ??
+                            json['tot_tax'] ??
+                            json['total_tax'] as num? ??
+                            0.0)
+                        .toDouble(),
+                totalCgst:
+                    (json['tot_cgst_tax'] as num? ??
+                            processingOrder?.totalCgst ??
+                            0.0)
+                        .toDouble(),
+                totalSgst:
+                    (json['tot_sgst_tax'] as num? ??
+                            processingOrder?.totalSgst ??
+                            0.0)
+                        .toDouble(),
                 sales_odr_order_type: orderType,
-                discount: (json['tot_disc'] ?? json['discount'] ?? processingOrder?.discount ?? 0.0).toDouble(),
-                roundOff: (json['sales_odr_roundoff'] ?? processingOrder?.roundOff ?? 0.0).toDouble(),
-                qrLink: (json['qr_link'] ?? json['zatca_qr'] ?? processingOrder?.qrLink ?? '').toString(),
+                discount:
+                    (json['tot_disc'] ??
+                            json['discount'] ??
+                            processingOrder?.discount ??
+                            0.0)
+                        .toDouble(),
+                roundOff:
+                    (json['sales_odr_roundoff'] ??
+                            processingOrder?.roundOff ??
+                            0.0)
+                        .toDouble(),
+                qrLink:
+                    (json['qr_link'] ??
+                            json['zatca_qr'] ??
+                            processingOrder?.qrLink ??
+                            '')
+                        .toString(),
               );
             }).toList();
           }
@@ -282,18 +368,19 @@ class OrdersController extends GetxController {
         }
       }
 
-      // ── Guard: on a local-mode client, a failed/unavailable hub fetch means
-      //    we have nothing new to reconcile — keep whatever's already on
-      //    screen instead of wiping it out with an incomplete `finalOrders`.
-      if (isLocalClient && hubFetchFailed) {
-        debugPrint("fetchOrders: Hub unreachable this cycle — keeping existing order list.");
+      if (DeviceConfig.operationMode == OperationMode.local &&
+          DeviceConfig.role == DeviceRole.client &&
+          hubFetchFailed) {
         return;
       }
 
-      // Reusable reconciliation function
       void reconcileOrder(OrderModel serverOrder) {
         final int existingIndex = finalOrders.indexWhere((o) {
-          if (o.invNo != "LOCAL" && o.invNo != "OFFLINE" && serverOrder.invNo != "LOCAL" && serverOrder.invNo != "OFFLINE" && o.invNo == serverOrder.invNo) {
+          if (o.invNo != "LOCAL" &&
+              o.invNo != "OFFLINE" &&
+              serverOrder.invNo != "LOCAL" &&
+              serverOrder.invNo != "OFFLINE" &&
+              o.invNo == serverOrder.invNo) {
             return true;
           }
           return o.id == serverOrder.id;
@@ -313,9 +400,8 @@ class OrdersController extends GetxController {
           localOrder.qrLink = serverOrder.qrLink;
           localOrder.totalCgst = serverOrder.totalCgst;
           localOrder.totalSgst = serverOrder.totalSgst;
-          localOrder.status.value = serverOrder.status.value; // Sync status
+          localOrder.status.value = serverOrder.status.value;
 
-          // Auto-repair local DB sync status
           _dbHelper.updateOrderStatusByUuid(
             localOrder.id,
             localOrder.status.value.name,
@@ -331,13 +417,10 @@ class OrdersController extends GetxController {
         }
       }
 
-      // 3. Merge server sources into finalOrders with Priority
-      // Priority 2: Orders fetched from API / Local Hub
       for (var fOrder in fetchedOrders) {
         reconcileOrder(fOrder);
       }
 
-      // Priority 3: Orders from processing tables cache
       for (var pOrder in allProcessingOrders) {
         reconcileOrder(pOrder);
       }
@@ -351,7 +434,6 @@ class OrdersController extends GetxController {
             .toList();
       }
       orders.assignAll(visibleOrders);
-
     } catch (e) {
       debugPrint("Error fetching active orders: $e");
     }
@@ -360,9 +442,10 @@ class OrdersController extends GetxController {
   Future<void> downloadAllOrders({int soldDays = 1}) async {
     if (DeviceConfig.operationMode == OperationMode.local) return;
     try {
-      // Active orders
-      final res = await _apiService.post("mobileapp/pos/get_pos_order_list",
-          data: {"usr_id": int.tryParse(AppState.userId) ?? 18});
+      final res = await _apiService.post(
+        "mobileapp/pos/get_pos_order_list",
+        data: {"usr_id": int.tryParse(AppState.userId) ?? 18},
+      );
       if (res.statusCode == 200) {
         final List<dynamic> data = res.data['data'] ?? [];
         await _dbHelper.cacheServerOrders(data);
@@ -371,19 +454,25 @@ class OrdersController extends GetxController {
         );
       }
 
-      // Sold orders (one API call per day)
       for (int i = 0; i < soldDays; i++) {
-        final d = DateFormat('yyyy-MM-dd').format(DateTime.now().subtract(Duration(days: i)));
-        final r = await _apiService.post("mobileapp/pos/get_sold_pos_order_list",
-            data: {"usr_id": int.tryParse(AppState.userId) ?? 18, "date": d});
-        if (r.statusCode == 200) await _dbHelper.cacheSoldOrders(r.data['data'] ?? []);
+        final d = DateFormat(
+          'yyyy-MM-dd',
+        ).format(DateTime.now().subtract(Duration(days: i)));
+        final r = await _apiService.post(
+          "mobileapp/pos/get_sold_pos_order_list",
+          data: {"usr_id": int.tryParse(AppState.userId) ?? 18, "date": d},
+        );
+        if (r.statusCode == 200)
+          await _dbHelper.cacheSoldOrders(r.data['data'] ?? []);
       }
 
-      // Items for every synced order that doesn't have them yet
       final db = await _dbHelper.database;
-      final rows = await db.query('orders',
-          where: "is_synced = 1 AND (payload IS NULL OR payload NOT LIKE '%sales_order_sub%')",
-          limit: 200);
+      final rows = await db.query(
+        'orders',
+        where:
+            "is_synced = 1 AND (payload IS NULL OR payload NOT LIKE '%sales_order_sub%')",
+        limit: 200,
+      );
       for (final row in rows) {
         await fetchOrderDetails(_mapJsonToOrderModel(row));
       }
@@ -393,9 +482,19 @@ class OrdersController extends GetxController {
   }
 
   bool _isAddonRow(dynamic i) {
-    final flag = int.tryParse((i['is_addon'] ?? i['sales_odr_sub_is_addon'] ?? 0).toString()) ?? 0;
-    final parent = int.tryParse(
-        (i['addon_parent_prd_id'] ?? i['sales_odr_sub_addon_parent_prd_id'] ?? 0).toString()) ?? 0;
+    final flag =
+        int.tryParse(
+          (i['is_addon'] ?? i['sales_odr_sub_is_addon'] ?? 0).toString(),
+        ) ??
+        0;
+    final parent =
+        int.tryParse(
+          (i['addon_parent_prd_id'] ??
+                  i['sales_odr_sub_addon_parent_prd_id'] ??
+                  0)
+              .toString(),
+        ) ??
+        0;
     return flag == 1 || parent > 0;
   }
 
@@ -413,9 +512,13 @@ class OrdersController extends GetxController {
       if (DeviceConfig.operationMode == OperationMode.local) {
         if (DeviceConfig.role == DeviceRole.client) {
           final hostIp = DeviceConfig.hostIp;
-          if (hostIp != null && hostIp.trim().isNotEmpty && DeviceConfig.hasAuthToken) {
+          if (hostIp != null &&
+              hostIp.trim().isNotEmpty &&
+              DeviceConfig.hasAuthToken) {
             try {
-              final String dateStr = DateFormat('yyyy-MM-dd').format(selectedSoldDate.value);
+              final String dateStr = DateFormat(
+                'yyyy-MM-dd',
+              ).format(selectedSoldDate.value);
               final hubResult = await LocalHubClient.instance.fetchSoldOrders(
                 hostIp: hostIp,
                 port: DeviceConfig.hostPort,
@@ -424,11 +527,17 @@ class OrdersController extends GetxController {
               final List<dynamic> rows = hubResult['data'] ?? [];
               final hubSoldOrders = rows
                   .whereType<Map>()
-                  .map((row) => _mapJsonToOrderModel(Map<String, dynamic>.from(row)))
+                  .map(
+                    (row) =>
+                        _mapJsonToOrderModel(Map<String, dynamic>.from(row)),
+                  )
                   .toList();
 
               final hubIds = hubSoldOrders.map((o) => o.id).toSet();
-              final mergedList = [...hubSoldOrders, ...cachedSoldOrders.where((c) => !hubIds.contains(c.id))];
+              final mergedList = [
+                ...hubSoldOrders,
+                ...cachedSoldOrders.where((c) => !hubIds.contains(c.id)),
+              ];
               mergedList.sort((a, b) => b.createdAt.compareTo(a.createdAt));
               soldOrders.assignAll(mergedList);
             } catch (e) {
@@ -436,11 +545,13 @@ class OrdersController extends GetxController {
             }
           }
         }
-        return; // host already has these via cachedSoldOrders
+        return;
       }
 
       try {
-        final String dateStr = DateFormat('yyyy-MM-dd').format(selectedSoldDate.value);
+        final String dateStr = DateFormat(
+          'yyyy-MM-dd',
+        ).format(selectedSoldDate.value);
         final response = await _apiService.post(
           "mobileapp/pos/get_sold_pos_order_list",
           data: {
@@ -453,28 +564,55 @@ class OrdersController extends GetxController {
           final List<dynamic> data = response.data['data'] ?? [];
 
           final List<OrderModel> apiSoldOrders = data.map((json) {
-            final int type = (json['sales_odr_order_type'] as num? ?? 0).toInt();
+            final int type = (json['sales_odr_order_type'] as num? ?? 0)
+                .toInt();
             return OrderModel(
               id: (json['sales_odr_id'] ?? '').toString(),
               invNo: (json['sales_odr_inv_no'] ?? '').toString(),
-              branchInv: (json['sales_odr_branch_inv'] ?? json['sales_branch_inv']?? json['sales_odr_sales_branch_inv'] ?? '').toString(), // ✅ Updated
+              branchInv:
+                  (json['sales_odr_branch_inv'] ??
+                          json['sales_branch_inv'] ??
+                          json['sales_odr_sales_branch_inv'] ??
+                          '')
+                      .toString(),
               tableId: (json['sales_odr_table_id'] ?? '').toString(),
-              tableName: _resolveName(json, type, 'Walk-in Customer'),
-              customerName: (json['sq_cust_name'] ?? json['customer_name'] ?? json['cust_name']??'')?.toString(),
+              tableName: _resolveName(json, type, 'cash_customer'.tr),
+              customerName:
+                  (json['sq_cust_name'] ??
+                          json['customer_name'] ??
+                          json['cust_name'] ??
+                          '')
+                      ?.toString(),
               tokenNo: json['sales_odr_token_no']?.toString(),
               chairNumber: 0,
-              sales_odr_pos_status: (json['sales_odr_pos_status'] as num? ?? 3).toInt(),
+              sales_odr_pos_status: (json['sales_odr_pos_status'] as num? ?? 3)
+                  .toInt(),
               items: [],
               status: OrderStatus.paid,
-              createdAt: DateTime.tryParse(
-                  json['sales_odr_datetime'] ?? json['created_at'] ?? '') ??
+              createdAt:
+                  DateTime.tryParse(
+                    json['sales_odr_datetime'] ?? json['created_at'] ?? '',
+                  ) ??
                   DateTime.now(),
-              subTotal: (json['tot_rate'] as num? ?? json['sub_total'] as num? ?? 0.0).toDouble(),
-              totalAmount: (json['sales_odr_total'] ?? json['tot_amount'] ?? json['total_amount'] as num? ?? 0.0).toDouble(),
-              totalTax: (json['sales_odr_tax'] ?? json['tot_tax'] ?? json['total_tax'] as num? ?? 0.0).toDouble(),
+              subTotal:
+                  (json['tot_rate'] as num? ?? json['sub_total'] as num? ?? 0.0)
+                      .toDouble(),
+              totalAmount:
+                  (json['sales_odr_total'] ??
+                          json['tot_amount'] ??
+                          json['total_amount'] as num? ??
+                          0.0)
+                      .toDouble(),
+              totalTax:
+                  (json['sales_odr_tax'] ??
+                          json['tot_tax'] ??
+                          json['total_tax'] as num? ??
+                          0.0)
+                      .toDouble(),
               totalCgst: (json['tot_cgst_tax'] as num? ?? 0.0).toDouble(),
               totalSgst: (json['tot_sgst_tax'] as num? ?? 0.0).toDouble(),
-              discount: (json['tot_disc'] ?? json['discount'] as num? ?? 0.0).toDouble(),
+              discount: (json['tot_disc'] ?? json['discount'] as num? ?? 0.0)
+                  .toDouble(),
               roundOff: (json['sales_odr_roundoff'] as num? ?? 0.0).toDouble(),
               qrLink: (json['qr_link'] ?? json['zatca_qr'] ?? '').toString(),
               areaId: null,
@@ -487,12 +625,12 @@ class OrdersController extends GetxController {
 
           await _dbHelper.cacheSoldOrders(data);
 
-          // ── Build a lookup of LOCAL/OFFLINE cached orders → their real
-          //    server invNo (read from DB, written by SyncService after sync)
           final Map<String, String> localUuidToRealInvNo = {};
           final db = await _dbHelper.database;
           for (var cached in cachedSoldOrders) {
-            if (cached.invNo == "LOCAL" || cached.invNo == "OFFLINE" || cached.invNo.isEmpty) { // ✅ Handle empty invNo
+            if (cached.invNo == "LOCAL" ||
+                cached.invNo == "OFFLINE" ||
+                cached.invNo.isEmpty) {
               final rows = await db.query(
                 'orders',
                 columns: ['inv_no', 'is_synced'],
@@ -513,15 +651,26 @@ class OrdersController extends GetxController {
             }
           }
 
-          final Set<String> apiInvNos =
-          apiSoldOrders.map((o) => o.invNo).toSet();
+          final Set<String> apiInvNos = apiSoldOrders
+              .map((o) => o.invNo)
+              .toSet();
           final List<OrderModel> mergedList = [];
           mergedList.addAll(apiSoldOrders);
           for (var cached in cachedSoldOrders) {
-            if (cached.invNo != "LOCAL" && cached.invNo != "OFFLINE" && cached.invNo.isNotEmpty && apiInvNos.contains(cached.invNo)) {continue;}
+            if (cached.invNo != "LOCAL" &&
+                cached.invNo != "OFFLINE" &&
+                cached.invNo.isNotEmpty &&
+                apiInvNos.contains(cached.invNo)) {
+              continue;
+            }
             final realInvNo = localUuidToRealInvNo[cached.id];
-            if (realInvNo != null && apiInvNos.contains(realInvNo)) {await _dbHelper.deleteOrder(cached.id);continue;}
-            if (apiSoldOrders.any((api) => api.id == cached.id)) {continue;}
+            if (realInvNo != null && apiInvNos.contains(realInvNo)) {
+              await _dbHelper.deleteOrder(cached.id);
+              continue;
+            }
+            if (apiSoldOrders.any((api) => api.id == cached.id)) {
+              continue;
+            }
             mergedList.add(cached);
           }
 
@@ -543,16 +692,22 @@ class OrdersController extends GetxController {
       debugPrint("Error fetching sold orders: $e");
     }
   }
-  /// Background fetcher to ensure sold order details (get_sold_pos_data) are stored locally
-  Future<void> _backgroundFetchSoldOrderDetails(List<OrderModel> apiSoldOrders) async {
-    for (var order in apiSoldOrders) {
-      // If we don't have items, check if we have them in local DB payload
-      final db = await _dbHelper.database;
-      final rows = await db.query('orders', columns: ['payload'], where: 'uuid = ?', whereArgs: [order.id]);
 
-      if (rows.isNotEmpty && (rows.first['payload'] == null || (rows.first['payload'] as String).isEmpty)) {
-        // Fetch details if missing in local DB
-        log("Background fetching details for sold order: ${order.invNo}");
+  Future<void> _backgroundFetchSoldOrderDetails(
+    List<OrderModel> apiSoldOrders,
+  ) async {
+    for (var order in apiSoldOrders) {
+      final db = await _dbHelper.database;
+      final rows = await db.query(
+        'orders',
+        columns: ['payload'],
+        where: 'uuid = ?',
+        whereArgs: [order.id],
+      );
+
+      if (rows.isNotEmpty &&
+          (rows.first['payload'] == null ||
+              (rows.first['payload'] as String).isEmpty)) {
         await fetchOrderDetails(order);
       }
     }
@@ -560,7 +715,7 @@ class OrdersController extends GetxController {
 
   OrderModel _mapJsonToOrderModel(Map<String, dynamic> json) {
     List<OrderItem> localItems = [];
-    String tableName = json['customer_name'] ?? "Offline Order";
+    String tableName = json['customer_name'] ?? 'offline_order'.tr;
     String? customerName;
     String? tokenNo = json['token_no']?.toString();
     int chairNumber = 0;
@@ -571,18 +726,33 @@ class OrdersController extends GetxController {
     String invNo = json['inv_no']?.toString() ?? "LOCAL";
     String branchInv = json['branch_inv']?.toString() ?? "";
     String? createdByDeviceId = json['created_by_device_id']?.toString();
-    String orderId = json['server_id']?.toString() ?? json['uuid']?.toString() ?? "";
+    String orderId =
+        json['server_id']?.toString() ?? json['uuid']?.toString() ?? "";
     String tableId = json['table_id']?.toString() ?? "";
     double discount = (json['discount_amount'] as num? ?? 0.0).toDouble();
     double roundOff = (json['roundoff_amount'] as num? ?? 0.0).toDouble();
-    double subTotal = (json['sub_total'] as num? ?? json['tot_rate'] as num? ?? 0.0).toDouble();
-    double totalAmount = (json['total_amount'] as num? ?? json['tot_amount'] as num? ?? json['sales_odr_total'] as num? ?? 0.0).toDouble();
-    double totalTax = (json['total_tax'] as num? ?? json['tot_tax'] as num? ?? json['sales_odr_tax'] as num? ?? 0.0).toDouble();
+    double subTotal =
+        (json['sub_total'] as num? ?? json['tot_rate'] as num? ?? 0.0)
+            .toDouble();
+    double totalAmount =
+        (json['total_amount'] as num? ??
+                json['tot_amount'] as num? ??
+                json['sales_odr_total'] as num? ??
+                0.0)
+            .toDouble();
+    double totalTax =
+        (json['total_tax'] as num? ??
+                json['tot_tax'] as num? ??
+                json['sales_odr_tax'] as num? ??
+                0.0)
+            .toDouble();
     double totalCgst = (json['tot_cgst_tax'] as num? ?? 0.0).toDouble();
     double totalSgst = (json['tot_sgst_tax'] as num? ?? 0.0).toDouble();
     String? qrLink;
     String? captainName;
-    int? offlineSeq = json['offline_seq'] != null ? (json['offline_seq'] as num).toInt() : null;
+    int? offlineSeq = json['offline_seq'] != null
+        ? (json['offline_seq'] as num).toInt()
+        : null;
     try {
       final payloadStr = json['payload'] as String?;
       if (payloadStr != null && payloadStr.isNotEmpty) {
@@ -594,22 +764,56 @@ class OrdersController extends GetxController {
             payload['sales_odr_branch_inv'],
             payload['sales_branch_inv'],
           ]);
-          chairNumber = (payload['no_seats'] ?? payload['sales_odr_no_seats'] as num? ?? 0).toInt();
-          orderType = (payload['pos_odr_type'] ?? payload['sales_odr_order_type'] as num? ?? orderType).toInt();
-          discount = (payload['tot_disc'] ?? payload['discount'] ?? discount).toDouble();
+          chairNumber =
+              (payload['no_seats'] ??
+                      payload['sales_odr_no_seats'] as num? ??
+                      0)
+                  .toInt();
+          orderType =
+              (payload['pos_odr_type'] ??
+                      payload['sales_odr_order_type'] as num? ??
+                      orderType)
+                  .toInt();
+          discount = (payload['tot_disc'] ?? payload['discount'] ?? discount)
+              .toDouble();
           roundOff = (payload['sales_odr_roundoff'] ?? roundOff).toDouble();
-          subTotal = (payload['tot_rate'] ?? payload['sub_total'] ?? subTotal).toDouble();
-          totalAmount = (payload['tot_amount'] ?? payload['sales_odr_total'] ?? payload['total_amount'] ?? totalAmount).toDouble();
-          totalTax = (payload['tot_tax'] ?? payload['sales_odr_tax'] ?? payload['total_tax'] ?? totalTax).toDouble();
+          subTotal = (payload['tot_rate'] ?? payload['sub_total'] ?? subTotal)
+              .toDouble();
+          totalAmount =
+              (payload['tot_amount'] ??
+                      payload['sales_odr_total'] ??
+                      payload['total_amount'] ??
+                      totalAmount)
+                  .toDouble();
+          totalTax =
+              (payload['tot_tax'] ??
+                      payload['sales_odr_tax'] ??
+                      payload['total_tax'] ??
+                      totalTax)
+                  .toDouble();
           totalCgst = (payload['tot_cgst_tax'] ?? totalCgst).toDouble();
           totalSgst = (payload['tot_sgst_tax'] ?? totalSgst).toDouble();
           qrLink = (payload['qr_link'] ?? payload['zatca_qr'])?.toString();
-          customerName = (payload['sq_cust_name'] ?? payload['customer_name'] ?? payload['cust_name'] ??'')?.toString();
-          captainName = (payload['agent_name'] ?? payload['sale_agent_name'] ?? payload['captain_name'])?.toString();
-          tokenNo = (payload['sales_odr_token_no'] ?? payload['sales_odr_token'] ?? tokenNo)?.toString();
+          customerName =
+              (payload['sq_cust_name'] ??
+                      payload['customer_name'] ??
+                      payload['cust_name'] ??
+                      '')
+                  ?.toString();
+          captainName =
+              (payload['agent_name'] ??
+                      payload['sale_agent_name'] ??
+                      payload['captain_name'])
+                  ?.toString();
+          tokenNo =
+              (payload['sales_odr_token_no'] ??
+                      payload['sales_odr_token'] ??
+                      tokenNo)
+                  ?.toString();
           tableName = _resolveName(payload, orderType, tableName);
 
-          if (payload['sq_inv_no'] != null && payload['sq_inv_no'].toString() != '0') {
+          if (payload['sq_inv_no'] != null &&
+              payload['sq_inv_no'].toString() != '0') {
             invNo = payload['sq_inv_no'].toString();
           }
 
@@ -617,7 +821,10 @@ class OrdersController extends GetxController {
             branchInv = resolvedBranchInv;
           }
           if (branchInv.isEmpty) {
-            branchInv = _firstNonEmptyValue([payload['branch_inv'], payload['branch_ref_no']]);
+            branchInv = _firstNonEmptyValue([
+              payload['branch_inv'],
+              payload['branch_ref_no'],
+            ]);
           }
 
           final dynamic rawResTable = payload['res_table'];
@@ -628,158 +835,237 @@ class OrdersController extends GetxController {
             priceGroupId = (resTable['prcgrp_id'] as num?)?.toInt();
 
             if (areaId != null && Get.isRegistered<TablesController>()) {
-              final area = Get.find<TablesController>().areas.firstWhereOrNull((a) => a.id == areaId);
+              final area = Get.find<TablesController>().areas.firstWhereOrNull(
+                (a) => a.id == areaId,
+              );
               areaName = area?.name;
             }
           } else if (payload['sales_odr_table_id'] != null) {
             tableId = payload['sales_odr_table_id'].toString();
           }
 
-          final List<dynamic> saleItems = payload['sale_items'] ?? payload['sales_order_sub'] ?? [];
+          final List<dynamic> saleItems =
+              payload['sale_items'] ?? payload['sales_order_sub'] ?? [];
 
-          final mainItems  = saleItems.where((i) => !_isAddonRow(i)).toList();
+          final mainItems = saleItems.where((i) => !_isAddonRow(i)).toList();
           final addonItems = saleItems.where((i) => _isAddonRow(i)).toList();
 
           for (final si in mainItems) {
-            final prdId = (si['salesub_prd_id'] ?? si['sales_ord_sub_prod_id'])?.toString() ?? '';
-            final dynamic rawUnitId = si['salesub_unit_id'] ?? si['sales_ord_sub_unit_id'];
-            final int unitId = rawUnitId is num ? rawUnitId.toInt() : int.tryParse(rawUnitId?.toString() ?? '') ?? 0;
+            final prdId =
+                (si['salesub_prd_id'] ?? si['sales_ord_sub_prod_id'])
+                    ?.toString() ??
+                '';
+            final dynamic rawUnitId =
+                si['salesub_unit_id'] ?? si['sales_ord_sub_unit_id'];
+            final int unitId = rawUnitId is num
+                ? rawUnitId.toInt()
+                : int.tryParse(rawUnitId?.toString() ?? '') ?? 0;
             final dynamic rawSubId = si['sales_ord_sub_id'] ?? si['salesub_id'];
-            final int subId = rawSubId is num ? rawSubId.toInt() : int.tryParse(rawSubId?.toString() ?? '') ?? 0;
+            final int subId = rawSubId is num
+                ? rawSubId.toInt()
+                : int.tryParse(rawSubId?.toString() ?? '') ?? 0;
             int? tokenPrinterId = si['cat_token_printer'] is num
                 ? (si['cat_token_printer'] as num).toInt()
                 : int.tryParse(si['cat_token_printer']?.toString() ?? '');
             final bool isDeleted = (si['is_deleted'] ?? 0) == 1;
 
             if (isDeleted) {
-              log("🔍 DELETED ITEM DETECTED: ${si['prd_name']}");
-              log("   Initial tokenPrinterId from JSON: $tokenPrinterId");
-
-              // If tokenPrinterId is 0 or null, recover it from local storage
               if ((tokenPrinterId == null || tokenPrinterId == 0) &&
                   Get.isRegistered<CartController>()) {
-
                 final cartCtrl = Get.find<CartController>();
+                final List<dynamic> allProductsList =
+                    (cartCtrl as dynamic).products ?? [];
 
-                // Try to find the list of items. In your project, it is likely named 'products' or 'foodItems'
-                // We use dynamic to avoid the 'allItems' compilation error
-                final List<dynamic> allProductsList = (cartCtrl as dynamic).products ?? [];
-
-                log("   ⚠️ Token ID is 0/null. Attempting recovery from CartController items...");
-
-                final match = allProductsList.firstWhereOrNull((p) =>
-                p.id.toString() == prdId.toString());
+                final match = allProductsList.firstWhereOrNull(
+                  (p) => p.id.toString() == prdId.toString(),
+                );
 
                 if (match != null) {
-                  // Recover the ID. Usually stored in categoryId or a specific printer field
-                  tokenPrinterId = int.tryParse(match.categoryId.toString()) ?? 0;
-                  log("   ✅ Recovered Token ID: $tokenPrinterId from Master Product List");
-                } else {
-                  log("   ❌ Could not find product $prdId in CartController cache");
+                  tokenPrinterId =
+                      int.tryParse(match.categoryId.toString()) ?? 0;
                 }
               }
             }
-            // final double quantity = (si['salesub_qty'] ?? si['sales_ord_sub_qty'] as num? ?? 1).toDouble();
-            final double baseRate = (si['salesub_rate'] ?? si['sales_ord_sub_rate'] ?? si['rate'] as num? ?? 0.0).toDouble();
-            final double taxAmt = (si['salesub_tax'] ?? si['sales_ord_sub_tax'] ?? si['sales_ord_sub_tax_rate'] as num? ?? 0.0).toDouble();
-            final double cgstRate = (si['sales_ord_sub_cgst_rate'] as num? ?? 0.0).toDouble();
-            final double sgstRate = (si['sales_ord_sub_sgst_rate'] as num? ?? 0.0).toDouble();
+            final double baseRate =
+                (si['salesub_rate'] ??
+                        si['sales_ord_sub_rate'] ??
+                        si['rate'] as num? ??
+                        0.0)
+                    .toDouble();
+            final double taxAmt =
+                (si['salesub_tax'] ??
+                        si['sales_ord_sub_tax'] ??
+                        si['sales_ord_sub_tax_rate'] as num? ??
+                        0.0)
+                    .toDouble();
+            final double cgstRate =
+                (si['sales_ord_sub_cgst_rate'] as num? ?? 0.0).toDouble();
+            final double sgstRate =
+                (si['sales_ord_sub_sgst_rate'] as num? ?? 0.0).toDouble();
 
-            // final bool isDeleted = (si['is_deleted'] ?? 0) == 1;
-            // Use DashboardController to determine if VAT is included in price
-            // double price = baseRate;
-            // if (Get.isRegistered<DashboardController>()) {
-            //   final dashboardController = Get.find<DashboardController>();
-            //   price = dashboardController.vatType.value == 0 ? baseRate + taxAmt : baseRate;
-            // }
             final bool isServerRows = payload['sale_items'] == null;
             final double unitBase =
-            ((si['base_qty'] ?? si['unit_base_qty'] ?? 1.0) as num).toDouble();
+                ((si['base_qty'] ?? si['unit_base_qty'] ?? 1.0) as num)
+                    .toDouble();
             final bool derived = unitBase > 1.0;
 
             final double rawQty =
-            ((si['salesub_qty'] ?? si['sales_ord_sub_qty'] ?? 1) as num).toDouble();
+                ((si['salesub_qty'] ?? si['sales_ord_sub_qty'] ?? 1) as num)
+                    .toDouble();
             final double rawRate =
-            ((si['salesub_rate'] ?? si['sales_ord_sub_rate'] ?? si['rate'] ?? 0.0) as num).toDouble();
+                ((si['salesub_rate'] ??
+                            si['sales_ord_sub_rate'] ??
+                            si['rate'] ??
+                            0.0)
+                        as num)
+                    .toDouble();
 
-// per-unit qty & rate
             final double quantity = (isServerRows && derived)
                 ? (rawQty / unitBase).roundToDouble().clamp(1.0, 1e9)
                 : rawQty;
-            final double price = (isServerRows && derived) ? rawRate * unitBase : rawRate;
+            final double price = (isServerRows && derived)
+                ? rawRate * unitBase
+                : rawRate;
 
-// product.price must be the BASE rate (receipt/edit logic expects it)
             final double productBaseRate = derived ? price / unitBase : price;
-            final addons = addonItems.where((a) {
-              final parentPrdId = (a['addon_parent_prd_id'] ?? a['sales_odr_sub_addon_parent_prd_id'])?.toString();
-              final parentUnitId = (a['addon_parent_unit_id'] ?? a['sales_odr_sub_addon_parent_unit_id'] as num? ?? 0).toInt();
-              return parentPrdId == prdId && parentUnitId == unitId;
-            }).map((a) {
-              final addonBaseRate = (a['salesub_rate'] ?? a['sales_ord_sub_rate'] ?? a['rate'] as num? ?? 0.0).toDouble();
+            final addons = addonItems
+                .where((a) {
+                  final parentPrdId =
+                      (a['addon_parent_prd_id'] ??
+                              a['sales_odr_sub_addon_parent_prd_id'])
+                          ?.toString();
+                  final parentUnitId =
+                      (a['addon_parent_unit_id'] ??
+                              a['sales_ord_sub_addon_parent_unit_id'] as num? ??
+                              0)
+                          .toInt();
+                  return parentPrdId == prdId && parentUnitId == unitId;
+                })
+                .map((a) {
+                  final addonBaseRate =
+                      (a['salesub_rate'] ??
+                              a['sales_ord_sub_rate'] ??
+                              a['rate'] as num? ??
+                              0.0)
+                          .toDouble();
 
-              final dynamic rawAddonSubId = a['sales_ord_sub_id'] ?? a['salesub_id'];
-              final int addonSubId = rawAddonSubId is num ? rawAddonSubId.toInt() : int.tryParse(rawAddonSubId?.toString() ?? '') ?? 0;
+                  final dynamic rawAddonSubId =
+                      a['sales_ord_sub_id'] ?? a['salesub_id'];
+                  final int addonSubId = rawAddonSubId is num
+                      ? rawAddonSubId.toInt()
+                      : int.tryParse(rawAddonSubId?.toString() ?? '') ?? 0;
 
-              final dynamic rawAddonPrdId = a['salesub_prd_id'] ?? a['sales_ord_sub_prod_id'];
-              final int addonPrdId = rawAddonPrdId is num ? rawAddonPrdId.toInt() : int.tryParse(rawAddonPrdId?.toString() ?? '') ?? 0;
+                  final dynamic rawAddonPrdId =
+                      a['salesub_prd_id'] ?? a['sales_ord_sub_prod_id'];
+                  final int addonPrdId = rawAddonPrdId is num
+                      ? rawAddonPrdId.toInt()
+                      : int.tryParse(rawAddonPrdId?.toString() ?? '') ?? 0;
 
-              final dynamic rawTaxCatId = a['prd_tax_cat_id'] ?? a['sales_ord_sub_taxcat_id'];
-              final int taxCatId = rawTaxCatId is num ? rawTaxCatId.toInt() : int.tryParse(rawTaxCatId?.toString() ?? '') ?? 0;
+                  final dynamic rawTaxCatId =
+                      a['prd_tax_cat_id'] ?? a['sales_ord_sub_taxcat_id'];
+                  final int taxCatId = rawTaxCatId is num
+                      ? rawTaxCatId.toInt()
+                      : int.tryParse(rawTaxCatId?.toString() ?? '') ?? 0;
 
-              return AddonModel(
-                id: addonPrdId,
-                subId: addonSubId == 0 ? null : addonSubId,
-                prdId: addonPrdId,
-                // Fix: Safely parse addon flags
-                prdaddon_flags: (a['is_addon'] is num)
-                    ? (a['is_addon'] as num).toInt()
-                    : int.tryParse(a['is_addon']?.toString() ?? '') ?? 1,
-                name: a['prd_name']?.toString() ?? '',
-                price: addonBaseRate,
-                unitDisplay: (a['salesub_unit_display'] ?? a['prd_unit_name'] ?? a['unit_display'] ?? '').toString(),
-                unitId: (a['salesub_unit_id'] is num)
-                    ? (a['salesub_unit_id'] as num).toInt()
-                    : int.tryParse(a['salesub_unit_id']?.toString() ?? '') ?? 0,
-                initialQty: (a['salesub_qty'] is num)
-                    ? (a['salesub_qty'] as num).toInt()
-                    : int.tryParse(a['salesub_qty']?.toString() ?? '') ?? 0,
-                taxPer: (a['salesub_tax_per'] ?? a['sales_ord_sub_tax_per'] as num? ?? 0.0).toDouble(),
-                taxCatId: taxCatId,
-              );
-            }).toList();
-            log("MAPJSON → ${si['prd_name']} rawRate=$price unitBase=${si['unit_base_qty']} serverRows=$offlineSeq");
-            localItems.add(OrderItem(
-              subId: subId == 0 ? null : subId,
-              tokenPrinterId: tokenPrinterId,
-              isRemoved: isDeleted,
-              notes: si['item_desc']?.toString() ?? si['sales_ord_sub_notes'] ?? '',
-              product: FoodItemModel(
-                id: prdId,
-                name: si['prd_name']?.toString() ?? '',
-                categoryId: (si['prd_cat_id'] ?? '').toString(),
-                price: productBaseRate,
-                prd_tax: (si['salesub_tax_per'] ?? si['sales_ord_sub_tax_per'] as num? ?? 0.0).toDouble(),
-                image: '',
-                unitDisplay: (si['salesub_unit_display'] ?? si['prd_unit_name'] ?? si['unit_display'] ?? '').toString(),
-                taxPer: (si['salesub_tax_per'] ?? si['sales_ord_sub_tax_per'] as num? ?? 0.0).toDouble(),
-                taxCatId: (si['prd_tax_cat_id'] ?? si['sales_ord_sub_taxcat_id'] as num? ?? 0).toInt(),
-                tokenPrinterId: (tokenPrinterId == null || tokenPrinterId == 0) ? null : tokenPrinterId,   // ADD
+                  return AddonModel(
+                    id: addonPrdId,
+                    subId: addonSubId == 0 ? null : addonSubId,
+                    prdId: addonPrdId,
+                    prdaddon_flags: (a['is_addon'] is num)
+                        ? (a['is_addon'] as num).toInt()
+                        : int.tryParse(a['is_addon']?.toString() ?? '') ?? 1,
+                    name: a['prd_name']?.toString() ?? '',
+                    price: addonBaseRate,
+                    unitDisplay:
+                        (a['salesub_unit_display'] ??
+                                a['prd_unit_name'] ??
+                                a['unit_display'] ??
+                                '')
+                            .toString(),
+                    unitId: (a['salesub_unit_id'] is num)
+                        ? (a['salesub_unit_id'] as num).toInt()
+                        : int.tryParse(
+                                a['salesub_unit_id']?.toString() ?? '',
+                              ) ??
+                              0,
+                    initialQty: (a['salesub_qty'] is num)
+                        ? (a['salesub_qty'] as num).toInt()
+                        : int.tryParse(a['salesub_qty']?.toString() ?? '') ?? 0,
+                    taxPer:
+                        (a['salesub_tax_per'] ??
+                                a['sales_ord_sub_tax_per'] as num? ??
+                                0.0)
+                            .toDouble(),
+                    taxCatId: taxCatId,
+                  );
+                })
+                .toList();
+            localItems.add(
+              OrderItem(
+                subId: subId == 0 ? null : subId,
+                tokenPrinterId: tokenPrinterId,
+                isRemoved: isDeleted,
+                notes:
+                    si['item_desc']?.toString() ??
+                    si['sales_ord_sub_notes'] ??
+                    '',
+                product: FoodItemModel(
+                  id: prdId,
+                  name: si['prd_name']?.toString() ?? 'unknown'.tr,
+                  categoryId: (si['prd_cat_id'] ?? '').toString(),
+                  price: productBaseRate,
+                  prd_tax:
+                      (si['salesub_tax_per'] ??
+                              si['sales_ord_sub_tax_per'] as num? ??
+                              0.0)
+                          .toDouble(),
+                  image: '',
+                  unitDisplay:
+                      (si['salesub_unit_display'] ??
+                              si['prd_unit_name'] ??
+                              si['unit_display'] ??
+                              '')
+                          .toString(),
+                  taxPer:
+                      (si['salesub_tax_per'] ??
+                              si['sales_ord_sub_tax_per'] as num? ??
+                              0.0)
+                          .toDouble(),
+                  taxCatId:
+                      (si['prd_tax_cat_id'] ??
+                              si['sales_ord_sub_taxcat_id'] as num? ??
+                              0)
+                          .toInt(),
+                  tokenPrinterId:
+                      (tokenPrinterId == null || tokenPrinterId == 0)
+                      ? null
+                      : tokenPrinterId,
+                ),
+                unit: ProductUnit(
+                  unitId: unitId,
+                  unitName:
+                      (si['salesub_unit_display'] ??
+                              si['prd_unit_name'] ??
+                              si['unit_display'] ??
+                              '')
+                          .toString(),
+                  unitDisplay:
+                      (si['salesub_unit_display'] ??
+                              si['prd_unit_name'] ??
+                              si['unit_display'] ??
+                              '')
+                          .toString(),
+                  rate: price,
+                  unitBaseQty: unitBase,
+                  existAddOns: [],
+                ),
+                selectedAddons: addons,
+                quantity: quantity.toInt(),
+                priceAtOrder: price,
+                cgstRate: cgstRate,
+                sgstRate: sgstRate,
               ),
-              unit: ProductUnit(
-                unitId: unitId,
-                unitName: (si['salesub_unit_display'] ?? si['prd_unit_name'] ?? si['unit_display'] ?? '').toString(),
-                unitDisplay: (si['salesub_unit_display'] ?? si['prd_unit_name'] ?? si['unit_display'] ?? '').toString(),
-                rate: price,
-                // unitBaseQty: (si['base_qty'] ?? si['unit_base_qty'] as num? ?? 1.0).toDouble(),
-                unitBaseQty: unitBase,
-                existAddOns: [],
-              ),
-              selectedAddons: addons,
-              quantity: quantity.toInt(),
-              priceAtOrder: price,
-              cgstRate: cgstRate,
-              sgstRate: sgstRate,
-            ));
+            );
           }
         }
       }
@@ -794,21 +1080,24 @@ class OrdersController extends GetxController {
     if (statusStr == 'cancelled') status = OrderStatus.cancelled;
     if (statusStr == 'billed') status = OrderStatus.billed;
 
-    // Check pos_status if available
     int posStatusFromDb = (json['sales_odr_pos_status'] as num? ?? 0).toInt();
     if (posStatusFromDb == 2) status = OrderStatus.billed;
 
     return OrderModel(
       id: orderId,
       invNo: invNo,
-      branchInv: branchInv, // ✅ Added
+      branchInv: branchInv,
       createdByDeviceId: createdByDeviceId,
       tableId: tableId,
       tableName: tableName,
       customerName: customerName,
       tokenNo: tokenNo,
       chairNumber: chairNumber,
-      sales_odr_pos_status: (status == OrderStatus.billed) ? 2 : ((status == OrderStatus.draft) ? 0 : (status == OrderStatus.paid ? 3 : 1)),
+      sales_odr_pos_status: (status == OrderStatus.billed)
+          ? 2
+          : ((status == OrderStatus.draft)
+                ? 0
+                : (status == OrderStatus.paid ? 3 : 1)),
       items: localItems,
       status: status,
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
@@ -831,12 +1120,8 @@ class OrdersController extends GetxController {
   }
 
   void markOrderAsPaidLocally(String orderId) {
-    final idx = orders.indexWhere(
-          (o) => o.id == orderId || o.invNo == orderId,
-    );
+    final idx = orders.indexWhere((o) => o.id == orderId || o.invNo == orderId);
     if (idx != -1) {
-      // Since OrderModel is likely immutable here, refresh after fetchOrders
-      // At minimum, remove the order from active list so it stops showing as open
       orders.removeAt(idx);
       orders.refresh();
     }
@@ -844,24 +1129,21 @@ class OrdersController extends GetxController {
 
   Future<void> printBill(OrderModel order) async {
     try {
-      // Ensure items are loaded
       if (order.items.isEmpty) {
         await fetchOrderDetails(order);
       }
 
       final currentOrder = (orders + soldOrders).firstWhere(
-            (o) => o.id == order.id,
+        (o) => o.id == order.id,
         orElse: () => order,
       );
 
-      // Update status to 2 (bill printed) on server via updateOrder
       if (!order.isUnsynced) {
         final cartController = Get.find<CartController>();
-        // Only call updateOrder if CartController is currently editing this order
-        if (cartController.isEditing && cartController.editingOrderId.value == order.id) {
+        if (cartController.isEditing &&
+            cartController.editingOrderId.value == order.id) {
           await cartController.updateOrder(isBill: true);
         } else {
-          // Minimal direct API call just to set status=2
           try {
             final body = {
               "usr_id": int.tryParse(AppState.userId) ?? 0,
@@ -880,7 +1162,7 @@ class OrdersController extends GetxController {
               "sales_is_rest_pos": 1,
               "table_name": order.tableName,
               "server_sync_time":
-              "${DateFormat('yyMMddHHmmssSSS').format(DateTime.now())}000",
+                  "${DateFormat('yyMMddHHmmssSSS').format(DateTime.now())}000",
               "res_table": {
                 "rt_id": int.tryParse(order.tableId),
                 "rt_name": order.tableName,
@@ -890,7 +1172,7 @@ class OrdersController extends GetxController {
                   {
                     "sq_id": int.tryParse(order.id),
                     "sq_inv_no": int.tryParse(order.invNo),
-                  }
+                  },
                 ],
               },
             };
@@ -900,13 +1182,15 @@ class OrdersController extends GetxController {
             );
           } catch (e) {
             debugPrint("printBill: status update failed (non-fatal): $e");
-            // Non-fatal — still print even if status update fails
           }
         }
       }
       final idx = orders.indexWhere((o) => o.id == order.id);
       if (idx != -1) {
-        orders[idx] = orders[idx].copyWith(sales_odr_pos_status: 2, status: OrderStatus.billed);
+        orders[idx] = orders[idx].copyWith(
+          sales_odr_pos_status: 2,
+          status: OrderStatus.billed,
+        );
         orders.refresh();
         await _dbHelper.updateOrderStatusByUuid(order.id, 'billed');
       }
@@ -917,62 +1201,77 @@ class OrdersController extends GetxController {
     }
   }
 
-  /// Helper for robust name resolution across different APIs and order types
   String _resolveName(Map<String, dynamic> data, int type, String fallback) {
     final table = data['sales_odr_table_name']?.toString();
     final ledger = data['ledger_name']?.toString();
-    final customer = data['sq_cust_name']?.toString() ?? data['customer_name']?.toString() ?? data['cust_name']?.toString();
+    final customer =
+        data['sq_cust_name']?.toString() ??
+        data['customer_name']?.toString() ??
+        data['cust_name']?.toString();
     final tableNameField = data['table_name']?.toString();
 
-    // Generic dummy names that should be avoided for Pickup/Delivery
-    final List<String> dummyNames = ["Pickup Table", "Delivery Table", "Pickup", "Delivery"];
+    final List<String> dummyNames = [
+      'pickup_tab'.tr,
+      'delivery'.tr,
+      "Pickup Table",
+      "Delivery Table",
+      "Pickup",
+      "Delivery",
+    ];
 
-    if (type == 0) { // Dine In
+    if (type == 0) {
       if (table != null && table.isNotEmpty) return table;
-      if (tableNameField != null && tableNameField.isNotEmpty) return tableNameField;
+      if (tableNameField != null && tableNameField.isNotEmpty)
+        return tableNameField;
       if (ledger != null && ledger.isNotEmpty) return ledger;
       if (customer != null && customer.isNotEmpty) return customer;
-    } else { // Pickup / Delivery
-      // Prioritize identifying names
-      if (ledger != null && ledger.isNotEmpty && !dummyNames.contains(ledger)) return ledger;
-      if (customer != null && customer.isNotEmpty && !dummyNames.contains(customer)) return customer;
+    } else {
+      if (ledger != null && ledger.isNotEmpty && !dummyNames.contains(ledger))
+        return ledger;
+      if (customer != null &&
+          customer.isNotEmpty &&
+          !dummyNames.contains(customer))
+        return customer;
 
-      // Secondary check: if fallback was more specific than what we're finding now
-      if (fallback.isNotEmpty && !dummyNames.contains(fallback)) return fallback;
+      if (fallback.isNotEmpty && !dummyNames.contains(fallback))
+        return fallback;
 
       if (table != null && table.isNotEmpty) return table;
-      if (tableNameField != null && tableNameField.isNotEmpty) return tableNameField;
+      if (tableNameField != null && tableNameField.isNotEmpty)
+        return tableNameField;
     }
-    return (fallback.isNotEmpty) ? fallback : "Cash Customer";
+    return (fallback.isNotEmpty) ? fallback : 'cash_customer'.tr;
   }
 
   bool _isRealInvNo(String invNo) =>
-      invNo.isNotEmpty && invNo != "LOCAL" && invNo != "OFFLINE" && invNo != "0";
+      invNo.isNotEmpty &&
+      invNo != "LOCAL" &&
+      invNo != "OFFLINE" &&
+      invNo != "0";
 
-  /// Update an existing order without creating duplicates
   void updateExistingOrder(OrderModel updatedOrder) {
-    // Check in active orders
-    final activeIndex = orders.indexWhere((o) =>
-    o.id == updatedOrder.id ||
-        (_isRealInvNo(o.invNo) && _isRealInvNo(updatedOrder.invNo) && o.invNo == updatedOrder.invNo)
+    final activeIndex = orders.indexWhere(
+      (o) =>
+          o.id == updatedOrder.id ||
+          (_isRealInvNo(o.invNo) &&
+              _isRealInvNo(updatedOrder.invNo) &&
+              o.invNo == updatedOrder.invNo),
     );
 
     if (activeIndex != -1) {
       final existingOrder = orders[activeIndex];
 
-      // If the updated order is paid or cancelled, remove it from active orders
-      if (updatedOrder.status.value == OrderStatus.paid || updatedOrder.status.value == OrderStatus.cancelled) {
+      if (updatedOrder.status.value == OrderStatus.paid ||
+          updatedOrder.status.value == OrderStatus.cancelled) {
         orders.removeAt(activeIndex);
         orders.refresh();
 
-        // Add to sold orders if it's paid
         if (updatedOrder.status.value == OrderStatus.paid) {
           updateExistingOrderInList(soldOrders, updatedOrder);
         }
         return;
       }
 
-      // Since existingOrder is a reference, and tableName is final, we must replace the entry
       orders[activeIndex] = existingOrder.copyWith(
         tableName: updatedOrder.tableName,
         customerName: updatedOrder.customerName,
@@ -987,32 +1286,40 @@ class OrdersController extends GetxController {
         sales_odr_order_type: updatedOrder.sales_odr_order_type,
         sales_odr_pos_status: updatedOrder.sales_odr_pos_status,
         isUnsynced: updatedOrder.isUnsynced,
-        items: updatedOrder.items.isNotEmpty ? updatedOrder.items : existingOrder.items,
+        items: updatedOrder.items.isNotEmpty
+            ? updatedOrder.items
+            : existingOrder.items,
         status: updatedOrder.status.value,
         qrLink: updatedOrder.qrLink,
         offlineSeq: updatedOrder.offlineSeq,
-        branchInv: updatedOrder.branchInv!.isNotEmpty ? updatedOrder.branchInv : existingOrder.branchInv,
+        branchInv: updatedOrder.branchInv!.isNotEmpty
+            ? updatedOrder.branchInv
+            : existingOrder.branchInv,
       );
 
       orders.refresh();
-      debugPrint("✅ Updated existing active order: ${updatedOrder.invNo} (Synced: ${!existingOrder.isUnsynced})");
       return;
     }
 
-    // Check in sold orders
     updateExistingOrderInList(soldOrders, updatedOrder);
 
-    // If not found in either and it's not paid/cancelled, add to active
-    if (activeIndex == -1 && updatedOrder.status.value != OrderStatus.paid && updatedOrder.status.value != OrderStatus.cancelled) {
+    if (activeIndex == -1 &&
+        updatedOrder.status.value != OrderStatus.paid &&
+        updatedOrder.status.value != OrderStatus.cancelled) {
       orders.insert(0, updatedOrder);
-      debugPrint("✅ Added new order: ${updatedOrder.invNo}");
     }
   }
 
-  void updateExistingOrderInList(RxList<OrderModel> list, OrderModel updatedOrder) {
-    final index = list.indexWhere((o) =>
-    o.id == updatedOrder.id ||
-        (_isRealInvNo(o.invNo) && _isRealInvNo(updatedOrder.invNo) && o.invNo == updatedOrder.invNo)
+  void updateExistingOrderInList(
+    RxList<OrderModel> list,
+    OrderModel updatedOrder,
+  ) {
+    final index = list.indexWhere(
+      (o) =>
+          o.id == updatedOrder.id ||
+          (_isRealInvNo(o.invNo) &&
+              _isRealInvNo(updatedOrder.invNo) &&
+              o.invNo == updatedOrder.invNo),
     );
 
     if (index != -1) {
@@ -1031,22 +1338,23 @@ class OrdersController extends GetxController {
         sales_odr_order_type: updatedOrder.sales_odr_order_type,
         sales_odr_pos_status: updatedOrder.sales_odr_pos_status,
         isUnsynced: updatedOrder.isUnsynced,
-        items: updatedOrder.items.isNotEmpty ? updatedOrder.items : existingOrder.items,
+        items: updatedOrder.items.isNotEmpty
+            ? updatedOrder.items
+            : existingOrder.items,
         status: updatedOrder.status.value,
         qrLink: updatedOrder.qrLink,
         offlineSeq: updatedOrder.offlineSeq,
-        branchInv: updatedOrder.branchInv!.isNotEmpty ? updatedOrder.branchInv : existingOrder.branchInv,
+        branchInv: updatedOrder.branchInv!.isNotEmpty
+            ? updatedOrder.branchInv
+            : existingOrder.branchInv,
       );
       list.refresh();
-      debugPrint("✅ Updated existing order in list: ${updatedOrder.invNo}");
     } else if (updatedOrder.status.value == OrderStatus.paid) {
       list.insert(0, updatedOrder);
       list.refresh();
-      debugPrint("✅ Added new paid order to list: ${updatedOrder.invNo}");
     }
   }
 
-  /// Manual sync trigger from UI
   Future<void> syncOrders() async {
     final syncService = Get.find<SyncService>();
     await syncService.syncPendingOrders();
@@ -1059,7 +1367,8 @@ class OrdersController extends GetxController {
       return;
     }
 
-    if (DeviceConfig.operationMode == OperationMode.local && DeviceConfig.role == DeviceRole.client) {
+    if (DeviceConfig.operationMode == OperationMode.local &&
+        DeviceConfig.role == DeviceRole.client) {
       final hostIp = DeviceConfig.hostIp;
       if (hostIp != null && hostIp.isNotEmpty && DeviceConfig.hasAuthToken) {
         try {
@@ -1070,7 +1379,9 @@ class OrdersController extends GetxController {
           );
           if (hubResult['success'] == true) {
             final data = hubResult['data'];
-            updateExistingOrder(_mapJsonToOrderModel(Map<String, dynamic>.from(data)));
+            updateExistingOrder(
+              _mapJsonToOrderModel(Map<String, dynamic>.from(data)),
+            );
             return;
           }
         } catch (e) {
@@ -1088,7 +1399,7 @@ class OrdersController extends GetxController {
       final Map<String, dynamic> requestData = {
         "usr_id": int.tryParse(AppState.userId) ?? 18,
         "sales_odr_inv_no": int.tryParse(order.invNo) ?? 0,
-        "cmp_tax":AppState.cmpTaxType
+        "cmp_tax": AppState.cmpTaxType,
       };
 
       if (isPaid) {
@@ -1102,10 +1413,22 @@ class OrdersController extends GetxController {
         if (data == null) return;
         final preview = isPaid ? data['preview'] : data;
         if (preview == null) return;
-        final double authoritativeTotal = (preview['tot_amount'] ?? preview['sales_odr_total'] ?? preview['total_amount'] as num? ?? 0.0).toDouble();
-        final double authoritativeTax = (preview['tot_tax'] ?? preview['sales_odr_tax'] ?? preview['total_tax'] as num? ?? 0.0).toDouble();
-        final double authoritativeCgst = (preview['tot_cgst_tax'] as num? ?? 0.0).toDouble();
-        final double authoritativeSgst = (preview['tot_sgst_tax'] as num? ?? 0.0).toDouble();
+        final double authoritativeTotal =
+            (preview['tot_amount'] ??
+                    preview['sales_odr_total'] ??
+                    preview['total_amount'] as num? ??
+                    0.0)
+                .toDouble();
+        final double authoritativeTax =
+            (preview['tot_tax'] ??
+                    preview['sales_odr_tax'] ??
+                    preview['total_tax'] as num? ??
+                    0.0)
+                .toDouble();
+        final double authoritativeCgst =
+            (preview['tot_cgst_tax'] as num? ?? 0.0).toDouble();
+        final double authoritativeSgst =
+            (preview['tot_sgst_tax'] as num? ?? 0.0).toDouble();
 
         await _dbHelper.updateOrderStatusByUuid(
           order.id,
@@ -1123,135 +1446,255 @@ class OrdersController extends GetxController {
           tax: authoritativeTax,
         );
 
-        final String imageBaseUrl = preview['image_url']?.toString() ??
-            data['image_url']?.toString() ?? "";
+        final String imageBaseUrl =
+            preview['image_url']?.toString() ??
+            data['image_url']?.toString() ??
+            "";
         final List<dynamic> subItems = preview['sales_order_sub'] ?? [];
         List<OrderItem> items = [];
 
-        final mainItems  = subItems.where((i) => !_isAddonRow(i)).toList();
-
-
+        final mainItems = subItems.where((i) => !_isAddonRow(i)).toList();
         final addonItems = subItems.where((i) => _isAddonRow(i)).toList();
 
         for (var productJson in mainItems) {
-          final double taxAmt = (productJson['sales_ord_sub_tax'] ?? productJson['sales_ord_sub_tax_rate'] as num? ?? 0.0).toDouble();
-          final double cgstRate = (productJson['sales_ord_sub_cgst_rate'] as num? ?? 0.0).toDouble();
-          final double sgstRate = (productJson['sales_ord_sub_sgst_rate'] as num? ?? 0.0).toDouble();
+          final double taxAmt =
+              (productJson['sales_ord_sub_tax'] ??
+                      productJson['sales_ord_sub_tax_rate'] as num? ??
+                      0.0)
+                  .toDouble();
+          final double cgstRate =
+              (productJson['sales_ord_sub_cgst_rate'] as num? ?? 0.0)
+                  .toDouble();
+          final double sgstRate =
+              (productJson['sales_ord_sub_sgst_rate'] as num? ?? 0.0)
+                  .toDouble();
 
-          final double quantity = (productJson['salesub_qty'] ?? productJson['sales_ord_sub_qty'] as num? ?? 1).toDouble();
+          final double quantity =
+              (productJson['salesub_qty'] ??
+                      productJson['sales_ord_sub_qty'] as num? ??
+                      1)
+                  .toDouble();
 
-          final double unitBase = (productJson['base_qty'] ?? productJson['unit_base_qty'] as num? ?? 1.0).toDouble();
-          final double rawQty = (productJson['salesub_qty'] ?? productJson['sales_ord_sub_qty'] as num? ?? 1).toDouble();
-          final double baseRate = (productJson['sales_ord_sub_rate'] ?? productJson['rate'] as num? ?? 0.0).toDouble();
+          final double unitBase =
+              (productJson['base_qty'] ??
+                      productJson['unit_base_qty'] as num? ??
+                      1.0)
+                  .toDouble();
+          final double rawQty =
+              (productJson['salesub_qty'] ??
+                      productJson['sales_ord_sub_qty'] as num? ??
+                      1)
+                  .toDouble();
+          final double baseRate =
+              (productJson['sales_ord_sub_rate'] ??
+                      productJson['rate'] as num? ??
+                      0.0)
+                  .toDouble();
 
           final bool derived = unitBase > 1.0;
-          // final double quantity = derived ? (rawQty / unitBase).roundToDouble().clamp(1.0, 1e9) : rawQty;
           final double price = derived ? baseRate * unitBase : baseRate;
           final double basePrice = baseRate;
-          // if (Get.isRegistered<DashboardController>()) {
-          //   final dashboardController = Get.find<DashboardController>();
-          //   price = dashboardController.vatType.value == 0 ? baseRate + taxAmt : baseRate;
-          // }
 
-          final String prdId = (productJson['sales_ord_sub_prod_id'] ?? 0).toInt().toString();
-          final int unitId = (productJson['salesub_unit_id'] ?? productJson['sales_ord_sub_unit_id'] as num? ?? 0).toInt();
+          final String prdId = (productJson['sales_ord_sub_prod_id'] ?? 0)
+              .toInt()
+              .toString();
+          final int unitId =
+              (productJson['salesub_unit_id'] ??
+                      productJson['sales_ord_sub_unit_id'] as num? ??
+                      0)
+                  .toInt();
 
           final String prdImgUrl = productJson['prd_img_url']?.toString() ?? "";
           String fullImgPath = prdImgUrl;
-          if (prdImgUrl.isNotEmpty && imageBaseUrl.isNotEmpty && !prdImgUrl.startsWith('http')) {
+          if (prdImgUrl.isNotEmpty &&
+              imageBaseUrl.isNotEmpty &&
+              !prdImgUrl.startsWith('http')) {
             fullImgPath = imageBaseUrl + prdImgUrl;
           }
 
-          final List<AddonModel> selectedAddons = addonItems.where((addon) {
-            final parentPrdId = (addon['sales_odr_sub_addon_parent_prd_id'] as num? ?? 0).toInt().toString();
-            final parentUnitId = (addon['sales_odr_sub_addon_parent_unit_id'] as num? ?? 0).toInt();
-            return parentPrdId == prdId && parentUnitId == unitId;
-          }).map((addonJson) {
-            return AddonModel(
-              id: (addonJson['sales_ord_sub_prod_id'] as num? ?? 0).toInt(),
-              subId: (addonJson['sales_ord_sub_id'] as num? ?? 0).toInt(),
-              prdId: (addonJson['sales_ord_sub_prod_id'] as num? ?? 0).toInt(),
-              prdaddon_flags: (addonJson['prd_is_addon'] ?? addonJson['sales_odr_sub_is_addon'] as num? ?? 1).toInt(),
-              name: addonJson['prd_name']?.toString() ?? '',
-              price: (addonJson['rate'] ?? addonJson['sales_ord_sub_rate'] as num? ?? 0.0).toDouble(),
-              unitDisplay: (addonJson['prd_unit_name'] ?? addonJson['unit_display'] ?? '').toString(),
-              unitId: (addonJson['salesub_unit_id'] ?? addonJson['sales_ord_sub_unit_id'] as num? ?? 0).toInt(),
-              initialQty: (addonJson['salesub_qty'] ?? addonJson['sales_ord_sub_qty'] as num? ?? 0).toInt(),
-              taxPer: (addonJson['sales_ord_sub_tax_per'] as num? ?? 0.0).toDouble(),
-              taxCatId: (addonJson['sales_ord_sub_taxcat_id'] as num? ?? 0).toInt(),
-            );
-          }).toList();
+          final List<AddonModel> selectedAddons = addonItems
+              .where((addon) {
+                final parentPrdId =
+                    (addon['sales_odr_sub_addon_parent_prd_id'] as num? ?? 0)
+                        .toInt()
+                        .toString();
+                final parentUnitId =
+                    (addon['sales_odr_sub_addon_parent_unit_id'] as num? ?? 0)
+                        .toInt();
+                return parentPrdId == prdId && parentUnitId == unitId;
+              })
+              .map((addonJson) {
+                return AddonModel(
+                  id: (addonJson['sales_ord_sub_prod_id'] as num? ?? 0).toInt(),
+                  subId: (addonJson['sales_ord_sub_id'] as num? ?? 0).toInt(),
+                  prdId: (addonJson['sales_ord_sub_prod_id'] as num? ?? 0)
+                      .toInt(),
+                  prdaddon_flags:
+                      (addonJson['prd_is_addon'] ??
+                              addonJson['sales_odr_sub_is_addon'] as num? ??
+                              1)
+                          .toInt(),
+                  name: addonJson['prd_name']?.toString() ?? '',
+                  price:
+                      (addonJson['rate'] ??
+                              addonJson['sales_ord_sub_rate'] as num? ??
+                              0.0)
+                          .toDouble(),
+                  unitDisplay:
+                      (addonJson['prd_unit_name'] ??
+                              addonJson['unit_display'] ??
+                              '')
+                          .toString(),
+                  unitId:
+                      (addonJson['salesub_unit_id'] ??
+                              addonJson['sales_ord_sub_unit_id'] as num? ??
+                              0)
+                          .toInt(),
+                  initialQty:
+                      (addonJson['salesub_qty'] ??
+                              addonJson['sales_ord_sub_qty'] as num? ??
+                              0)
+                          .toInt(),
+                  taxPer: (addonJson['sales_ord_sub_tax_per'] as num? ?? 0.0)
+                      .toDouble(),
+                  taxCatId: (addonJson['sales_ord_sub_taxcat_id'] as num? ?? 0)
+                      .toInt(),
+                );
+              })
+              .toList();
 
-          items.add(OrderItem(
-            subId: (productJson['sales_ord_sub_id'] as num? ?? 0).toInt(),
-            addonParentPrdId: (productJson['sales_odr_sub_addon_parent_prd_id'] as num? ?? 0).toInt(),
-            addonParentUnitId: (productJson['sales_odr_sub_addon_parent_unit_id'] as num? ?? 0).toInt(),
-            unitId: unitId,
-            tokenPrinterId: (productJson['cat_token_printer'] as num?)?.toInt(),
-            isRemoved: productJson['sales_ord_sub_flags'] == 0,
-            isKotModified: productJson['sales_ord_sub_flags'] == 1,
-            notes: productJson['item_desc']?.toString() ?? productJson['sales_ord_sub_notes'] ?? '',
-            product: FoodItemModel(
-              id: prdId,
-              name: productJson['prd_name']?.toString() ?? '',
-              categoryId: (productJson['prd_cat_id'] ?? '').toString(),
-                price: basePrice,
-              prd_tax: (productJson['sales_ord_sub_tax_per'] as num? ?? 0.0).toDouble(),
-              image: fullImgPath,
-              unitDisplay: (productJson['prd_unit_name'] ?? productJson['unit_display'] ?? '').toString(),
-              taxPer: (productJson['sales_ord_sub_tax_per'] as num? ?? 0.0).toDouble(),
-              taxCatId: (productJson['sales_ord_sub_taxcat_id'] as num? ?? 0).toInt(),
-            ),
-            unit: ProductUnit(
+          items.add(
+            OrderItem(
+              subId: (productJson['sales_ord_sub_id'] as num? ?? 0).toInt(),
+              addonParentPrdId:
+                  (productJson['sales_odr_sub_addon_parent_prd_id'] as num? ??
+                          0)
+                      .toInt(),
+              addonParentUnitId:
+                  (productJson['sales_odr_sub_addon_parent_unit_id'] as num? ??
+                          0)
+                      .toInt(),
               unitId: unitId,
-              unitName: (productJson['prd_unit_name'] ?? productJson['unit_display'] ?? '').toString(),
-              unitDisplay: (productJson['prd_unit_name'] ?? productJson['unit_display'] ?? '').toString(),
-              rate: price,
-              unitBaseQty: unitBase,
-              existAddOns: [],
+              tokenPrinterId: (productJson['cat_token_printer'] as num?)
+                  ?.toInt(),
+              isRemoved: productJson['sales_ord_sub_flags'] == 0,
+              isKotModified: productJson['sales_ord_sub_flags'] == 1,
+              notes:
+                  productJson['item_desc']?.toString() ??
+                  productJson['sales_ord_sub_notes'] ??
+                  '',
+              product: FoodItemModel(
+                id: prdId,
+                name: productJson['prd_name']?.toString() ?? '',
+                categoryId: (productJson['prd_cat_id'] ?? '').toString(),
+                price: basePrice,
+                prd_tax: (productJson['sales_ord_sub_tax_per'] as num? ?? 0.0)
+                    .toDouble(),
+                image: fullImgPath,
+                unitDisplay:
+                    (productJson['prd_unit_name'] ??
+                            productJson['unit_display'] ??
+                            '')
+                        .toString(),
+                taxPer: (productJson['sales_ord_sub_tax_per'] as num? ?? 0.0)
+                    .toDouble(),
+                taxCatId: (productJson['sales_ord_sub_taxcat_id'] as num? ?? 0)
+                    .toInt(),
+              ),
+              unit: ProductUnit(
+                unitId: unitId,
+                unitName:
+                    (productJson['prd_unit_name'] ??
+                            productJson['unit_display'] ??
+                            '')
+                        .toString(),
+                unitDisplay:
+                    (productJson['prd_unit_name'] ??
+                            productJson['unit_display'] ??
+                            '')
+                        .toString(),
+                rate: price,
+                unitBaseQty: unitBase,
+                existAddOns: [],
+              ),
+              selectedAddons: selectedAddons,
+              quantity: quantity.toInt(),
+              priceAtOrder: price,
+              cgstRate: cgstRate,
+              sgstRate: sgstRate,
             ),
-            selectedAddons: selectedAddons,
-            quantity: quantity.toInt(),
-            priceAtOrder: price,
-            cgstRate: cgstRate,
-            sgstRate: sgstRate,
-          ));
+          );
         }
 
         var activeIndex = orders.indexWhere((o) => o.invNo == order.invNo);
         if (activeIndex != -1) {
           final current = orders[activeIndex];
-          final int type = (preview['sales_odr_order_type'] as num? ?? current.sales_odr_order_type).toInt();
-          final int posStatus = (preview['sales_odr_pos_status'] as num? ?? current.sales_odr_pos_status).toInt();
-          final String resolvedTableName = _resolveName(preview, type, current.tableName);
+          final int type =
+              (preview['sales_odr_order_type'] as num? ??
+                      current.sales_odr_order_type)
+                  .toInt();
+          final int posStatus =
+              (preview['sales_odr_pos_status'] as num? ??
+                      current.sales_odr_pos_status)
+                  .toInt();
+          final String resolvedTableName = _resolveName(
+            preview,
+            type,
+            current.tableName,
+          );
 
           OrderStatus updatedStatus = current.status.value;
           if (posStatus == 2) updatedStatus = OrderStatus.billed;
 
           orders[activeIndex] = current.copyWith(
             tableName: resolvedTableName,
-            customerName: (preview['sq_cust_name'] ?? preview['customer_name'] ?? preview['cust_name'] ??'')?.toString(),
-            tokenNo: (preview['sales_odr_token_no'] ?? preview['sales_odr_token'])?.toString(),
+            customerName:
+                (preview['sq_cust_name'] ??
+                        preview['customer_name'] ??
+                        preview['cust_name'] ??
+                        '')
+                    ?.toString(),
+            tokenNo:
+                (preview['sales_odr_token_no'] ?? preview['sales_odr_token'])
+                    ?.toString(),
             sales_odr_pos_status: posStatus,
             items: items,
             status: updatedStatus,
-            subTotal: (preview['tot_rate'] as num? ?? preview['sub_total'] as num? ?? preview['tot_subtotal'] as num? ?? preview['sales_odr_subtotal'] as num? ?? current.subTotal).toDouble(),
+            subTotal:
+                (preview['tot_rate'] as num? ??
+                        preview['sub_total'] as num? ??
+                        preview['tot_subtotal'] as num? ??
+                        preview['sales_odr_subtotal'] as num? ??
+                        current.subTotal)
+                    .toDouble(),
             totalAmount: authoritativeTotal,
             totalTax: authoritativeTax,
             totalCgst: authoritativeCgst,
             totalSgst: authoritativeSgst,
-            discount: (preview['tot_disc'] ?? preview['discount'] ?? current.discount).toDouble(),
-            roundOff: (preview['sales_odr_roundoff'] ?? current.roundOff).toDouble(),
+            discount:
+                (preview['tot_disc'] ?? preview['discount'] ?? current.discount)
+                    .toDouble(),
+            roundOff: (preview['sales_odr_roundoff'] ?? current.roundOff)
+                .toDouble(),
             sales_odr_order_type: type,
-            captainName: (preview['agent_name'] ?? preview['usr_name'] ??
-                data['agent']?['ledger_name'])?.toString(),
+            captainName:
+                (preview['agent_name'] ??
+                        preview['usr_name'] ??
+                        data['agent']?['ledger_name'])
+                    ?.toString(),
             isUnsynced: false,
-            qrLink: (preview['qr_link'] ?? preview['zatca_qr'] ?? data['qr_link'] ?? data['zatca_qr'] ?? current.qrLink).toString(),
+            qrLink:
+                (preview['qr_link'] ??
+                        preview['zatca_qr'] ??
+                        data['qr_link'] ??
+                        data['zatca_qr'] ??
+                        current.qrLink)
+                    .toString(),
             branchInv: _firstNonEmptyValue([
               preview['sales_odr_sales_branch_inv'],
               preview['sales_odr_branch_inv'],
               preview['sales_branch_inv'],
-              current.branchInv,   // fall back to what we already have
+              current.branchInv,
             ]),
           );
           orders.refresh();
@@ -1259,34 +1702,71 @@ class OrdersController extends GetxController {
           var soldIndex = soldOrders.indexWhere((o) => o.invNo == order.invNo);
           if (soldIndex != -1) {
             final current = soldOrders[soldIndex];
-            final int type = (preview['sales_odr_order_type'] as num? ?? current.sales_odr_order_type).toInt();
-            final int posStatus = (preview['sales_odr_pos_status'] as num? ?? current.sales_odr_pos_status).toInt();
-            final String resolvedTableName = _resolveName(preview, type, current.tableName);
+            final int type =
+                (preview['sales_odr_order_type'] as num? ??
+                        current.sales_odr_order_type)
+                    .toInt();
+            final int posStatus =
+                (preview['sales_odr_pos_status'] as num? ??
+                        current.sales_odr_pos_status)
+                    .toInt();
+            final String resolvedTableName = _resolveName(
+              preview,
+              type,
+              current.tableName,
+            );
 
             soldOrders[soldIndex] = current.copyWith(
               tableName: resolvedTableName,
-              customerName: (preview['sq_cust_name'] ?? preview['customer_name'] ?? preview['cust_name'] ?? '')?.toString(),
-              tokenNo: (preview['sales_odr_token_no'] ?? preview['sales_odr_token'])?.toString(),
+              customerName:
+                  (preview['sq_cust_name'] ??
+                          preview['customer_name'] ??
+                          preview['cust_name'] ??
+                          '')
+                      ?.toString(),
+              tokenNo:
+                  (preview['sales_odr_token_no'] ?? preview['sales_odr_token'])
+                      ?.toString(),
               sales_odr_pos_status: posStatus,
               items: items,
               status: current.status.value,
-              captainName: (preview['agent_name'] ?? preview['usr_name'] ??
-                  data['agent']?['ledger_name'])?.toString(),
-              subTotal: (preview['tot_rate'] as num? ?? preview['sub_total'] as num? ?? preview['tot_subtotal'] as num? ?? preview['sales_odr_subtotal'] as num? ?? current.subTotal).toDouble(),
+              captainName:
+                  (preview['agent_name'] ??
+                          preview['usr_name'] ??
+                          data['agent']?['ledger_name'])
+                      ?.toString(),
+              subTotal:
+                  (preview['tot_rate'] as num? ??
+                          preview['sub_total'] as num? ??
+                          preview['tot_subtotal'] as num? ??
+                          preview['sales_odr_subtotal'] as num? ??
+                          current.subTotal)
+                      .toDouble(),
               totalAmount: authoritativeTotal,
               totalTax: authoritativeTax,
               totalCgst: authoritativeCgst,
               totalSgst: authoritativeSgst,
-              discount: (preview['tot_disc'] ?? preview['discount'] ?? current.discount).toDouble(),
-              roundOff: (preview['sales_odr_roundoff'] ?? current.roundOff).toDouble(),
+              discount:
+                  (preview['tot_disc'] ??
+                          preview['discount'] ??
+                          current.discount)
+                      .toDouble(),
+              roundOff: (preview['sales_odr_roundoff'] ?? current.roundOff)
+                  .toDouble(),
               sales_odr_order_type: type,
               isUnsynced: false,
-              qrLink: (preview['qr_link'] ?? preview['zatca_qr'] ?? data['qr_link'] ?? data['zatca_qr'] ?? current.qrLink).toString(),
+              qrLink:
+                  (preview['qr_link'] ??
+                          preview['zatca_qr'] ??
+                          data['qr_link'] ??
+                          data['zatca_qr'] ??
+                          current.qrLink)
+                      .toString(),
               branchInv: _firstNonEmptyValue([
                 preview['sales_odr_sales_branch_inv'],
                 preview['sales_odr_branch_inv'],
                 preview['sales_branch_inv'],
-                current.branchInv,   // fall back to what we already have
+                current.branchInv,
               ]),
             );
             soldOrders.refresh();
@@ -1317,7 +1797,6 @@ class OrdersController extends GetxController {
       final mappedOrder = _mapJsonToOrderModel(row);
 
       if (mappedOrder.items.isNotEmpty) {
-        // Update both lists if found
         var activeIndex = orders.indexWhere((o) => o.id == order.id);
         if (activeIndex != -1) {
           orders[activeIndex] = mappedOrder;
@@ -1335,158 +1814,198 @@ class OrdersController extends GetxController {
     }
   }
 
-// AFTER
   OrderModel parseOrderResponse(
-      Map<String, dynamic> responseJson, {
-        String fallbackTableName = "",
-        int fallbackChairCount = 0,
-      }) {
-    debugPrint("--- PARSING ORDER RESPONSE FOR PRINTING ---");
+    Map<String, dynamic> responseJson, {
+    String fallbackTableName = "",
+    int fallbackChairCount = 0,
+  }) {
     final bool isOffline = responseJson['offline'] == true;
-    final preview = (responseJson['preview'] is Map) ? responseJson['preview'] : responseJson;
+    final preview = (responseJson['preview'] is Map)
+        ? responseJson['preview']
+        : responseJson;
     final seenSubIds = <String>{};
     final List<dynamic> subItemsJson =
-    (preview['sales_order_sub'] as List? ?? []).where((s) {
-      final id = (s['sales_ord_sub_id'] ?? '').toString();
-      if (id.isEmpty || id == '0' || id == 'null') return true; // offline rows have fake/no ids
-      return seenSubIds.add(id); // skip repeated ids
-    }).toList();
+        (preview['sales_order_sub'] as List? ?? []).where((s) {
+          final id = (s['sales_ord_sub_id'] ?? '').toString();
+          if (id.isEmpty || id == '0' || id == 'null')
+            return true;
+          return seenSubIds.add(id);
+        }).toList();
 
-    final String imageBaseUrl = responseJson['image_url']?.toString() ??
-        preview['image_url']?.toString() ?? "";
+    final String imageBaseUrl =
+        responseJson['image_url']?.toString() ??
+        preview['image_url']?.toString() ??
+        "";
 
     final cartController = Get.find<CartController>();
     List<OrderItem> items = [];
 
-    final mainItemsJson  = subItemsJson.where((i) => !_isAddonRow(i)).toList();
+    final mainItemsJson = subItemsJson.where((i) => !_isAddonRow(i)).toList();
     final addonItemsJson = subItemsJson.where((i) => _isAddonRow(i)).toList();
 
     for (var sub in mainItemsJson) {
       final String prdId = (sub['sales_ord_sub_prod_id'] ?? 0).toString();
       final int unitId = (sub['sales_ord_sub_unit_id'] ?? 0).toInt();
 
-      String unitDisplay = sub['salesub_unit_display']?.toString() ?? sub['unit_display']?.toString() ?? '';
+      String unitDisplay =
+          sub['salesub_unit_display']?.toString() ??
+          sub['unit_display']?.toString() ??
+          '';
       double rawQty = (sub['sales_ord_sub_qty'] as num? ?? 1).toDouble();
-      double rawRate = (sub['sales_ord_sub_rate'] as num? ?? sub['rate'] as num? ?? 0.0).toDouble();
+      double rawRate =
+          (sub['sales_ord_sub_rate'] as num? ?? sub['rate'] as num? ?? 0.0)
+              .toDouble();
       double baseQty = (sub['unit_base_qty'] as num? ?? 1.0).toDouble();
-      double cgstRate = (sub['sales_ord_sub_cgst_rate'] as num? ?? 0.0).toDouble();
-      double sgstRate = (sub['sales_ord_sub_sgst_rate'] as num? ?? 0.0).toDouble();
+      double cgstRate = (sub['sales_ord_sub_cgst_rate'] as num? ?? 0.0)
+          .toDouble();
+      double sgstRate = (sub['sales_ord_sub_sgst_rate'] as num? ?? 0.0)
+          .toDouble();
 
       int displayQty;
       double displayRate = rawRate;
 
-      // bool isBulkUnit =
-      //     unitDisplay.toLowerCase().contains('b') || // optional
-      //         unitDisplay.toLowerCase().contains('case') ||
-      //         unitDisplay.toLowerCase().contains('box') ||
-      //         unitDisplay.toLowerCase().contains('pack');
-
       if (!isOffline && baseQty > 1.0) {
         displayQty = (rawQty / baseQty).round();
         if (displayQty < 1 && rawQty > 0) displayQty = 1;
-        displayRate = rawRate * baseQty;   // server rate is per base unit
+        displayRate = rawRate * baseQty;
       } else {
         displayQty = rawQty.toInt();
       }
 
-      log("📊 Unit: $unitDisplay, rawQty: $rawQty, baseQty: $baseQty, displayQty: $displayQty");
-      log("🖨️ CART DUMP: total cartItems=${cartController.cartItems.length}");
-      for (var ci in cartController.cartItems) {
-        log("🖨️   cartItem → id='${ci.product.id}' unitId=${ci.unit.unitId} "
-            "isDeleted=${ci.isDeleted.value} name=${ci.product.name}");
-      }
-      log("🖨️ SEARCHING FOR → prdId='$prdId' unitId=$unitId");
       final cartItem = cartController.cartItems.firstWhereOrNull(
-              (item) => item.product.id == prdId && item.unit.unitId == unitId && !item.isDeleted.value
+        (item) =>
+            item.product.id == prdId &&
+            item.unit.unitId == unitId &&
+            !item.isDeleted.value,
       );
-      log("🖨️ TOKEN DEBUG: prdId=$prdId unitId=$unitId "
-          "cartItemFound=${cartItem != null} "
-          "cartItemName=${cartItem?.product.name} "
-          "cartItemCategoryId=${cartItem?.product.categoryId} "
-          "cartItemTokenPrinterId=${cartItem?.product.tokenPrinterId} "
-          "subTokenPrinterRaw=${sub['cat_token_printer']}");
-
-      // if (cartItem != null && displayRate == rawRate) {
-      //   double cartBaseQty = cartItem.unit.unitBaseQty;
-      //   if (cartBaseQty > 0 && cartBaseQty != 1.0) {
-      //     displayRate = rawRate * cartBaseQty;
-      //   }
-      // }
 
       final int flag = (sub['sales_ord_sub_flags'] as num? ?? 1).toInt();
       final bool isRemoved = flag == 0;
       int? tokenPrinterId = (sub['cat_token_printer'] as num?)?.toInt();
       if (tokenPrinterId == null || tokenPrinterId == 0) {
         final cartItem = cartController.cartItems.firstWhereOrNull(
-              (ci) => ci.product.id == prdId,
+          (ci) => ci.product.id == prdId,
         );
         tokenPrinterId = cartItem?.product.tokenPrinterId;
-        log("🖨️ TOKEN DEBUG FALLBACK: prdIdOnlyMatch=${cartItem != null} "
-            "fallbackTokenPrinterId=$tokenPrinterId");
       }
       final String prdImgUrl = sub['prd_img_url']?.toString() ?? "";
       String fullImgPath = prdImgUrl;
-      if (prdImgUrl.isNotEmpty && imageBaseUrl.isNotEmpty && !prdImgUrl.startsWith('http')) {
+      if (prdImgUrl.isNotEmpty &&
+          imageBaseUrl.isNotEmpty &&
+          !prdImgUrl.startsWith('http')) {
         fullImgPath = imageBaseUrl + prdImgUrl;
       }
 
-      final List<AddonModel> selectedAddons = addonItemsJson.where((addon) {
-        final parentPrdId = (addon['sales_odr_sub_addon_parent_prd_id'] as num? ?? 0).toInt().toString();
-        final parentUnitId = (addon['sales_odr_sub_addon_parent_unit_id'] as num? ?? 0).toInt();
-        final addonFlag = (addon['sales_ord_sub_flags'] as num? ?? 1).toInt();
-        return parentPrdId == prdId && parentUnitId == unitId && addonFlag == flag;
-      }).map((addonJson) {
-        return AddonModel(
-          id: (addonJson['sales_ord_sub_id'] as num? ?? 0).toInt(),
-          prdId: (addonJson['sales_ord_sub_prod_id'] as num? ?? 0).toInt(),
-          prdaddon_flags: (addonJson['prdaddon_flags'] as num? ?? 1).toInt(),
-          name: addonJson['prd_name']?.toString() ?? '',
-          price: (addonJson['rate'] ?? addonJson['sales_ord_sub_rate'] as num? ?? 0.0).toDouble(),
-          unitDisplay: (addonJson['unit_display'] ?? addonJson['salesub_unit_display'] ?? '').toString(),
-          unitId: (addonJson['sales_ord_sub_unit_id'] as num? ?? 0).toInt(),
-          initialQty: (addonJson['sales_ord_sub_qty'] as num? ?? 0).toInt(),
-          taxPer: (addonJson['sales_ord_sub_tax_per'] as num? ?? 0.0).toDouble(),
-          taxCatId: (addonJson['sales_ord_sub_taxcat_id'] as num? ?? 0).toInt(),
-        );
-      }).toList();
-      log("PARSE → ${sub['prd_name']} rawRate=$rawRate baseQty=$baseQty isOffline=$isOffline");
-      items.add(OrderItem(
-        subId: (sub['sales_ord_sub_id'] as num? ?? 0).toInt(),
-        quantity: displayQty,
-        priceAtOrder: displayRate,
-        tokenPrinterId: tokenPrinterId,
-        selectedAddons: selectedAddons,
-        isRemoved: isRemoved,
-        cgstRate: cgstRate,
-        sgstRate: sgstRate,
-        notes: sub['item_desc']?.toString() ?? sub['sales_ord_sub_notes'] ?? '',
-        product: FoodItemModel(
-          id: prdId,
-          name: sub['prd_name']?.toString() ?? cartItem?.product.name ?? 'Unknown',
-          categoryId: (sub['prd_cat_id'] ?? cartItem?.product.categoryId ?? '').toString(),
-          price: (baseQty > 1.0) ? (isOffline ? rawRate / baseQty : rawRate) : rawRate,
-          prd_tax: (sub['sales_ord_sub_tax_per'] as num?)?.toDouble()
-              ?? cartItem?.product.prd_tax
-              ?? 0.0,
-          image: fullImgPath.isNotEmpty ? fullImgPath : (cartItem?.product.image ?? ''),
-          unitDisplay: unitDisplay,
-          taxPer: (sub['sales_ord_sub_tax_per'] as num? ?? cartItem?.product.taxPer ?? 0.0).toDouble(),
-          taxCatId: (sub['sales_ord_sub_taxcat_id'] as num? ?? cartController.cartItems.firstWhereOrNull((i)=>i.product.id == prdId)?.product.taxCatId ?? 0).toInt(),
-          tokenPrinterId: tokenPrinterId ?? cartItem?.product.tokenPrinterId,
+      final List<AddonModel> selectedAddons = addonItemsJson
+          .where((addon) {
+            final parentPrdId =
+                (addon['sales_odr_sub_addon_parent_prd_id'] as num? ?? 0)
+                    .toInt()
+                    .toString();
+            final parentUnitId =
+                (addon['sales_odr_sub_addon_parent_unit_id'] as num? ?? 0)
+                    .toInt();
+            final addonFlag = (addon['sales_ord_sub_flags'] as num? ?? 1)
+                .toInt();
+            return parentPrdId == prdId &&
+                parentUnitId == unitId &&
+                addonFlag == flag;
+          })
+          .map((addonJson) {
+            return AddonModel(
+              id: (addonJson['sales_ord_sub_id'] as num? ?? 0).toInt(),
+              prdId: (addonJson['sales_ord_sub_prod_id'] as num? ?? 0).toInt(),
+              prdaddon_flags: (addonJson['prdaddon_flags'] as num? ?? 1)
+                  .toInt(),
+              name: addonJson['prd_name']?.toString() ?? '',
+              price:
+                  (addonJson['rate'] ??
+                          addonJson['sales_ord_sub_rate'] as num? ??
+                          0.0)
+                      .toDouble(),
+              unitDisplay:
+                  (addonJson['unit_display'] ??
+                          addonJson['salesub_unit_display'] ??
+                          '')
+                      .toString(),
+              unitId: (addonJson['sales_ord_sub_unit_id'] as num? ?? 0).toInt(),
+              initialQty: (addonJson['sales_ord_sub_qty'] as num? ?? 0).toInt(),
+              taxPer: (addonJson['sales_ord_sub_tax_per'] as num? ?? 0.0)
+                  .toDouble(),
+              taxCatId: (addonJson['sales_ord_sub_taxcat_id'] as num? ?? 0)
+                  .toInt(),
+            );
+          })
+          .toList();
+      items.add(
+        OrderItem(
+          subId: (sub['sales_ord_sub_id'] as num? ?? 0).toInt(),
+          quantity: displayQty,
+          priceAtOrder: displayRate,
+          tokenPrinterId: tokenPrinterId,
+          selectedAddons: selectedAddons,
+          isRemoved: isRemoved,
+          cgstRate: cgstRate,
+          sgstRate: sgstRate,
+          notes:
+              sub['item_desc']?.toString() ?? sub['sales_ord_sub_notes'] ?? '',
+          product: FoodItemModel(
+            id: prdId,
+            name:
+                sub['prd_name']?.toString() ??
+                cartItem?.product.name ??
+                'unknown'.tr,
+            categoryId:
+                (sub['prd_cat_id'] ?? cartItem?.product.categoryId ?? '')
+                    .toString(),
+            price: (baseQty > 1.0)
+                ? (isOffline ? rawRate / baseQty : rawRate)
+                : rawRate,
+            prd_tax:
+                (sub['sales_ord_sub_tax_per'] as num?)?.toDouble() ??
+                cartItem?.product.prd_tax ??
+                0.0,
+            image: fullImgPath.isNotEmpty
+                ? fullImgPath
+                : (cartItem?.product.image ?? ''),
+            unitDisplay: unitDisplay,
+            taxPer:
+                (sub['sales_ord_sub_tax_per'] as num? ??
+                        cartItem?.product.taxPer ??
+                        0.0)
+                    .toDouble(),
+            taxCatId:
+                (sub['sales_ord_sub_taxcat_id'] as num? ??
+                        cartController.cartItems
+                            .firstWhereOrNull((i) => i.product.id == prdId)
+                            ?.product
+                            .taxCatId ??
+                        0)
+                    .toInt(),
+            tokenPrinterId: tokenPrinterId ?? cartItem?.product.tokenPrinterId,
+          ),
+          unit:
+              cartItem?.unit ??
+              ProductUnit(
+                unitId: unitId,
+                unitName: unitDisplay,
+                unitDisplay: unitDisplay,
+                rate: displayRate,
+                unitBaseQty: cartItem?.unit.unitBaseQty ?? 1.0,
+                existAddOns: [],
+              ),
         ),
-        unit: cartItem?.unit ?? ProductUnit(
-          unitId: unitId,
-          unitName: unitDisplay,
-          unitDisplay: unitDisplay,
-          rate: displayRate,
-          unitBaseQty: cartItem?.unit.unitBaseQty ?? 1.0,
-          existAddOns: [],
-        ),
-      ));
+      );
     }
 
-    final String dateStr = preview['sq_date']?.toString() ?? preview['sales_odr_date']?.toString() ?? '';
-    final String timeStr = preview['sq_time']?.toString() ?? preview['sales_odr_time']?.toString() ?? '';
+    final String dateStr =
+        preview['sq_date']?.toString() ??
+        preview['sales_odr_date']?.toString() ??
+        '';
+    final String timeStr =
+        preview['sq_time']?.toString() ??
+        preview['sales_odr_time']?.toString() ??
+        '';
     DateTime createdAt = DateTime.now();
     try {
       if (dateStr.isNotEmpty && timeStr.isNotEmpty) {
@@ -1495,39 +2014,60 @@ class OrdersController extends GetxController {
     } catch (_) {}
 
     final String orderId = (preview['sales_odr_id'] ?? '').toString();
-    final String invNo = (preview['sales_odr_inv_no'] ?? preview['sq_inv_no'] ?? '').toString();
+    final String invNo =
+        (preview['sales_odr_inv_no'] ?? preview['sq_inv_no'] ?? '').toString();
     final String branchInv = _firstNonEmptyValue([
       preview['sales_odr_sales_branch_inv'],
       preview['sales_odr_branch_inv'],
       preview['sales_branch_inv'],
     ]);
-    final String? createdByDeviceId = preview['created_by_device_id']?.toString(); // ← new
+    final String? createdByDeviceId = preview['created_by_device_id']
+        ?.toString();
     final String localUuid = (preview['local_uuid'] ?? '').toString();
 
-    final int orderType = (preview['sales_odr_order_type'] as num? ?? 0).toInt();
-    final int posStatus = (preview['sales_odr_pos_status'] as num? ?? 0).toInt();
+    final int orderType = (preview['sales_odr_order_type'] as num? ?? 0)
+        .toInt();
+    final int posStatus = (preview['sales_odr_pos_status'] as num? ?? 0)
+        .toInt();
     final String cartTableFallback = fallbackTableName.isNotEmpty
         ? fallbackTableName
         : cartController.selectedTableName.value;
-    final String tableName = _resolveName(preview, orderType, cartTableFallback);
-    final String? customerName = (preview['sq_cust_name'] ?? preview['customer_name'] ?? preview['cust_name'] ?? '')?.toString();
-    final String? captainName = (preview['agent_name'] ?? preview['usr_name'])?.toString(); // ✅ ADD
-    final String? tokenNo = (preview['sales_odr_token_no'] ?? preview['sales_odr_token'])?.toString(); // ✅ ADD
+    final String tableName = _resolveName(
+      preview,
+      orderType,
+      cartTableFallback,
+    );
+    final String? customerName =
+        (preview['sq_cust_name'] ??
+                preview['customer_name'] ??
+                preview['cust_name'] ??
+                '')
+            ?.toString();
+    final String? captainName = (preview['agent_name'] ?? preview['usr_name'])
+        ?.toString();
+    final String? tokenNo =
+        (preview['sales_odr_token_no'] ?? preview['sales_odr_token'])
+            ?.toString();
 
     final int cartChairFallback = fallbackChairCount > 0
         ? fallbackChairCount
         : cartController.selectedChairCount.value;
-    final int chairNumber = (preview['sales_odr_no_seats'] as num? ??
-        preview['no_seats'] as num? ??
-        preview['res_table']?['rt_seat_count'] as num? ??
-        cartChairFallback).toInt();
+    final int chairNumber =
+        (preview['sales_odr_no_seats'] as num? ??
+                preview['no_seats'] as num? ??
+                preview['res_table']?['rt_seat_count'] as num? ??
+                cartChairFallback)
+            .toInt();
 
     return OrderModel(
       id: orderId.isEmpty ? localUuid : orderId,
       invNo: invNo.isEmpty ? "OFFLINE" : invNo,
-      branchInv: branchInv, // ✅ Added
+      branchInv: branchInv,
       createdByDeviceId: createdByDeviceId,
-      tableId: (preview['sales_odr_table_id'] ?? cartController.selectedTableId.value).toString(),
+      tableId:
+          (preview['sales_odr_table_id'] ??
+                  cartController.selectedTableId.value)
+              .toString(),
       tableName: tableName,
       customerName: customerName,
       tokenNo: tokenNo,
@@ -1542,33 +2082,60 @@ class OrdersController extends GetxController {
           ? OrderStatus.draft
           : OrderStatus.pending,
       createdAt: createdAt,
-      subTotal: (preview['tot_rate'] as num? ?? preview['sub_total'] as num? ?? preview['tot_subtotal'] as num? ?? preview['sales_odr_subtotal'] as num? ?? 0.0).toDouble(),
-      totalAmount: (preview['tot_amount'] ?? preview['sales_odr_total'] ?? preview['total_amount'] as num? ?? 0.0).toDouble(),
-      totalTax: (preview['tot_tax'] ?? preview['sales_odr_tax'] ?? preview['total_tax'] as num? ?? 0.0).toDouble(),
+      subTotal:
+          (preview['tot_rate'] as num? ??
+                  preview['sub_total'] as num? ??
+                  preview['tot_subtotal'] as num? ??
+                  preview['sales_odr_subtotal'] as num? ??
+                  0.0)
+              .toDouble(),
+      totalAmount:
+          (preview['tot_amount'] ??
+                  preview['sales_odr_total'] ??
+                  preview['total_amount'] as num? ??
+                  0.0)
+              .toDouble(),
+      totalTax:
+          (preview['tot_tax'] ??
+                  preview['sales_odr_tax'] ??
+                  preview['total_tax'] as num? ??
+                  0.0)
+              .toDouble(),
       totalCgst: (preview['tot_cgst_tax'] as num? ?? 0.0).toDouble(),
       totalSgst: (preview['tot_sgst_tax'] as num? ?? 0.0).toDouble(),
       discount: (preview['tot_disc'] ?? preview['discount'] ?? 0.0).toDouble(),
       roundOff: (preview['sales_odr_roundoff'] ?? 0.0).toDouble(),
-      qrLink: (preview['qr_link'] ?? preview['zatca_qr'] ?? responseJson['qr_link'] ?? responseJson['zatca_qr'])?.toString(),
+      qrLink:
+          (preview['qr_link'] ??
+                  preview['zatca_qr'] ??
+                  responseJson['qr_link'] ??
+                  responseJson['zatca_qr'])
+              ?.toString(),
       branchTin: preview['branch_tin']?.toString(),
       branchName: preview['branch_name']?.toString(),
       branchPhone: preview['branch_phone']?.toString(),
       branchMob: preview['branch_mob']?.toString(),
       branchAddress: preview['branch_address']?.toString(),
-      Taxpercentage: ((preview['gst'] is List && (preview['gst'] as List).isNotEmpty)
-          ? (preview['gst'][0]['Taxpercentage'] as num? ?? 0.0)
-          : 0.0).toDouble(),
-      captainName: captainName,  // ✅ ADD
-      areaId: (preview['rt_area_id'] as num? ?? cartController.selectedAreaId.value).toInt(),
+      Taxpercentage:
+          ((preview['gst'] is List && (preview['gst'] as List).isNotEmpty)
+                  ? (preview['gst'][0]['Taxpercentage'] as num? ?? 0.0)
+                  : 0.0)
+              .toDouble(),
+      captainName: captainName,
+      areaId:
+          (preview['rt_area_id'] as num? ?? cartController.selectedAreaId.value)
+              .toInt(),
       areaName: cartController.selectedAreaName.value,
-      priceGroupId: (preview['prcgrp_id'] as num? ?? cartController.selectedPriceGroupId.value).toInt(),
+      priceGroupId:
+          (preview['prcgrp_id'] as num? ??
+                  cartController.selectedPriceGroupId.value)
+              .toInt(),
       isUnsynced: isOffline,
       sales_odr_order_type: orderType,
     );
   }
 
   Future<void> editOrder(OrderModel order) async {
-
     if (order.isUnsynced && order.items.isEmpty) {
       await _loadOrderDetailsFromLocal(order);
     }
@@ -1579,13 +2146,13 @@ class OrdersController extends GetxController {
         await fetchOrderDetails(order);
       }
       final updatedOrder = (orders + soldOrders).firstWhere(
-            (o) => o.id == order.id,
+        (o) => o.id == order.id,
         orElse: () => order,
       );
 
       if (updatedOrder.items.isNotEmpty) {
         final orderType = OrderType.values.firstWhere(
-              (e) => e.id == updatedOrder.sales_odr_order_type,
+          (e) => e.id == updatedOrder.sales_odr_order_type,
           orElse: () => OrderType.dineIn,
         );
         AppState.orderType = orderType;
@@ -1599,7 +2166,7 @@ class OrdersController extends GetxController {
         cartController.startEditingOrder(updatedOrder);
         homeController.changeIndex(0);
       } else {
-        showSafeSnackbar("Error", "Could not load order items.");
+        showSafeSnackbar('error'.tr, 'load_items_error'.tr);
       }
     } catch (e) {
       debugPrint("Error editing order: $e");
@@ -1616,13 +2183,13 @@ class OrdersController extends GetxController {
       }
 
       final updatedOrder = (orders + soldOrders).firstWhere(
-            (o) => o.id == order.id,
+        (o) => o.id == order.id,
         orElse: () => order,
       );
 
       if (updatedOrder.items.isNotEmpty) {
         final orderType = OrderType.values.firstWhere(
-              (e) => e.id == updatedOrder.sales_odr_order_type,
+          (e) => e.id == updatedOrder.sales_odr_order_type,
           orElse: () => OrderType.dineIn,
         );
         AppState.orderType = orderType;
@@ -1634,7 +2201,7 @@ class OrdersController extends GetxController {
         cartController.startEditingOrder(updatedOrder);
         Get.toNamed(Routes.CASHIER, arguments: updatedOrder);
       } else {
-        showSafeSnackbar("Error", "Could not load order items.");
+        showSafeSnackbar('error'.tr, 'load_items_error'.tr);
       }
     } catch (e) {
       debugPrint("Error going to cashier: $e");
@@ -1647,13 +2214,18 @@ class OrdersController extends GetxController {
     try {
       bool? confirm = await Get.dialog<bool>(
         AlertDialog(
-          title: Text('cancel_order'.tr),
-          content: Text('Are you sure you want to cancel order ${order.isUnsynced ? "(Offline)" : "#${order.branchInv}"}?'),
+          title: Text('cancel_confirm_title'.tr),
+          content: Text(
+            'cancel_confirm_msg'.trParams({'order': order.isUnsynced ? "(Offline)" : "#${order.branchInv}"}),
+          ),
           actions: [
-            TextButton(onPressed: () => Get.back(result: false), child: Text('no'.tr)),
             TextButton(
-                onPressed: () => Get.back(result: true),
-                child: Text('yes'.tr, style: const TextStyle(color: Colors.red))
+              onPressed: () => Get.back(result: false),
+              child: Text('no'.tr),
+            ),
+            TextButton(
+              onPressed: () => Get.back(result: true),
+              child: Text('yes'.tr, style: const TextStyle(color: Colors.red)),
             ),
           ],
         ),
@@ -1664,20 +2236,22 @@ class OrdersController extends GetxController {
           await _loadOrderDetailsFromLocal(order);
         }
         final updatedOrder = (orders + soldOrders).firstWhere(
-              (o) => o.id == order.id,
+          (o) => o.id == order.id,
           orElse: () => order,
         );
 
         final printerController = Get.find<PrinterController>();
         if (updatedOrder.status.value != OrderStatus.draft) {
-          await printerController.printCancelledOrder(updatedOrder).catchError((e) {
+          await printerController.printCancelledOrder(updatedOrder).catchError((
+            e,
+          ) {
             debugPrint("Offline cancellation print error: $e");
           });
         }
 
         await _dbHelper.deleteOrder(order.id);
         orders.removeWhere((o) => o.id == order.id);
-        showSafeSnackbar("Success", "Offline order cancelled successfully");
+        showSafeSnackbar('success'.tr, 'offline_cancel_success'.tr);
         return;
       }
 
@@ -1686,7 +2260,7 @@ class OrdersController extends GetxController {
       }
 
       final updatedOrder = (orders + soldOrders).firstWhere(
-            (o) => o.invNo == order.invNo,
+        (o) => o.invNo == order.invNo,
         orElse: () => order,
       );
       final originalStatus = order.status.value;
@@ -1697,11 +2271,16 @@ class OrdersController extends GetxController {
       if (success == true) {
         orders.removeWhere((o) => o.invNo == order.invNo);
         soldOrders.removeWhere((o) => o.invNo == order.invNo);
-        showSafeSnackbar("Success", "Order #${order.invNo} cancelled successfully");
+        showSafeSnackbar(
+          'success'.tr,
+          'order_cancel_success'.trParams({'inv': order.invNo}),
+        );
 
         if (originalStatus != OrderStatus.draft) {
           final printerController = Get.find<PrinterController>();
-          await printerController.printCancelledOrder(updatedOrder).catchError((e) {
+          await printerController.printCancelledOrder(updatedOrder).catchError((
+            e,
+          ) {
             debugPrint("Background printing error: $e");
           });
         }
@@ -1709,7 +2288,7 @@ class OrdersController extends GetxController {
         await _dbHelper.deleteOrder(order.id);
       } else {
         order.status.value = originalStatus;
-        showSafeSnackbar("Error", "Failed to cancel order");
+        showSafeSnackbar('error'.tr, 'order_cancel_error'.tr);
       }
     } catch (e) {
       debugPrint("Error cancelling order: $e");
@@ -1732,27 +2311,32 @@ class OrdersController extends GetxController {
     }
   }
 
-  List<OrderModel> get pendingOrders => orders.where((o) =>
-  (o.status.value == OrderStatus.pending ||
-      o.status.value == OrderStatus.preparing ||
-      o.status.value == OrderStatus.ready ||
-      o.status.value == OrderStatus.served ||
-      o.status.value == OrderStatus.draft ||
-      o.status.value == OrderStatus.billed) &&
-      o.status.value != OrderStatus.paid &&
-      o.status.value != OrderStatus.cancelled
-  ).toList();
+  List<OrderModel> get pendingOrders => orders
+      .where(
+        (o) =>
+            (o.status.value == OrderStatus.pending ||
+                o.status.value == OrderStatus.preparing ||
+                o.status.value == OrderStatus.ready ||
+                o.status.value == OrderStatus.served ||
+                o.status.value == OrderStatus.draft ||
+                o.status.value == OrderStatus.billed) &&
+            o.status.value != OrderStatus.paid &&
+            o.status.value != OrderStatus.cancelled,
+      )
+      .toList();
 
-  List<OrderModel> get dineInOrders => pendingOrders.where((o) => o.sales_odr_order_type == 0).toList();
-  List<OrderModel> get deliveryOrders => pendingOrders.where((o) => o.sales_odr_order_type == 1).toList();
-  List<OrderModel> get pickupOrders => pendingOrders.where((o) => o.sales_odr_order_type == 2).toList();
+  List<OrderModel> get dineInOrders =>
+      pendingOrders.where((o) => o.sales_odr_order_type == 0).toList();
+  List<OrderModel> get deliveryOrders =>
+      pendingOrders.where((o) => o.sales_odr_order_type == 1).toList();
+  List<OrderModel> get pickupOrders =>
+      pendingOrders.where((o) => o.sales_odr_order_type == 2).toList();
 
-  // Paid orders filtered by date
   List<OrderModel> get paidOrders {
     final dateStr = DateFormat('yyyy-MM-dd').format(selectedSoldDate.value);
-    return soldOrders.where((o) =>
-    DateFormat('yyyy-MM-dd').format(o.createdAt) == dateStr
-    ).toList();
+    return soldOrders
+        .where((o) => DateFormat('yyyy-MM-dd').format(o.createdAt) == dateStr)
+        .toList();
   }
 
   List<OrderModel> get completedOrders => paidOrders;

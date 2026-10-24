@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart' hide ScreenType;
-
 import '../../../../../helper/screen_type.dart';
 import '../../../../data/utils/AppState.dart';
 import '../../../../theme/app_theme.dart';
@@ -16,23 +15,19 @@ class SettingsView extends GetView<SettingsController> {
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
-
     return Scaffold(
       backgroundColor: colors.bg,
       appBar: ScreenType.isMobile()
           ? AppBar(
-        title: Text('settings'.tr),
-        backgroundColor: colors.isDark ? Colors.black : Colors.white,
-      )
+              title: Text('settings'.tr),
+              backgroundColor: colors.isDark ? Colors.black : Colors.white,
+            )
           : null,
       body: ListView(
         padding: EdgeInsets.all(8.w),
         children: [
-          // ============================================================
-          // OPERATION MODE
-          // ============================================================
           Text(
-            "Operation Mode",
+            'operation_mode'.tr,
             style: AppTypography.cardTitle.copyWith(
               fontWeight: FontWeight.bold,
               color: colors.text,
@@ -40,21 +35,16 @@ class SettingsView extends GetView<SettingsController> {
           ),
           SizedBox(height: 12.h),
           _buildOperationModeCard(context),
-
-          // ============================================================
-          // LOCAL HUB
-          // ============================================================
           Obx(() {
             if (!controller.isLocalMode) {
               return const SizedBox.shrink();
             }
-
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(height: 24.h),
                 Text(
-                  "Local Hub",
+                  'local_hub'.tr,
                   style: AppTypography.cardTitle.copyWith(
                     fontWeight: FontWeight.bold,
                     color: colors.text,
@@ -65,21 +55,16 @@ class SettingsView extends GetView<SettingsController> {
               ],
             );
           }),
-
-          // ============================================================
-          // ORDER VISIBILITY
-          // ============================================================
           Obx(() {
             if (!controller.isLocalMode) {
               return const SizedBox.shrink();
             }
-
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(height: 24.h),
                 Text(
-                  "Order Visibility",
+                  'order_visibility'.tr,
                   style: AppTypography.cardTitle.copyWith(
                     fontWeight: FontWeight.bold,
                     color: colors.text,
@@ -90,7 +75,6 @@ class SettingsView extends GetView<SettingsController> {
               ],
             );
           }),
-
           Obx(() {
             if (!controller.isLocalMode) return const SizedBox.shrink();
             return Column(
@@ -98,7 +82,7 @@ class SettingsView extends GetView<SettingsController> {
               children: [
                 SizedBox(height: 24.h),
                 Text(
-                  "Token Reset",
+                  'token_reset'.tr,
                   style: AppTypography.cardTitle.copyWith(
                     fontWeight: FontWeight.bold,
                     color: colors.text,
@@ -109,22 +93,17 @@ class SettingsView extends GetView<SettingsController> {
               ],
             );
           }),
-
-          // ============================================================
-          // SYNC PREFERENCES
-          // ============================================================
           Obx(() {
-            // Only show live sync preferences to Host or when in Online Mode
-            if (controller.isLocalMode && controller.isClient || controller.isOnlineMode) {
+            if (controller.isLocalMode && controller.isClient ||
+                controller.isOnlineMode) {
               return const SizedBox.shrink();
             }
-
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(height: 24.h),
                 Text(
-                  "Sync Preferences",
+                  'sync_preferences'.tr,
                   style: AppTypography.cardTitle.copyWith(
                     fontWeight: FontWeight.bold,
                     color: colors.text,
@@ -135,29 +114,25 @@ class SettingsView extends GetView<SettingsController> {
               ],
             );
           }),
-
-          // ============================================================
-          // ABOUT APP
-          // ============================================================
           SizedBox(height: 24.h),
           Text(
-            "About App",
+            'about_app'.tr,
             style: AppTypography.cardTitle.copyWith(
               fontWeight: FontWeight.bold,
               color: colors.text,
             ),
           ),
           SizedBox(height: 12.h),
-          _buildInfoTile(context, Icons.info_outline, "Version", "1.1.5"),
+          _buildInfoTile(context, Icons.info_outline, 'version'.tr, "1.1.7"),
           _buildInfoTile(
             context,
             Icons.business_outlined,
-            "Branch",
+            'branch'.tr,
             AppState.branchDisName.toUpperCase(),
           ),
           SizedBox(height: 24.h),
           Text(
-            "Account",
+            'account'.tr,
             style: AppTypography.cardTitle.copyWith(
               fontWeight: FontWeight.bold,
               color: colors.text,
@@ -195,11 +170,22 @@ class SettingsView extends GetView<SettingsController> {
                     : colors.textField,
                 child: Icon(
                   Icons.cloud_outlined,
-                  color: !controller.isLocalMode ? AppTheme.primaryGreen : colors.subtext,
+                  color: !controller.isLocalMode
+                      ? AppTheme.primaryGreen
+                      : colors.subtext,
                 ),
               ),
-              title: Text("Online Mode", style: TextStyle(color: colors.text, fontWeight: FontWeight.w600)),
-              subtitle: Text("Use the cloud server directly.", style: TextStyle(color: colors.subtext)),
+              title: Text(
+                'online_mode'.tr,
+                style: TextStyle(
+                  color: colors.text,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: Text(
+                'online_mode_desc'.tr,
+                style: TextStyle(color: colors.subtext),
+              ),
               trailing: Radio<bool>(
                 value: false,
                 groupValue: controller.isLocalMode,
@@ -216,11 +202,22 @@ class SettingsView extends GetView<SettingsController> {
                     : colors.textField,
                 child: Icon(
                   Icons.wifi,
-                  color: controller.isLocalMode ? AppTheme.primaryGreen : colors.subtext,
+                  color: controller.isLocalMode
+                      ? AppTheme.primaryGreen
+                      : colors.subtext,
                 ),
               ),
-              title: Text("Local Hub Mode", style: TextStyle(color: colors.text, fontWeight: FontWeight.w600)),
-              subtitle: Text("Use the restaurant's local network hub.", style: TextStyle(color: colors.subtext)),
+              title: Text(
+                'local_hub_mode'.tr,
+                style: TextStyle(
+                  color: colors.text,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: Text(
+                'local_hub_mode_desc'.tr,
+                style: TextStyle(color: colors.subtext),
+              ),
               trailing: Radio<bool>(
                 value: true,
                 groupValue: controller.isLocalMode,
@@ -249,19 +246,22 @@ class SettingsView extends GetView<SettingsController> {
             backgroundColor: AppTheme.primaryGreen.withOpacity(0.1),
             child: const Icon(Icons.access_time, color: AppTheme.primaryGreen),
           ),
-          title: Text("Opening Time", style: TextStyle(color: colors.text, fontWeight: FontWeight.w600)),
+          title: Text(
+            'opening_time'.tr,
+            style: TextStyle(color: colors.text, fontWeight: FontWeight.w600),
+          ),
           subtitle: Text(
             t == null
-                ? "Not set. Tokens restart from o-1 at midnight."
-                : "Tokens restart from o-1 every day at ${t.format(context)}.",
+                ? 'opening_time_not_set'.tr
+                : 'opening_time_desc'.trParams({'time': t.format(context)}),
             style: TextStyle(color: colors.subtext),
           ),
           trailing: t == null
               ? Icon(Icons.edit_outlined, color: colors.subtext)
               : IconButton(
-            icon: Icon(Icons.close, color: colors.subtext),
-            onPressed: controller.clearOpeningTime,
-          ),
+                  icon: Icon(Icons.close, color: colors.subtext),
+                  onPressed: controller.clearOpeningTime,
+                ),
         );
       }),
     );
@@ -273,28 +273,46 @@ class SettingsView extends GetView<SettingsController> {
       final devices = controller.connectedDevices;
       return ExpansionTile(
         leading: Icon(Icons.devices_other, color: colors.subtext),
-        title: Text("Connected Devices", style: TextStyle(color: colors.text)),
+        title: Text('connected_devices'.tr, style: TextStyle(color: colors.text)),
         subtitle: Text(
-          devices.isEmpty ? "No clients connected" : "${devices.length} client(s) connected",
-          style: TextStyle(color: colors.subtext),
+          devices.isEmpty
+              ? 'no_clients_connected'.tr
+              : "${devices.length} client(s) connected",
+        style: TextStyle(color: colors.subtext),
         ),
         children: devices.isEmpty
             ? [
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
-            child: Text("Waiting for client devices to connect...", style: TextStyle(color: colors.subtext)),
-          ),
-        ]
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 16.w,
+                    vertical: 8.h,
+                  ),
+                  child: Text(
+                    'waiting_for_clients'.tr,
+                    style: TextStyle(color: colors.subtext),
+                  ),
+                ),
+              ]
             : devices.map((d) {
-          return ListTile(
-            dense: true,
-            leading: Icon(Icons.smartphone, color: colors.subtext, size: 20.sp),
-            title: Text(d['deviceName']?.toString() ?? 'Unnamed Device', style: TextStyle(color: colors.text)),
-            subtitle: (d['userName']?.toString().isNotEmpty ?? false)
-                ? Text(d['userName'].toString(), style: TextStyle(color: colors.subtext))
-                : null,
-          );
-        }).toList(),
+                return ListTile(
+                  dense: true,
+                  leading: Icon(
+                    Icons.smartphone,
+                    color: colors.subtext,
+                    size: 20.sp,
+                  ),
+                  title: Text(
+                    d['deviceName']?.toString() ?? 'unnamed_device'.tr,
+                    style: TextStyle(color: colors.text),
+                  ),
+                  subtitle: (d['userName']?.toString().isNotEmpty ?? false)
+                      ? Text(
+                          d['userName'].toString(),
+                          style: TextStyle(color: colors.subtext),
+                        )
+                      : null,
+                );
+              }).toList(),
       );
     });
   }
@@ -314,52 +332,86 @@ class SettingsView extends GetView<SettingsController> {
         ],
       ),
       child: Obx(
-            () => Column(
+        () => Column(
           children: [
             ListTile(
-              onTap: controller.isChangingRole.value ? null : () => controller.becomeHost(),
+              onTap: controller.isChangingRole.value
+                  ? null
+                  : () => controller.becomeHost(),
               leading: CircleAvatar(
                 backgroundColor: controller.isHost
                     ? AppTheme.primaryGreen.withOpacity(0.1)
                     : colors.textField,
                 child: Icon(
                   Icons.dns_outlined,
-                  color: controller.isHost ? AppTheme.primaryGreen : colors.subtext,
+                  color: controller.isHost
+                      ? AppTheme.primaryGreen
+                      : colors.subtext,
                 ),
               ),
-              title: Text("Host This Device", style: TextStyle(color: colors.text, fontWeight: FontWeight.w600)),
-              subtitle: Text("This device becomes the Main Cashier for the network.", style: TextStyle(color: colors.subtext)),
-              trailing: controller.isChangingRole.value
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : Radio<bool>(
-                value: true,
-                groupValue: controller.isHost,
-                onChanged: (_) => controller.becomeHost(),
-                activeColor: AppTheme.primaryGreen,
+              title: Text(
+                'host_this_device'.tr,
+                style: TextStyle(
+                  color: colors.text,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
+              subtitle: Text(
+                'host_desc'.tr,
+                style: TextStyle(color: colors.subtext),
+              ),
+              trailing: controller.isChangingRole.value
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Radio<bool>(
+                      value: true,
+                      groupValue: controller.isHost,
+                      onChanged: (_) => controller.becomeHost(),
+                      activeColor: AppTheme.primaryGreen,
+                    ),
             ),
             Divider(height: 1, color: colors.border),
             ListTile(
-              onTap: controller.isChangingRole.value ? null : () => controller.becomeClient(),
+              onTap: controller.isChangingRole.value
+                  ? null
+                  : () => controller.becomeClient(),
               leading: CircleAvatar(
                 backgroundColor: controller.isClient
                     ? AppTheme.primaryGreen.withOpacity(0.1)
                     : colors.textField,
                 child: Icon(
                   Icons.smartphone,
-                  color: controller.isClient ? AppTheme.primaryGreen : colors.subtext,
+                  color: controller.isClient
+                      ? AppTheme.primaryGreen
+                      : colors.subtext,
                 ),
               ),
-              title: Text("Connect as Client", style: TextStyle(color: colors.text, fontWeight: FontWeight.w600)),
-              subtitle: Text("Connect to another device acting as Main Cashier.", style: TextStyle(color: colors.subtext)),
-              trailing: controller.isChangingRole.value
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : Radio<bool>(
-                value: true,
-                groupValue: controller.isClient,
-                onChanged: (_) => controller.becomeClient(),
-                activeColor: AppTheme.primaryGreen,
+              title: Text(
+                'connect_as_client'.tr,
+                style: TextStyle(
+                  color: colors.text,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
+              subtitle: Text(
+                'client_desc'.tr,
+                style: TextStyle(color: colors.subtext),
+              ),
+              trailing: controller.isChangingRole.value
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Radio<bool>(
+                      value: true,
+                      groupValue: controller.isClient,
+                      onChanged: (_) => controller.becomeClient(),
+                      activeColor: AppTheme.primaryGreen,
+                    ),
             ),
             Divider(height: 1, color: colors.border),
 
@@ -367,21 +419,40 @@ class SettingsView extends GetView<SettingsController> {
               Divider(height: 1, color: colors.border),
               ListTile(
                 leading: Icon(Icons.router_outlined, color: colors.subtext),
-                title: Text("Hub Address", style: TextStyle(color: colors.text)),
-                subtitle: Text(controller.hubUrl, style: TextStyle(color: colors.subtext, fontWeight: FontWeight.w500)),
+                title: Text(
+                  'hub_address'.tr,
+                  style: TextStyle(color: colors.text),
+                ),
+                subtitle: Text(
+                  controller.hubUrl,
+                  style: TextStyle(
+                    color: colors.subtext,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
                 trailing: IconButton(
                   icon: Icon(Icons.copy_outlined, color: colors.subtext),
                   onPressed: () {
                     Clipboard.setData(ClipboardData(text: controller.hubUrl));
-                    Get.snackbar("Copied", "Hub address copied to clipboard.", snackPosition: SnackPosition.BOTTOM);
+                    Get.snackbar(
+                      'copied'.tr,
+                      'hub_address_copied'.tr,
+                      snackPosition: SnackPosition.BOTTOM,
+                    );
                   },
                 ),
               ),
               Divider(height: 1, color: colors.border),
               ListTile(
                 leading: Icon(Icons.settings_ethernet, color: colors.subtext),
-                title: Text("Server Port", style: TextStyle(color: colors.text)),
-                subtitle: Text(controller.hostPort.value.toString(), style: TextStyle(color: colors.subtext)),
+                title: Text(
+                  'server_port'.tr,
+                  style: TextStyle(color: colors.text),
+                ),
+                subtitle: Text(
+                  controller.hostPort.value.toString(),
+                  style: TextStyle(color: colors.subtext),
+                ),
               ),
               Divider(height: 1, color: colors.border),
               _buildHubStatusTile(context, isHost: true),
@@ -393,16 +464,25 @@ class SettingsView extends GetView<SettingsController> {
               Divider(height: 1, color: colors.border),
               ListTile(
                 leading: Icon(Icons.router_outlined, color: colors.subtext),
-                title: Text("Main Cashier IP", style: TextStyle(color: colors.text)),
-                subtitle: Text(controller.hostIp.value ?? "Not set", style: TextStyle(color: colors.subtext)),
+                title: Text(
+                  'main_cashier_ip'.tr,
+                  style: TextStyle(color: colors.text),
+                ),
+                subtitle: Text(
+                  controller.hostIp.value ?? 'opening_time_not_set'.tr,
+                  style: TextStyle(color: colors.subtext),
+                ),
                 trailing: Icon(Icons.edit_outlined, color: colors.subtext),
                 onTap: () => _showHostIpDialog(context),
               ),
               Divider(height: 1, color: colors.border),
               ListTile(
                 leading: Icon(Icons.settings_ethernet, color: colors.subtext),
-                title: Text("Hub Port", style: TextStyle(color: colors.text)),
-                subtitle: Text(controller.hostPort.value.toString(), style: TextStyle(color: colors.subtext)),
+                title: Text('hub_port'.tr, style: TextStyle(color: colors.text)),
+                subtitle: Text(
+                  controller.hostPort.value.toString(),
+                  style: TextStyle(color: colors.subtext),
+                ),
                 trailing: Icon(Icons.edit_outlined, color: colors.subtext),
                 onTap: () => _showHostPortDialog(context),
               ),
@@ -419,33 +499,51 @@ class SettingsView extends GetView<SettingsController> {
     final colors = AppColors.of(context);
     return ListTile(
       leading: Obx(() {
-        final bool connected = isHost ? controller.isHubServerRunning.value : controller.isHubConnected.value;
+        final bool connected = isHost
+            ? controller.isHubServerRunning.value
+            : controller.isHubConnected.value;
         return CircleAvatar(
-          backgroundColor: connected ? AppTheme.primaryGreen.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+          backgroundColor: connected
+              ? AppTheme.primaryGreen.withOpacity(0.1)
+              : Colors.orange.withOpacity(0.1),
           child: Icon(
             connected ? Icons.check_circle_outline : Icons.wifi_off,
             color: connected ? AppTheme.primaryGreen : Colors.orange,
           ),
         );
       }),
-      title: Text("Hub Status", style: TextStyle(color: colors.text)),
-      subtitle: Obx(() => Text(
-        isHost
-            ? (controller.isHubServerRunning.value ? "Server Running" : "Server Stopped")
-            : (controller.isHubConnected.value ? "Connected" : "Not connected"),
-        style: TextStyle(color: colors.subtext),
-      )),
+      title: Text('hub_status'.tr, style: TextStyle(color: colors.text)),
+      subtitle: Obx(
+        () => Text(
+          isHost
+              ? (controller.isHubServerRunning.value
+                    ? 'server_running'.tr
+                    : 'server_stopped'.tr)
+              : (controller.isHubConnected.value
+                    ? 'connected'.tr
+                    : 'not_connected'.tr),
+          style: TextStyle(color: colors.subtext),
+        ),
+      ),
       trailing: isHost
           ? IconButton(
               icon: const Icon(Icons.refresh),
               onPressed: () => controller.startLocalServer(),
             )
-          : Obx(() => TextButton(
-                onPressed: controller.isTestingHubConnection.value ? null : () => controller.testHubConnection(),
+          : Obx(
+              () => TextButton(
+                onPressed: controller.isTestingHubConnection.value
+                    ? null
+                    : () => controller.testHubConnection(),
                 child: controller.isTestingHubConnection.value
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Connect'),
-              )),
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text('confirm'.tr),
+              ),
+            ),
     );
   }
 
@@ -464,7 +562,7 @@ class SettingsView extends GetView<SettingsController> {
         ],
       ),
       child: Obx(
-            () => Column(
+        () => Column(
           children: [
             ListTile(
               onTap: () => controller.toggleOrderVisibility(false),
@@ -474,11 +572,22 @@ class SettingsView extends GetView<SettingsController> {
                     : colors.textField,
                 child: Icon(
                   Icons.groups_outlined,
-                  color: !controller.showMyOrdersOnly.value ? AppTheme.primaryGreen : colors.subtext,
+                  color: !controller.showMyOrdersOnly.value
+                      ? AppTheme.primaryGreen
+                      : colors.subtext,
                 ),
               ),
-              title: Text("All Orders", style: TextStyle(color: colors.text, fontWeight: FontWeight.w600)),
-              subtitle: Text("Show orders placed by every device.", style: TextStyle(color: colors.subtext)),
+              title: Text(
+                'all_orders'.tr,
+                style: TextStyle(
+                  color: colors.text,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: Text(
+                'all_orders_desc'.tr,
+                style: TextStyle(color: colors.subtext),
+              ),
               trailing: Radio<bool>(
                 value: false,
                 groupValue: controller.showMyOrdersOnly.value,
@@ -495,11 +604,22 @@ class SettingsView extends GetView<SettingsController> {
                     : colors.textField,
                 child: Icon(
                   Icons.person_outline,
-                  color: controller.showMyOrdersOnly.value ? AppTheme.primaryGreen : colors.subtext,
+                  color: controller.showMyOrdersOnly.value
+                      ? AppTheme.primaryGreen
+                      : colors.subtext,
                 ),
               ),
-              title: Text("My Orders Only", style: TextStyle(color: colors.text, fontWeight: FontWeight.w600)),
-              subtitle: Text("Show only orders placed on this device.", style: TextStyle(color: colors.subtext)),
+              title: Text(
+                'my_orders_only'.tr,
+                style: TextStyle(
+                  color: colors.text,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: Text(
+                'my_orders_only_desc'.tr,
+                style: TextStyle(color: colors.subtext),
+              ),
               trailing: Radio<bool>(
                 value: true,
                 groupValue: controller.showMyOrdersOnly.value,
@@ -532,33 +652,60 @@ class SettingsView extends GetView<SettingsController> {
               leading: CircleAvatar(
                 backgroundColor: Colors.blue.withOpacity(0.1),
                 child: isSyncing
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.cloud_upload_outlined, color: Colors.blue),
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(
+                        Icons.cloud_upload_outlined,
+                        color: Colors.blue,
+                      ),
               ),
-              title: Text("Sync Pending Orders", style: TextStyle(color: colors.text)),
+              title: Text(
+                'sync_pending_orders'.tr,
+                style: TextStyle(color: colors.text),
+              ),
               subtitle: Text(
                 isSyncing
-                    ? "Syncing $count ${count == 1 ? 'order' : 'orders'}..."
-                    : "$count ${count == 1 ? 'order' : 'orders'} pending to sync.",
+                    ? 'syncing_orders'.trParams({'count': count.toString()})
+                    : 'pending_orders_msg'.trParams({'count': count.toString()}),
                 style: TextStyle(color: colors.subtext),
               ),
             );
           }),
           Divider(height: 1, color: colors.border),
-          Obx(() => ListTile(
-            onTap: controller.isMasterSyncing.value ? null : controller.performManualMasterSync,
-            leading: CircleAvatar(
-              backgroundColor: AppTheme.primaryGreen.withOpacity(0.1),
-              child: controller.isMasterSyncing.value
-                  ? CircularProgressIndicator(strokeWidth: 2, value: controller.masterSyncProgress.value > 0 ? controller.masterSyncProgress.value : null)
-                  : const Icon(Icons.cloud_download_outlined, color: AppTheme.primaryGreen),
+          Obx(
+            () => ListTile(
+              onTap: controller.isMasterSyncing.value
+                  ? null
+                  : controller.performManualMasterSync,
+              leading: CircleAvatar(
+                backgroundColor: AppTheme.primaryGreen.withOpacity(0.1),
+                child: controller.isMasterSyncing.value
+                    ? CircularProgressIndicator(
+                        strokeWidth: 2,
+                        value: controller.masterSyncProgress.value > 0
+                            ? controller.masterSyncProgress.value
+                            : null,
+                      )
+                    : const Icon(
+                        Icons.cloud_download_outlined,
+                        color: AppTheme.primaryGreen,
+                      ),
+              ),
+              title: Text(
+                'manual_data_sync'.tr,
+                style: TextStyle(color: colors.text),
+              ),
+              subtitle: Text(
+                controller.isMasterSyncing.value
+                    ? 'syncing'.tr
+                    : 'download_data'.tr,
+                style: TextStyle(color: colors.subtext),
+              ),
             ),
-            title: Text("Manual Data Sync", style: TextStyle(color: colors.text)),
-            subtitle: Text(
-              controller.isMasterSyncing.value ? "Syncing..." : "Download latest data.",
-              style: TextStyle(color: colors.subtext),
-            ),
-          )),
+          ),
         ],
       ),
     );
@@ -566,18 +713,31 @@ class SettingsView extends GetView<SettingsController> {
 
   void _showHostIpDialog(BuildContext context) {
     final colors = AppColors.of(context);
-    final textController = TextEditingController(text: controller.hostIp.value ?? '');
+    final textController = TextEditingController(
+      text: controller.hostIp.value ?? '',
+    );
     Get.dialog(
       AlertDialog(
-        title: const Text("Main Cashier IP"),
+        title: Text('main_cashier_ip'.tr),
         content: TextField(
           controller: textController,
           keyboardType: TextInputType.url,
-          decoration: InputDecoration(hintText: "192.168.x.x", labelText: "Host IP", filled: true, fillColor: colors.textField),
+          decoration: InputDecoration(
+            hintText: "192.168.x.x",
+            labelText: 'host_ip'.tr,
+            filled: true,
+            fillColor: colors.textField,
+          ),
         ),
         actions: [
-          TextButton(onPressed: () => Get.back(), child: const Text("Cancel")),
-          ElevatedButton(onPressed: () { controller.setHostIp(textController.text); Get.back(); }, child: const Text("Save")),
+          TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
+          ElevatedButton(
+            onPressed: () {
+              controller.setHostIp(textController.text);
+              Get.back();
+            },
+            child: Text('save'.tr),
+          ),
         ],
       ),
     );
@@ -585,35 +745,59 @@ class SettingsView extends GetView<SettingsController> {
 
   void _showHostPortDialog(BuildContext context) {
     final colors = AppColors.of(context);
-    final textController = TextEditingController(text: controller.hostPort.value.toString());
+    final textController = TextEditingController(
+      text: controller.hostPort.value.toString(),
+    );
     Get.dialog(
       AlertDialog(
-        title: const Text("Hub Port"),
+        title: Text('hub_port'.tr),
         content: TextField(
           controller: textController,
           keyboardType: TextInputType.number,
-          decoration: InputDecoration(hintText: "8080", labelText: "Port", filled: true, fillColor: colors.textField),
+          decoration: InputDecoration(
+            hintText: "8080",
+            labelText: 'port'.tr,
+            filled: true,
+            fillColor: colors.textField,
+          ),
         ),
         actions: [
-          TextButton(onPressed: () => Get.back(), child: const Text("Cancel")),
-          ElevatedButton(onPressed: () {
-            final port = int.tryParse(textController.text.trim());
-            if (port != null) { controller.setHostPort(port); Get.back(); }
-          }, child: const Text("Save")),
+          TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
+          ElevatedButton(
+            onPressed: () {
+              final port = int.tryParse(textController.text.trim());
+              if (port != null) {
+                controller.setHostPort(port);
+                Get.back();
+              }
+            },
+            child: Text('save'.tr),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildInfoTile(BuildContext context, IconData icon, String title, String value) {
+  Widget _buildInfoTile(
+    BuildContext context,
+    IconData icon,
+    String title,
+    String value,
+  ) {
     final colors = AppColors.of(context);
     return Container(
       margin: EdgeInsets.only(bottom: 8.h),
-      decoration: BoxDecoration(color: colors.card, borderRadius: BorderRadius.circular(12.r)),
+      decoration: BoxDecoration(
+        color: colors.card,
+        borderRadius: BorderRadius.circular(12.r),
+      ),
       child: ListTile(
         leading: Icon(icon, color: colors.subtext),
         title: Text(title, style: TextStyle(color: colors.text)),
-        trailing: Text(value, style: TextStyle(fontWeight: FontWeight.bold, color: colors.subtext)),
+        trailing: Text(
+          value,
+          style: TextStyle(fontWeight: FontWeight.bold, color: colors.subtext),
+        ),
       ),
     );
   }
@@ -621,10 +805,16 @@ class SettingsView extends GetView<SettingsController> {
   Widget _buildAccountCard(BuildContext context) {
     final colors = AppColors.of(context);
     return Container(
-      decoration: BoxDecoration(color: colors.card, borderRadius: BorderRadius.circular(12.r)),
+      decoration: BoxDecoration(
+        color: colors.card,
+        borderRadius: BorderRadius.circular(12.r),
+      ),
       child: ListTile(
-        leading: const CircleAvatar(backgroundColor: Color(0xFFFEE2E2), child: Icon(Icons.logout, color: Colors.red)),
-        title: const Text("Logout", style: TextStyle(color: Colors.red)),
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFFFEE2E2),
+          child: Icon(Icons.logout, color: Colors.red),
+        ),
+        title: Text('logout'.tr, style: const TextStyle(color: Colors.red)),
         onTap: () => _showLogoutDialog(context),
       ),
     );
@@ -633,11 +823,18 @@ class SettingsView extends GetView<SettingsController> {
   void _showLogoutDialog(BuildContext context) {
     Get.dialog(
       CupertinoAlertDialog(
-        title: const Text("Logout"),
-        content: const Text("Are you sure? Unsynced orders may be lost."),
+        title: Text('logout'.tr),
+        content: Text('logout_warning'.tr),
         actions: [
-          CupertinoDialogAction(child: const Text("Cancel"), onPressed: () => Get.back()),
-          CupertinoDialogAction(isDestructiveAction: true, onPressed: () => AppState.logout(), child: const Text("Logout")),
+          CupertinoDialogAction(
+            child: Text('cancel'.tr),
+            onPressed: () => Get.back(),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => AppState.logout(),
+            child: Text('logout'.tr),
+          ),
         ],
       ),
     );

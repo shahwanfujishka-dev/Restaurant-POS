@@ -26,7 +26,7 @@ class HomeController extends GetxController {
     'tables',
     'orders',
     'printers',
-    'settings'
+    'settings',
   ];
 
   final List<Widget> pages = [
@@ -34,7 +34,7 @@ class HomeController extends GetxController {
     const TablesPage(),
     const OrdersPage(),
     PrintersPage(),
-    SettingsView()
+    SettingsView(),
   ];
 
   void changeIndex(int index) {

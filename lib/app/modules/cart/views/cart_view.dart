@@ -19,7 +19,9 @@ class CartView extends GetView<CartController> {
 
   @override
   Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) => controller.loadCaptains());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => controller.loadCaptains(),
+    );
     final colors = AppColors.of(context);
     return Scaffold(
       resizeToAvoidBottomInset: true,
@@ -52,41 +54,45 @@ class CartView extends GetView<CartController> {
           ),
         ),
         actions: [
-          Obx(() => controller.cartItems.isNotEmpty
-              ? Container(
-            margin: EdgeInsets.only(right: 8.w),
-            decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.delete_sweep, color: Colors.red),
-              onPressed: () {
-                Get.defaultDialog(
-                  backgroundColor: colors.card,
-                  title: "Clear Cart",
-                  titleStyle: AppTypography.cardTitle.copyWith(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16.sp,
-                    color: colors.text,
-                  ),
-                  middleText: "Remove all items from your cart?",
-                  middleTextStyle: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
-                  radius: 16.r,
-                  textConfirm: "Clear All",
-                  textCancel: "Cancel",
-                  confirmTextColor: Colors.white,
-                  buttonColor: Colors.red,
-                  cancelTextColor: colors.subtext,
-                  onConfirm: () {
-                    controller.clearCart();
-                    Get.back();
-                  },
-                );
-              },
-            ),
-          )
-              : const SizedBox.shrink()),
+          Obx(
+            () => controller.cartItems.isNotEmpty
+                ? Container(
+                    margin: EdgeInsets.only(right: 8.w),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.delete_sweep, color: Colors.red),
+                      onPressed: () {
+                        Get.defaultDialog(
+                          backgroundColor: colors.card,
+                          title: 'clear_cart'.tr,
+                          titleStyle: AppTypography.cardTitle.copyWith(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16.sp,
+                            color: colors.text,
+                          ),
+                          middleText: 'clear_cart_msg'.tr,
+                          middleTextStyle: AppTypography.cardSubtitle.copyWith(
+                            color: colors.subtext,
+                          ),
+                          radius: 16.r,
+                          textConfirm: 'clear_all'.tr,
+                          textCancel: 'cancel'.tr,
+                          confirmTextColor: Colors.white,
+                          buttonColor: Colors.red,
+                          cancelTextColor: colors.subtext,
+                          onConfirm: () {
+                            controller.clearCart();
+                            Get.back();
+                          },
+                        );
+                      },
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
         ],
       ),
       body: Column(
@@ -101,16 +107,9 @@ class CartView extends GetView<CartController> {
               return MobileCartItemList(controller: controller);
             }),
           ),
-          // ✅ Reactive spacer that matches the bottomSheet's actual content height
-          // Obx(() => SizedBox(
-          //   height: controller.cartItems.isEmpty
-          //       ? 0
-          //       : controller.isEditing
-          //       ? MediaQuery.of(context).size.height * 0.40
-          //       : MediaQuery.of(context).size.height * 0.35,
-          // )),
         ],
       ),
-      bottomNavigationBar: MobileCartSummary(controller: controller),    );
+      bottomNavigationBar: MobileCartSummary(controller: controller),
+    );
   }
 }

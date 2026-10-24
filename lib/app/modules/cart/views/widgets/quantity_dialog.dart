@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/get_navigation/src/extension_navigation.dart';
+import 'package:get/get.dart' hide ScreenType;
 
 import '../../../../../helper/screen_type.dart';
 import '../../../../theme/app_theme.dart';
@@ -12,7 +11,11 @@ class QuantityDialog extends StatefulWidget {
   final CartItem item;
   final CartController controller;
 
-  const QuantityDialog({super.key, required this.item, required this.controller});
+  const QuantityDialog({
+    super.key,
+    required this.item,
+    required this.controller,
+  });
 
   static void show(CartItem item, CartController controller) {
     Get.dialog(
@@ -32,7 +35,9 @@ class _QuantityDialogState extends State<QuantityDialog> {
   @override
   void initState() {
     super.initState();
-    _textController = TextEditingController(text: widget.item.quantity.value.toString());
+    _textController = TextEditingController(
+      text: widget.item.quantity.value.toString(),
+    );
   }
 
   @override
@@ -63,8 +68,11 @@ class _QuantityDialogState extends State<QuantityDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              "Update Quantity",
-              style: AppTypography.cardTitle.copyWith(fontWeight: FontWeight.bold, color: colors.text),
+              'update_quantity'.tr,
+              style: AppTypography.cardTitle.copyWith(
+                fontWeight: FontWeight.bold,
+                color: colors.text,
+              ),
             ),
             SizedBox(height: 8.h),
             Text(
@@ -99,7 +107,7 @@ class _QuantityDialogState extends State<QuantityDialog> {
             ),
             SizedBox(height: 10.h),
             Text(
-              "Quick Presets",
+              'quick_presets'.tr,
               style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
             ),
             SizedBox(height: 6.h),
@@ -111,11 +119,16 @@ class _QuantityDialogState extends State<QuantityDialog> {
                 return InkWell(
                   onTap: () => _updateQty(preset),
                   child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: AppTypography.sizeText, vertical: 8.h),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: AppTypography.sizeText,
+                      vertical: 8.h,
+                    ),
                     decoration: BoxDecoration(
                       color: AppTheme.primaryGreen.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10.r),
-                      border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.3)),
+                      border: Border.all(
+                        color: AppTheme.primaryGreen.withOpacity(0.3),
+                      ),
                     ),
                     child: Text(
                       "$preset",
@@ -134,7 +147,12 @@ class _QuantityDialogState extends State<QuantityDialog> {
                 Expanded(
                   child: TextButton(
                     onPressed: () => Get.back(),
-                    child: Text("Cancel", style:AppTypography.button.copyWith(color: colors.subtext)),
+                    child: Text(
+                      'cancel'.tr,
+                      style: AppTypography.button.copyWith(
+                        color: colors.subtext,
+                      ),
+                    ),
                   ),
                 ),
                 Expanded(
@@ -145,14 +163,16 @@ class _QuantityDialogState extends State<QuantityDialog> {
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primaryGreen,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.r)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10.r),
+                      ),
                       padding: EdgeInsets.symmetric(vertical: 12.h),
                     ),
-                    child: Text("Set", style:AppTypography.button),
+                    child: Text('set'.tr, style: AppTypography.button),
                   ),
                 ),
               ],
-            )
+            ),
           ],
         ),
       ),

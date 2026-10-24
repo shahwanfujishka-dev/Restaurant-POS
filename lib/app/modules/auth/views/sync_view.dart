@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/get_navigation/src/extension_navigation.dart';
-import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
-import 'package:get/get_state_manager/src/simple/get_view.dart';
+import 'package:get/get.dart' hide ScreenType;
 import 'dart:math' as math;
 
 import '../../../../helper/screen_type.dart';
@@ -31,31 +28,33 @@ class SyncView extends GetView<SyncController> {
             child: Center(
               child: SingleChildScrollView(
                 padding: EdgeInsets.symmetric(horizontal: 40.w, vertical: 24.h),
-                child: Obx(() => AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 450),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) => FadeTransition(
-                    opacity: animation,
-                    child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: const Offset(0, 0.08),
-                        end: Offset.zero,
-                      ).animate(animation),
-                      child: child,
+                child: Obx(
+                  () => AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 450),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 0.08),
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: child,
+                      ),
                     ),
+                    child: controller.hasError.value
+                        ? _ErrorBody(
+                            key: const ValueKey('error'),
+                            message: controller.errorMessage.value,
+                            onRetry: controller.startSync,
+                          )
+                        : _SyncingBody(
+                            key: const ValueKey('syncing'),
+                            controller: controller,
+                          ),
                   ),
-                  child: controller.hasError.value
-                      ? _ErrorBody(
-                    key: const ValueKey('error'),
-                    message: controller.errorMessage.value,
-                    onRetry: controller.startSync,
-                  )
-                      : _SyncingBody(
-                    key: const ValueKey('syncing'),
-                    controller: controller,
-                  ),
-                )),
+                ),
               ),
             ),
           ),
@@ -96,7 +95,7 @@ class _SyncingBody extends StatelessWidget {
                 _PulsingDot(),
                 SizedBox(width: 7.w),
                 Text(
-                  "INITIALIZING SYSTEM",
+                  'initializing_system'.tr,
                   style: TextStyle(
                     fontSize: AppTypography.smallText,
                     fontWeight: FontWeight.w700,
@@ -116,7 +115,7 @@ class _SyncingBody extends StatelessWidget {
         _FadeSlideIn(
           delay: const Duration(milliseconds: 400),
           child: Text(
-            "Getting your station ready",
+            'getting_station_ready'.tr,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: AppTypography.sizeText,
@@ -132,37 +131,41 @@ class _SyncingBody extends StatelessWidget {
 
         _FadeSlideIn(
           delay: const Duration(milliseconds: 500),
-          child: Obx(() => AnimatedSwitcher(
-            duration: const Duration(milliseconds: 400),
-            transitionBuilder: (child, animation) => FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 0.3),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
+          child: Obx(
+            () => AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.3),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              ),
+              child: Text(
+                controller.statusMessage.value.tr,
+                key: ValueKey(controller.statusMessage.value),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: AppTypography.smallText,
+                  color: colors.subtext,
+                  letterSpacing: 0.2,
+                  height: 1.5,
+                ),
               ),
             ),
-            child: Text(
-              controller.statusMessage.value,
-              key: ValueKey(controller.statusMessage.value),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: AppTypography.smallText,
-                color: colors.subtext,
-                letterSpacing: 0.2,
-                height: 1.5,
-              ),
-            ),
-          )),
+          ),
         ),
 
         SizedBox(height: 20.h),
 
         _FadeSlideIn(
           delay: const Duration(milliseconds: 700),
-          child: Obx(() => _ProgressSection(progress: controller.progress.value)),
+          child: Obx(
+            () => _ProgressSection(progress: controller.progress.value),
+          ),
         ),
 
         SizedBox(height: 25.h),
@@ -177,7 +180,7 @@ class _SyncingBody extends StatelessWidget {
         _FadeSlideIn(
           delay: const Duration(milliseconds: 1100),
           child: Text(
-            "Please keep the app open while we\nsync your restaurant data.",
+            'keep_app_open_msg'.tr,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: AppTypography.smallText,
@@ -246,7 +249,7 @@ class _ErrorBody extends StatelessWidget {
         SizedBox(height: 28.h),
 
         Text(
-          "Connection Failed",
+          'connection_failed'.tr,
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: AppTypography.sizeText,
@@ -263,7 +266,10 @@ class _ErrorBody extends StatelessWidget {
           decoration: BoxDecoration(
             color: colors.card,
             borderRadius: BorderRadius.circular(14.r),
-            border: Border.all(color: const Color(0xFFFFE5E5).withOpacity(0.3), width: 1),
+            border: Border.all(
+              color: const Color(0xFFFFE5E5).withOpacity(0.3),
+              width: 1,
+            ),
             boxShadow: [
               BoxShadow(
                 color: const Color(0xFFE74C3C).withOpacity(0.06),
@@ -283,7 +289,7 @@ class _ErrorBody extends StatelessWidget {
               SizedBox(width: 10.w),
               Expanded(
                 child: Text(
-                  message,
+                  message.tr,
                   style: TextStyle(
                     fontSize: AppTypography.smallText,
                     color: colors.text,
@@ -325,7 +331,7 @@ class _ErrorBody extends StatelessWidget {
                 Icon(Icons.refresh_rounded, color: Colors.white, size: 18.sp),
                 SizedBox(width: 8.w),
                 Text(
-                  "Retry Sync",
+                  'retry_sync'.tr,
                   style: TextStyle(
                     fontSize: AppTypography.sizeText,
                     fontWeight: FontWeight.w700,
@@ -343,7 +349,7 @@ class _ErrorBody extends StatelessWidget {
         GestureDetector(
           onTap: () => Get.offAllNamed('/login'),
           child: Text(
-            "Back to Login",
+            'back_to_login'.tr,
             style: TextStyle(
               fontSize: AppTypography.smallText,
               color: colors.subtext,
@@ -467,49 +473,69 @@ class _BackgroundPainter extends CustomPainter {
     );
 
     final greenGlow = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          const Color(0xFF2ECC71)
-              .withOpacity((isDark ? 0.05 : 0.10) + 0.04 * math.sin(t * 2 * math.pi)),
-          Colors.transparent,
-        ],
-      ).createShader(Rect.fromCircle(
-        center: Offset(size.width * 0.1, size.height * 0.12),
-        radius: size.width * 0.7,
-      ));
+      ..shader =
+          RadialGradient(
+            colors: [
+              const Color(0xFF2ECC71).withOpacity(
+                (isDark ? 0.05 : 0.10) + 0.04 * math.sin(t * 2 * math.pi),
+              ),
+              Colors.transparent,
+            ],
+          ).createShader(
+            Rect.fromCircle(
+              center: Offset(size.width * 0.1, size.height * 0.12),
+              radius: size.width * 0.7,
+            ),
+          );
     canvas.drawCircle(
-        Offset(size.width * 0.1, size.height * 0.12), size.width * 0.7, greenGlow);
+      Offset(size.width * 0.1, size.height * 0.12),
+      size.width * 0.7,
+      greenGlow,
+    );
 
     final mintGlow = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          const Color(0xFF82E0AA)
-              .withOpacity((isDark ? 0.03 : 0.07) + 0.03 * math.sin(t * 2 * math.pi + 1.5)),
-          Colors.transparent,
-        ],
-      ).createShader(Rect.fromCircle(
-        center: Offset(size.width * 0.9, size.height * 0.88),
-        radius: size.width * 0.55,
-      ));
+      ..shader =
+          RadialGradient(
+            colors: [
+              const Color(0xFF82E0AA).withOpacity(
+                (isDark ? 0.03 : 0.07) + 0.03 * math.sin(t * 2 * math.pi + 1.5),
+              ),
+              Colors.transparent,
+            ],
+          ).createShader(
+            Rect.fromCircle(
+              center: Offset(size.width * 0.9, size.height * 0.88),
+              radius: size.width * 0.55,
+            ),
+          );
     canvas.drawCircle(
-        Offset(size.width * 0.9, size.height * 0.88), size.width * 0.55, mintGlow);
+      Offset(size.width * 0.9, size.height * 0.88),
+      size.width * 0.55,
+      mintGlow,
+    );
 
     final warmGlow = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          const Color(0xFFF9E4B7)
-              .withOpacity((isDark ? 0.08 : 0.18) + 0.06 * math.sin(t * 2 * math.pi + 3.0)),
-          Colors.transparent,
-        ],
-      ).createShader(Rect.fromCircle(
-        center: Offset(size.width * 0.05, size.height * 0.9),
-        radius: size.width * 0.45,
-      ));
+      ..shader =
+          RadialGradient(
+            colors: [
+              const Color(0xFFF9E4B7).withOpacity(
+                (isDark ? 0.08 : 0.18) + 0.06 * math.sin(t * 2 * math.pi + 3.0),
+              ),
+              Colors.transparent,
+            ],
+          ).createShader(
+            Rect.fromCircle(
+              center: Offset(size.width * 0.05, size.height * 0.9),
+              radius: size.width * 0.45,
+            ),
+          );
     canvas.drawCircle(
-        Offset(size.width * 0.05, size.height * 0.9), size.width * 0.45, warmGlow);
+      Offset(size.width * 0.05, size.height * 0.9),
+      size.width * 0.45,
+      warmGlow,
+    );
 
-    final dotPaint = Paint()
-      ..color = const Color(0xFF2ECC71).withOpacity(0.07);
+    final dotPaint = Paint()..color = const Color(0xFF2ECC71).withOpacity(0.07);
     final random = math.Random(42);
     for (int i = 0; i < 18; i++) {
       final x = random.nextDouble() * size.width;
@@ -529,7 +555,8 @@ class _BackgroundPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_BackgroundPainter old) => old.t != t || old.isDark != isDark;
+  bool shouldRepaint(_BackgroundPainter old) =>
+      old.t != t || old.isDark != isDark;
 }
 
 // ─── Sync Orb ──────────────────────────────────────────────────────────────
@@ -637,8 +664,9 @@ class _SyncOrbState extends State<_SyncOrb> with TickerProviderStateMixin {
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF2ECC71)
-                          .withOpacity(0.18 + 0.12 * _pulseCtrl.value),
+                      color: const Color(
+                        0xFF2ECC71,
+                      ).withOpacity(0.18 + 0.12 * _pulseCtrl.value),
                       blurRadius: 28,
                       spreadRadius: 6,
                     ),
@@ -705,10 +733,7 @@ class _ArcPainter extends CustomPainter {
       ..strokeWidth = 2.8
       ..strokeCap = StrokeCap.round
       ..shader = SweepGradient(
-        colors: [
-          Colors.transparent,
-          const Color(0xFF2ECC71).withOpacity(0.85),
-        ],
+        colors: [Colors.transparent, const Color(0xFF2ECC71).withOpacity(0.85)],
         stops: const [0.65, 1.0],
       ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
 
@@ -759,7 +784,7 @@ class _ProgressSection extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                "Syncing data...",
+                'syncing_data'.tr,
                 style: TextStyle(
                   fontSize: AppTypography.sizeText,
                   color: colors.text,
@@ -773,7 +798,7 @@ class _ProgressSection extends StatelessWidget {
                 curve: Curves.easeOut,
                 builder: (_, val, __) => Text(
                   "${(val * 100).toInt()}%",
-                  style:  TextStyle(
+                  style: TextStyle(
                     fontSize: AppTypography.sizeText,
                     color: Color(0xFF27AE60),
                     fontWeight: FontWeight.w700,
@@ -834,18 +859,20 @@ class _StepDots extends StatelessWidget {
   const _StepDots({required this.progress});
 
   static const _labels = [
-    (Icons.wifi_rounded, "Connect"),
-    (Icons.menu_book_rounded, "Menu"),
-    (Icons.table_restaurant_rounded, "Tables"),
-    (Icons.inventory_2_rounded, "Stock"),
-    (Icons.check_circle_rounded, "Done"),
+    (Icons.wifi_rounded, "sync_step_connect"),
+    (Icons.menu_book_rounded, "sync_step_menu"),
+    (Icons.table_restaurant_rounded, "sync_step_tables"),
+    (Icons.inventory_2_rounded, "sync_step_stock"),
+    (Icons.check_circle_rounded, "sync_step_done"),
   ];
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
-    final activeIndex =
-    (progress * _labels.length).floor().clamp(0, _labels.length - 1);
+    final activeIndex = (progress * _labels.length).floor().clamp(
+      0,
+      _labels.length - 1,
+    );
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -877,19 +904,19 @@ class _StepDots extends StatelessWidget {
                   ),
                   boxShadow: isActive
                       ? [
-                    BoxShadow(
-                      color: const Color(0xFF2ECC71).withOpacity(0.25),
-                      blurRadius: 12,
-                      spreadRadius: 2,
-                    ),
-                  ]
+                          BoxShadow(
+                            color: const Color(0xFF2ECC71).withOpacity(0.25),
+                            blurRadius: 12,
+                            spreadRadius: 2,
+                          ),
+                        ]
                       : isDone
                       ? [
-                    BoxShadow(
-                      color: const Color(0xFF27AE60).withOpacity(0.2),
-                      blurRadius: 8,
-                    ),
-                  ]
+                          BoxShadow(
+                            color: const Color(0xFF27AE60).withOpacity(0.2),
+                            blurRadius: 8,
+                          ),
+                        ]
                       : null,
                 ),
                 child: Icon(
@@ -904,7 +931,7 @@ class _StepDots extends StatelessWidget {
               ),
               SizedBox(height: 6.h),
               Text(
-                _labels[i].$2,
+                _labels[i].$2.tr,
                 style: TextStyle(
                   fontSize: AppTypography.smallText,
                   color: isDone || isActive

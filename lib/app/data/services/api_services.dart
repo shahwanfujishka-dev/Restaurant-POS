@@ -48,14 +48,18 @@ class ApiService extends GetxService {
           options.headers['mobileapptoken'] = AppState.token;
 
           if (kDebugMode) {
-            print('🚀 [API] REQUEST: ${options.method} ${options.baseUrl}${options.path}');
+            print(
+              '🚀 [API] REQUEST: ${options.method} ${options.baseUrl}${options.path}',
+            );
             if (options.data != null) print('📦 [API] DATA: ${options.data}');
           }
           return handler.next(options);
         },
         onResponse: (response, handler) {
           if (kDebugMode) {
-            print('✅ [API] RESPONSE [${response.statusCode}] ${response.requestOptions.path}');
+            print(
+              '✅ [API] RESPONSE [${response.statusCode}] ${response.requestOptions.path}',
+            );
           }
           return handler.next(response);
         },
@@ -67,7 +71,10 @@ class ApiService extends GetxService {
     );
   }
 
-  Future<Response> get(String path, {Map<String, dynamic>? queryParameters}) async {
+  Future<Response> get(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+  }) async {
     try {
       return await _dio.get(path, queryParameters: queryParameters);
     } catch (e) {
@@ -77,11 +84,7 @@ class ApiService extends GetxService {
 
   Future<Response> post(String path, {dynamic data, Options? options}) async {
     try {
-      return await _dio.post(
-        path,
-        data: data,
-        options: options,
-      );
+      return await _dio.post(path, data: data, options: options);
     } catch (e) {
       rethrow;
     }
@@ -129,7 +132,9 @@ class ApiService extends GetxService {
     }
 
     if (kDebugMode) {
-      print('❌ [API ERROR] ${error.requestOptions.method} ${error.requestOptions.path}');
+      print(
+        '❌ [API ERROR] ${error.requestOptions.method} ${error.requestOptions.path}',
+      );
       print('❌ DESCRIPTION: $errorDescription');
       if (error.response != null) {
         print('❌ RESPONSE DATA: ${error.response?.data}');

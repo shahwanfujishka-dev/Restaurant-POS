@@ -7,17 +7,27 @@ class LocalHubClient {
   static final LocalHubClient instance = LocalHubClient._internal();
   LocalHubClient._internal();
 
-  Uri _url({required String hostIp, required int port, required String path, Map<String, String>? queryParameters}) {
+  Uri _url({
+    required String hostIp,
+    required int port,
+    required String path,
+    Map<String, String>? queryParameters,
+  }) {
     return Uri.http('$hostIp:$port', path, queryParameters);
   }
 
-  Future<Map<String, dynamic>> testConnection({required String hostIp, int port = 8080}) async {
+  Future<Map<String, dynamic>> testConnection({
+    required String hostIp,
+    int port = 8080,
+  }) async {
     final url = Uri.parse('http://$hostIp:$port/hub/status');
     try {
       final response = await http.get(url).timeout(const Duration(seconds: 5));
-      if (response.statusCode != 200) throw Exception('Hub returned HTTP ${response.statusCode}');
+      if (response.statusCode != 200)
+        throw Exception('Hub returned HTTP ${response.statusCode}');
       final data = jsonDecode(response.body);
-      if (data is! Map<String, dynamic> || data['success'] != true) throw Exception(data['message'] ?? 'Hub connection failed');
+      if (data is! Map<String, dynamic> || data['success'] != true)
+        throw Exception(data['message'] ?? 'Hub connection failed');
       return data;
     } catch (e) {
       debugPrint('LOCAL HUB CLIENT ERROR: $e');
@@ -36,22 +46,26 @@ class LocalHubClient {
   }) async {
     final url = Uri.parse('http://$hostIp:$port/device/register');
     try {
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'deviceId': deviceId,
-          'device_name': deviceName,
-          'role': role,
-          'user_id': userId,
-          'user_name': userName,
-        }),
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'deviceId': deviceId,
+              'device_name': deviceName,
+              'role': role,
+              'user_id': userId,
+              'user_name': userName,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
 
-      if (response.statusCode != 200) throw Exception('Hub returned HTTP ${response.statusCode}');
+      if (response.statusCode != 200)
+        throw Exception('Hub returned HTTP ${response.statusCode}');
       final data = jsonDecode(response.body);
       final registrationData = data['data'] as Map<String, dynamic>?;
-      if (registrationData == null) throw Exception('Registration data missing');
+      if (registrationData == null)
+        throw Exception('Registration data missing');
       final token = registrationData['authToken']?.toString() ?? '';
       if (token.isEmpty) throw Exception('No auth token returned');
 
@@ -63,17 +77,21 @@ class LocalHubClient {
     }
   }
 
-  Future<Map<String, dynamic>> createOrder({required Map<String, dynamic> order, required String hostIp, int port = 8080}) async {
+  Future<Map<String, dynamic>> createOrder({
+    required Map<String, dynamic> order,
+    required String hostIp,
+    int port = 8080,
+  }) async {
     final url = Uri.parse('http://$hostIp:$port/orders/create');
     try {
-      final response = await http.post(
-        url,
-        headers: _authenticatedHeaders(),
-        body: jsonEncode(order),
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .post(url, headers: _authenticatedHeaders(), body: jsonEncode(order))
+          .timeout(const Duration(seconds: 15));
 
-      if (response.statusCode == 401) throw Exception('Hub authentication failed.');
-      if (response.statusCode != 200) throw Exception('Hub returned HTTP ${response.statusCode}');
+      if (response.statusCode == 401)
+        throw Exception('Hub authentication failed.');
+      if (response.statusCode != 200)
+        throw Exception('Hub returned HTTP ${response.statusCode}');
 
       final data = jsonDecode(response.body);
       if (data is Map && data['success'] == false) {
@@ -86,17 +104,21 @@ class LocalHubClient {
     }
   }
 
-  Future<Map<String, dynamic>> updateOrder({required Map<String, dynamic> order, required String hostIp, int port = 8080}) async {
+  Future<Map<String, dynamic>> updateOrder({
+    required Map<String, dynamic> order,
+    required String hostIp,
+    int port = 8080,
+  }) async {
     final url = Uri.parse('http://$hostIp:$port/orders/update');
     try {
-      final response = await http.post(
-        url,
-        headers: _authenticatedHeaders(),
-        body: jsonEncode(order),
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .post(url, headers: _authenticatedHeaders(), body: jsonEncode(order))
+          .timeout(const Duration(seconds: 15));
 
-      if (response.statusCode == 401) throw Exception('Hub authentication failed.');
-      if (response.statusCode != 200) throw Exception('Hub returned HTTP ${response.statusCode}');
+      if (response.statusCode == 401)
+        throw Exception('Hub authentication failed.');
+      if (response.statusCode != 200)
+        throw Exception('Hub returned HTTP ${response.statusCode}');
       final data = jsonDecode(response.body);
       if (data is Map && data['success'] == false) {
         throw Exception(data['message'] ?? 'Hub rejected the request');
@@ -108,11 +130,17 @@ class LocalHubClient {
     }
   }
 
-  Future<Map<String, dynamic>> fetchActiveOrders({required String hostIp, int port = 8080}) async {
+  Future<Map<String, dynamic>> fetchActiveOrders({
+    required String hostIp,
+    int port = 8080,
+  }) async {
     final url = Uri.parse('http://$hostIp:$port/orders/list');
     try {
-      final response = await http.get(url, headers: _authenticatedHeaders()).timeout(const Duration(seconds: 10));
-      if (response.statusCode != 200) throw Exception('Hub returned ${response.statusCode}');
+      final response = await http
+          .get(url, headers: _authenticatedHeaders())
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200)
+        throw Exception('Hub returned ${response.statusCode}');
       return jsonDecode(response.body);
     } catch (e) {
       debugPrint('LOCAL HUB FETCH ACTIVE ERROR: $e');
@@ -120,11 +148,18 @@ class LocalHubClient {
     }
   }
 
-  Future<Map<String, dynamic>> fetchSoldOrders({required String hostIp, int port = 8080, required String date}) async {
+  Future<Map<String, dynamic>> fetchSoldOrders({
+    required String hostIp,
+    int port = 8080,
+    required String date,
+  }) async {
     final url = Uri.parse('http://$hostIp:$port/orders/sold?date=$date');
     try {
-      final response = await http.get(url, headers: _authenticatedHeaders()).timeout(const Duration(seconds: 10));
-      if (response.statusCode != 200) throw Exception('Hub returned ${response.statusCode}');
+      final response = await http
+          .get(url, headers: _authenticatedHeaders())
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200)
+        throw Exception('Hub returned ${response.statusCode}');
       return jsonDecode(response.body);
     } catch (e) {
       debugPrint('LOCAL HUB FETCH SOLD ERROR: $e');
@@ -132,11 +167,18 @@ class LocalHubClient {
     }
   }
 
-  Future<Map<String, dynamic>> fetchOrderDetails({required String hostIp, int port = 8080, required String orderId}) async {
+  Future<Map<String, dynamic>> fetchOrderDetails({
+    required String hostIp,
+    int port = 8080,
+    required String orderId,
+  }) async {
     final url = Uri.parse('http://$hostIp:$port/orders/details?id=$orderId');
     try {
-      final response = await http.get(url, headers: _authenticatedHeaders()).timeout(const Duration(seconds: 10));
-      if (response.statusCode != 200) throw Exception('Hub returned ${response.statusCode}');
+      final response = await http
+          .get(url, headers: _authenticatedHeaders())
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200)
+        throw Exception('Hub returned ${response.statusCode}');
       return jsonDecode(response.body);
     } catch (e) {
       debugPrint('LOCAL HUB FETCH DETAILS ERROR: $e');
@@ -146,11 +188,17 @@ class LocalHubClient {
 
   // Master Data Methods
 
-  Future<Map<String, dynamic>> fetchMasterTables({required String hostIp, int port = 8080}) async {
+  Future<Map<String, dynamic>> fetchMasterTables({
+    required String hostIp,
+    int port = 8080,
+  }) async {
     final url = Uri.parse('http://$hostIp:$port/master/tables');
     try {
-      final response = await http.get(url, headers: _authenticatedHeaders()).timeout(const Duration(seconds: 10));
-      if (response.statusCode != 200) throw Exception('Hub returned ${response.statusCode}');
+      final response = await http
+          .get(url, headers: _authenticatedHeaders())
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200)
+        throw Exception('Hub returned ${response.statusCode}');
       return jsonDecode(response.body);
     } catch (e) {
       debugPrint('LOCAL HUB FETCH MASTER TABLES ERROR: $e');
@@ -158,11 +206,17 @@ class LocalHubClient {
     }
   }
 
-  Future<Map<String, dynamic>> fetchMasterCategories({required String hostIp, int port = 8080}) async {
+  Future<Map<String, dynamic>> fetchMasterCategories({
+    required String hostIp,
+    int port = 8080,
+  }) async {
     final url = Uri.parse('http://$hostIp:$port/master/categories');
     try {
-      final response = await http.get(url, headers: _authenticatedHeaders()).timeout(const Duration(seconds: 10));
-      if (response.statusCode != 200) throw Exception('Hub returned ${response.statusCode}');
+      final response = await http
+          .get(url, headers: _authenticatedHeaders())
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200)
+        throw Exception('Hub returned ${response.statusCode}');
       return jsonDecode(response.body);
     } catch (e) {
       debugPrint('LOCAL HUB FETCH MASTER CATEGORIES ERROR: $e');
@@ -170,11 +224,17 @@ class LocalHubClient {
     }
   }
 
-  Future<Map<String, dynamic>> fetchMasterCaptains({required String hostIp, int port = 8080}) async {
+  Future<Map<String, dynamic>> fetchMasterCaptains({
+    required String hostIp,
+    int port = 8080,
+  }) async {
     final url = Uri.parse('http://$hostIp:$port/master/captains');
     try {
-      final response = await http.get(url, headers: _authenticatedHeaders()).timeout(const Duration(seconds: 10));
-      if (response.statusCode != 200) throw Exception('Hub returned ${response.statusCode}');
+      final response = await http
+          .get(url, headers: _authenticatedHeaders())
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200)
+        throw Exception('Hub returned ${response.statusCode}');
       return jsonDecode(response.body);
     } catch (e) {
       debugPrint('LOCAL HUB FETCH MASTER CAPTAINS ERROR: $e');
@@ -182,11 +242,17 @@ class LocalHubClient {
     }
   }
 
-  Future<Map<String, dynamic>> fetchPrinterAssignments({required String hostIp, int port = 8080}) async {
+  Future<Map<String, dynamic>> fetchPrinterAssignments({
+    required String hostIp,
+    int port = 8080,
+  }) async {
     final url = Uri.parse('http://$hostIp:$port/printers/assignments');
     try {
-      final response = await http.get(url, headers: _authenticatedHeaders()).timeout(const Duration(seconds: 10));
-      if (response.statusCode != 200) throw Exception('Hub returned ${response.statusCode}');
+      final response = await http
+          .get(url, headers: _authenticatedHeaders())
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200)
+        throw Exception('Hub returned ${response.statusCode}');
       return jsonDecode(response.body);
     } catch (e) {
       debugPrint('LOCAL HUB FETCH PRINTER ASSIGNMENTS ERROR: $e');
@@ -200,11 +266,16 @@ class LocalHubClient {
     String? categoryId,
     int priceGroupId = 0,
   }) async {
-    final query = categoryId != null ? 'category_id=$categoryId&price_group_id=$priceGroupId' : 'price_group_id=$priceGroupId';
+    final query = categoryId != null
+        ? 'category_id=$categoryId&price_group_id=$priceGroupId'
+        : 'price_group_id=$priceGroupId';
     final url = Uri.parse('http://$hostIp:$port/master/products?$query');
     try {
-      final response = await http.get(url, headers: _authenticatedHeaders()).timeout(const Duration(seconds: 10));
-      if (response.statusCode != 200) throw Exception('Hub returned ${response.statusCode}');
+      final response = await http
+          .get(url, headers: _authenticatedHeaders())
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200)
+        throw Exception('Hub returned ${response.statusCode}');
       return jsonDecode(response.body);
     } catch (e) {
       debugPrint('LOCAL HUB FETCH MASTER PRODUCTS ERROR: $e');

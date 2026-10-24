@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get_utils/src/extensions/internacionalization.dart';
+import 'package:get/get.dart';
 
 import '../../../../theme/app_typography.dart';
 
@@ -19,10 +19,7 @@ class MobileEmptyCartView extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.grey.shade50,
               shape: BoxShape.circle,
-              border: Border.all(
-                color: Colors.grey.shade200,
-                width: 2,
-              ),
+              border: Border.all(color: Colors.grey.shade200, width: 2),
             ),
             child: Icon(
               Icons.shopping_cart_outlined,
@@ -32,7 +29,7 @@ class MobileEmptyCartView extends StatelessWidget {
           ),
           SizedBox(height: 20.h),
           Text(
-            'Your cart is empty',
+            'empty_cart'.tr,
             style: AppTypography.cardTitle.copyWith(
               fontSize: 18.sp,
               fontWeight: FontWeight.w600,
@@ -43,28 +40,9 @@ class MobileEmptyCartView extends StatelessWidget {
             'add_items_msg'.tr,
             style: AppTypography.cardSubtitle.copyWith(
               fontSize: 14.sp,
-              color: Colors.grey.shade500,
+              color: Colors.grey.shade50,
             ),
           ),
-          // SizedBox(height: 30.h),
-          // ElevatedButton(
-          //   onPressed: () => Get.back(),
-          //   style: ElevatedButton.styleFrom(
-          //     backgroundColor: AppTheme.primaryGreen,
-          //     foregroundColor: Colors.white,
-          //     padding: EdgeInsets.symmetric(
-          //       horizontal: 30.w,
-          //       vertical: 12.h,
-          //     ),
-          //     shape: RoundedRectangleBorder(
-          //       borderRadius: BorderRadius.circular(30.r),
-          //     ),
-          //   ),
-          //   child: Text(
-          //     'Browse Menu',
-          //     style: TextStyle(fontSize: 14.sp),
-          //   ),
-          // ),
         ],
       ),
     );

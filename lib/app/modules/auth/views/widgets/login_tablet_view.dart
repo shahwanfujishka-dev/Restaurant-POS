@@ -2,10 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/get_navigation/src/extension_navigation.dart';
-import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
-import 'package:get/get_state_manager/src/simple/get_view.dart';
+import 'package:get/get.dart';
 
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/app_typography.dart';
@@ -30,11 +27,17 @@ class LoginTabletView extends GetView<AuthController> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.fastfood, size: 50.sp, color: AppTheme.primaryGreen),
+                    Icon(
+                      Icons.fastfood,
+                      size: 50.sp,
+                      color: AppTheme.primaryGreen,
+                    ),
                     SizedBox(height: 16.h),
                     Text(
-                      'Restaurant POS',
-                      style: AppTypography.headline1.copyWith(color: AppTheme.primaryGreen),
+                      'app_name'.tr,
+                      style: AppTypography.headline1.copyWith(
+                        color: AppTheme.primaryGreen,
+                      ),
                     ),
                   ],
                 ),
@@ -51,103 +54,142 @@ class LoginTabletView extends GetView<AuthController> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      'Welcome Back!',
-                      style: AppTypography.headline1.copyWith(color: colors.text),
+                      'welcome_back'.tr,
+                      style: AppTypography.headline1.copyWith(
+                        color: colors.text,
+                      ),
                     ),
                     SizedBox(height: 8.h),
                     Column(
                       children: [
-                        Obx(() => Column(
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                GestureDetector(
-                                  onTap: () async {
-                                    final result = await Get.toNamed('/qr-scanner');
+                        Obx(
+                          () => Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  GestureDetector(
+                                    onTap: () async {
+                                      final result = await Get.toNamed(
+                                        '/qr-scanner',
+                                      );
 
-                                    if (result != null && result is Map<String, dynamic>) {
-                                      controller.updateBranchConfig(result);
-                                    }
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.primaryGreen.withOpacity(0.1),
-                                      shape: BoxShape.circle,
+                                      if (result != null &&
+                                          result is Map<String, dynamic>) {
+                                        controller.updateBranchConfig(result);
+                                      }
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.primaryGreen
+                                            .withOpacity(0.1),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        Icons.qr_code_scanner,
+                                        size: 32.sp,
+                                        color: AppTheme.primaryGreen,
+                                      ),
                                     ),
-                                    child: Icon(Icons.qr_code_scanner,
-                                        size: 32.sp, color: AppTheme.primaryGreen),
                                   ),
-                                ),
-                                if (!controller.isVerified.value && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) ...[
-                                  SizedBox(width: 5.w),
-                                  SizedBox(
-                                    width: 50.w,
-                                    child: TextField(
-                                      controller: controller.qrCodeController,
-                                      style: TextStyle(color: colors.text, fontSize: 4.sp),
-                                      decoration: InputDecoration(
-                                        hintText: 'Or enter code',
-                                        hintStyle: TextStyle(color: colors.subtext),
-                                        isDense: true,
-                                        contentPadding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 15.h),
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(8.r),
+                                  if (!controller.isVerified.value &&
+                                      (Platform.isWindows ||
+                                          Platform.isMacOS ||
+                                          Platform.isLinux)) ...[
+                                    SizedBox(width: 5.w),
+                                    SizedBox(
+                                      width: 50.w,
+                                      child: TextField(
+                                        controller: controller.qrCodeController,
+                                        style: TextStyle(
+                                          color: colors.text,
+                                          fontSize: 4.sp,
+                                        ),
+                                        decoration: InputDecoration(
+                                          hintText: 'enter_code_hint'.tr,
+                                          hintStyle: TextStyle(
+                                            color: colors.subtext,
+                                          ),
+                                          isDense: true,
+                                          contentPadding: EdgeInsets.symmetric(
+                                            horizontal: 10.w,
+                                            vertical: 15.h,
+                                          ),
+                                          border: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              8.r,
+                                            ),
+                                          ),
+                                        ),
+                                        onSubmitted: (value) =>
+                                            controller.processQrValue(value),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+
+                              SizedBox(height: 12.h),
+
+                              /// ✅ Verification Status Banner
+                              if (controller.isVerified.value)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'branch_info_msg'.trParams({
+                                          'info': controller.getBranchInfo(),
+                                        }),
+                                        style: const TextStyle(
+                                          color: Colors.green,
                                         ),
                                       ),
-                                      onSubmitted: (value) => controller.processQrValue(value),
-                                    ),
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.edit,
+                                          size: 16,
+                                          color: Colors.green,
+                                        ),
+                                        onPressed: () =>
+                                            controller.isVerified.value = false,
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ],
-                            ),
-
-                            SizedBox(height: 12.h),
-
-                            /// ✅ Verification Status Banner
-                            if (controller.isVerified.value)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: Colors.green.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
+                                )
+                              else
+                                Text(
+                                  'enter_code_to_verify'.tr,
+                                  style: const TextStyle(color: Colors.red),
                                 ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      "✓ ${controller.getBranchInfo()}",
-                                      style: const TextStyle(color: Colors.green),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.edit, size: 16, color: Colors.green),
-                                      onPressed: () => controller.isVerified.value = false,
-                                    )
-                                  ],
-                                ),
-                              )
-                            else
-                              const Text(
-                                "Enter code to verify branch",
-                                style: TextStyle(color: Colors.red),
-                              ),
-                          ],
-                        )),
+                            ],
+                          ),
+                        ),
 
                         SizedBox(height: 20.h),
                       ],
                     ),
                     Text(
-                      'Login to your account',
-                      style: AppTypography.subtitle.copyWith(color: colors.subtext),
+                      'login_to_account'.tr,
+                      style: AppTypography.subtitle.copyWith(
+                        color: colors.subtext,
+                      ),
                     ),
                     SizedBox(height: 40.h),
                     TextField(
                       controller: controller.usernameController,
                       style: TextStyle(color: colors.text),
                       decoration: InputDecoration(
-                        labelText: 'Username',
+                        labelText: 'username'.tr,
                         labelStyle: TextStyle(color: colors.subtext),
                         filled: true,
                         fillColor: colors.textField,
@@ -161,65 +203,75 @@ class LoginTabletView extends GetView<AuthController> {
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8.r),
-                          borderSide: const BorderSide(color: AppTheme.primaryGreen),
+                          borderSide: const BorderSide(
+                            color: AppTheme.primaryGreen,
+                          ),
                         ),
                       ),
                     ),
                     SizedBox(height: 16.h),
-                    Obx(() => TextField(
-                      controller: controller.passwordController,
-                      obscureText: !controller.isPasswordVisible.value,
-                      style: TextStyle(color: colors.text),
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        labelStyle: TextStyle(color: colors.subtext),
-                        filled: true,
-                        fillColor: colors.textField,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8.r),
-                          borderSide: BorderSide.none,
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8.r),
-                          borderSide: BorderSide(color: colors.border),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8.r),
-                          borderSide: const BorderSide(color: AppTheme.primaryGreen),
-                        ),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            controller.isPasswordVisible.value
-                                ? Icons.visibility
-                                : Icons.visibility_off,
-                            color: colors.subtext,
+                    Obx(
+                      () => TextField(
+                        controller: controller.passwordController,
+                        obscureText: !controller.isPasswordVisible.value,
+                        style: TextStyle(color: colors.text),
+                        decoration: InputDecoration(
+                          labelText: 'password'.tr,
+                          labelStyle: TextStyle(color: colors.subtext),
+                          filled: true,
+                          fillColor: colors.textField,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8.r),
+                            borderSide: BorderSide.none,
                           ),
-                          onPressed: () {
-                            controller.togglePasswordVisibility();
-                          },
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8.r),
+                            borderSide: BorderSide(color: colors.border),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8.r),
+                            borderSide: const BorderSide(
+                              color: AppTheme.primaryGreen,
+                            ),
+                          ),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              controller.isPasswordVisible.value
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                              color: colors.subtext,
+                            ),
+                            onPressed: () {
+                              controller.togglePasswordVisibility();
+                            },
+                          ),
                         ),
                       ),
-                    )),
+                    ),
                     SizedBox(height: 30.h),
-                    Obx(() => ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: controller.isVerified.value
-                            ? AppTheme.primaryGreen
-                            : colors.subtext.withOpacity(0.5),
-                        minimumSize: Size(double.infinity, 50.h),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8.r),
+                    Obx(
+                      () => ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: controller.isVerified.value
+                              ? AppTheme.primaryGreen
+                              : colors.subtext.withOpacity(0.5),
+                          minimumSize: Size(double.infinity, 50.h),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8.r),
+                          ),
                         ),
+                        onPressed: controller.isVerified.value
+                            ? () {
+                                controller.login();
+                              }
+                            : null, // disables button
+                        child: controller.isLoading.value
+                            ? const CircularProgressIndicator(
+                                color: Colors.white,
+                              )
+                            : Text('login'.tr, style: AppTypography.button),
                       ),
-                      onPressed: controller.isVerified.value
-                          ? () {
-                        controller.login();
-                      }
-                          : null, // disables button
-                      child: controller.isLoading.value
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : Text('Login', style: AppTypography.button),
-                    ))
+                    ),
                   ],
                 ),
               ),

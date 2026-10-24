@@ -17,7 +17,8 @@ class OrderTypeView extends GetView<OrderTypeController> {
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
-    final bool canShowBack = Navigator.canPop(context) && Get.previousRoute.isNotEmpty;
+    final bool canShowBack =
+        Navigator.canPop(context) && Get.previousRoute.isNotEmpty;
 
     return PopScope(
       canPop: false,
@@ -25,16 +26,16 @@ class OrderTypeView extends GetView<OrderTypeController> {
         if (didPop) return;
         final shouldExit = await Get.dialog<bool>(
           AlertDialog(
-            title: const Text('Exit App?'),
-            content: const Text('Are you sure you want to close the application?'),
+            title: Text('exit_app'.tr),
+            content: Text('exit_confirm_msg'.tr),
             actions: [
               TextButton(
                 onPressed: () => Get.back(result: false),
-                child: const Text('No'),
+                child: Text('no'.tr),
               ),
               TextButton(
                 onPressed: () => Get.back(result: true),
-                child: const Text('Yes', style: TextStyle(color: Colors.red)),
+                child: Text('yes'.tr, style: const TextStyle(color: Colors.red)),
               ),
             ],
           ),
@@ -61,7 +62,7 @@ class OrderTypeView extends GetView<OrderTypeController> {
               : null,
           automaticallyImplyLeading: false,
           title: Text(
-            'order_type'.tr.isEmpty ? 'Order Type' : 'order_type'.tr,
+            'order_type'.tr,
             style: TextStyle(color: colors.text),
           ),
           centerTitle: true,
@@ -69,7 +70,9 @@ class OrderTypeView extends GetView<OrderTypeController> {
         body: SafeArea(
           child: Center(
             child: Container(
-              constraints: BoxConstraints(maxWidth: ScreenType.isMobile() ? 400.w : 200.w),
+              constraints: BoxConstraints(
+                maxWidth: ScreenType.isMobile() ? 400.w : 200.w,
+              ),
               padding: EdgeInsets.symmetric(horizontal: 24.w),
               child: Obx(() {
                 if (controller.isLoading.value) {
@@ -79,7 +82,7 @@ class OrderTypeView extends GetView<OrderTypeController> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      'select_order_type'.tr.isEmpty ? 'Select Order Type' : 'select_order_type'.tr,
+                      'select_order_type'.tr,
                       style: AppTypography.headline1.copyWith(
                         color: AppTheme.primaryGreen,
                         fontSize: 12.sp,
@@ -87,10 +90,10 @@ class OrderTypeView extends GetView<OrderTypeController> {
                     ),
                     SizedBox(height: 8.h),
                     Text(
-                      'order_type_desc'.tr.isEmpty
-                          ? 'How would you like to serve the customer?'
-                          : 'order_type_desc'.tr,
-                      style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+                      'order_type_desc'.tr,
+                      style: AppTypography.cardSubtitle.copyWith(
+                        color: colors.subtext,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                     SizedBox(height: 20.h),
@@ -99,8 +102,9 @@ class OrderTypeView extends GetView<OrderTypeController> {
                       type: OrderType.dineIn,
                       icon: Icons.restaurant,
                       color: Colors.blue.shade600,
-                      description: 'serve_at_table'.tr.isEmpty ? 'Serve at the table' : 'serve_at_table'.tr,
-                      isSelected: controller.selectedType.value == OrderType.dineIn,
+                      description: 'serve_at_table'.tr,
+                      isSelected:
+                          controller.selectedType.value == OrderType.dineIn,
                     ),
                     SizedBox(height: 16.h),
                     _buildTypeCard(
@@ -108,8 +112,9 @@ class OrderTypeView extends GetView<OrderTypeController> {
                       type: OrderType.pickUp,
                       icon: Icons.takeout_dining,
                       color: Colors.orange.shade600,
-                      description: 'customer_collects'.tr.isEmpty ? 'Customer collects the order' : 'customer_collects'.tr,
-                      isSelected: controller.selectedType.value == OrderType.pickUp,
+                      description: 'customer_collects'.tr,
+                      isSelected:
+                          controller.selectedType.value == OrderType.pickUp,
                     ),
                     SizedBox(height: 16.h),
                     _buildTypeCard(
@@ -117,8 +122,9 @@ class OrderTypeView extends GetView<OrderTypeController> {
                       type: OrderType.delivery,
                       icon: Icons.delivery_dining,
                       color: Colors.purple.shade600,
-                      description: 'send_to_address'.tr.isEmpty ? 'Send to customer address' : 'send_to_address'.tr,
-                      isSelected: controller.selectedType.value == OrderType.delivery,
+                      description: 'send_to_address'.tr,
+                      isSelected:
+                          controller.selectedType.value == OrderType.delivery,
                     ),
                   ],
                 );
@@ -186,11 +192,9 @@ class OrderTypeView extends GetView<OrderTypeController> {
   }) {
     final colors = AppColors.of(context);
     return InkWell(
-      onTap: () { controller.selectOrderType(type);
-        print(controller.selectedType.value!.name);
-        print(controller.selectedType.value!.id);
-        print(GetStorage().read('selected_order_type_id'));
-        },
+      onTap: () {
+        controller.selectOrderType(type);
+      },
       borderRadius: BorderRadius.circular(20.r),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
@@ -201,10 +205,14 @@ class OrderTypeView extends GetView<OrderTypeController> {
             color: isSelected ? AppTheme.primaryGreen : colors.border,
             width: isSelected ? 2.5 : 1,
           ),
-          color: isSelected ? AppTheme.primaryGreen.withOpacity(0.08) : colors.card,
+          color: isSelected
+              ? AppTheme.primaryGreen.withOpacity(0.08)
+              : colors.card,
           boxShadow: [
             BoxShadow(
-              color: isSelected ? AppTheme.primaryGreen.withOpacity(0.15) : Colors.black.withOpacity(colors.isDark ? 0.2 : 0.03),
+              color: isSelected
+                  ? AppTheme.primaryGreen.withOpacity(0.15)
+                  : Colors.black.withOpacity(colors.isDark ? 0.2 : 0.03),
               blurRadius: 15,
               offset: const Offset(0, 8),
             ),
@@ -215,13 +223,15 @@ class OrderTypeView extends GetView<OrderTypeController> {
             Container(
               padding: EdgeInsets.all(AppTypography.smallText),
               decoration: BoxDecoration(
-                color: isSelected ? AppTheme.primaryGreen : color.withOpacity(0.1),
+                color: isSelected
+                    ? AppTheme.primaryGreen
+                    : color.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(15.r),
               ),
               child: Icon(
-                  icon,
-                  color: isSelected ? Colors.white : color,
-                  size: 12.sp
+                icon,
+                color: isSelected ? Colors.white : color,
+                size: 12.sp,
               ),
             ),
             SizedBox(width: 20.w),
@@ -230,17 +240,21 @@ class OrderTypeView extends GetView<OrderTypeController> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                      type.displayName,
-                      style: AppTypography.headline2.copyWith(
-                        color: isSelected ? AppTheme.primaryGreen : colors.text,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                      )
+                    type.displayName.tr,
+                    style: AppTypography.headline2.copyWith(
+                      color: isSelected ? AppTheme.primaryGreen : colors.text,
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.w600,
+                    ),
                   ),
                   SizedBox(height: 4.h),
                   Text(
                     description,
                     style: AppTypography.cardSubtitle.copyWith(
-                      color: isSelected ? AppTheme.primaryGreen.withOpacity(0.7) : colors.subtext,
+                      color: isSelected
+                          ? AppTheme.primaryGreen.withOpacity(0.7)
+                          : colors.subtext,
                     ),
                   ),
                 ],
@@ -253,11 +267,7 @@ class OrderTypeView extends GetView<OrderTypeController> {
                   color: AppTheme.primaryGreen,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  Icons.check,
-                  color: Colors.white,
-                  size: 10.sp,
-                ),
+                child: Icon(Icons.check, color: Colors.white, size: 10.sp),
               )
             else
               Icon(

@@ -65,7 +65,9 @@ class TableModel {
     return TableModel(
       id: (json['rt_id'] as num? ?? (json['id'] as num? ?? 0)).toInt(),
       name: (json['rt_name'] ?? (json['name'] ?? '')).toString(),
-      chairCount: (json['rt_seat_count'] as num? ?? (json['chair_count'] as num? ?? 0)).toInt(),
+      chairCount:
+          (json['rt_seat_count'] as num? ?? (json['chair_count'] as num? ?? 0))
+              .toInt(),
       processingTable: json['processing_table'] is String
           ? jsonDecode(json['processing_table'])
           : (json['processing_table'] is List ? json['processing_table'] : []),
@@ -121,7 +123,9 @@ class TablesController extends GetxController with WidgetsBindingObserver {
   void _startPolling() {
     _pollingTimer?.cancel();
     // Fast polling in local mode to ensure multi-device sync
-    final duration = DeviceConfig.operationMode == OperationMode.local ? const Duration(seconds: 5) : const Duration(seconds: 20);
+    final duration = DeviceConfig.operationMode == OperationMode.local
+        ? const Duration(seconds: 5)
+        : const Duration(seconds: 20);
     _pollingTimer = Timer.periodic(duration, (_) {
       fetchTables(silent: true);
     });
@@ -145,7 +149,8 @@ class TablesController extends GetxController with WidgetsBindingObserver {
 
       List<dynamic> dataList = [];
 
-      if (DeviceConfig.operationMode == OperationMode.local && DeviceConfig.role == DeviceRole.client) {
+      if (DeviceConfig.operationMode == OperationMode.local &&
+          DeviceConfig.role == DeviceRole.client) {
         // LOCAL HUB MODE (Client)
         final hostIp = DeviceConfig.hostIp;
         if (hostIp != null && hostIp.isNotEmpty && DeviceConfig.hasAuthToken) {
@@ -167,7 +172,10 @@ class TablesController extends GetxController with WidgetsBindingObserver {
           "usr_id": int.tryParse(AppState.userId) ?? 0,
         };
         try {
-          final response = await _apiService.post('mobileapp/pos/get_pos_table', data: requestBody);
+          final response = await _apiService.post(
+            'mobileapp/pos/get_pos_table',
+            data: requestBody,
+          );
           if (response.statusCode == 200) {
             if (response.data is Map && response.data['data'] is List) {
               dataList = response.data['data'];
@@ -203,18 +211,20 @@ class TablesController extends GetxController with WidgetsBindingObserver {
 
       for (var order in unsynced) {
         final status = order['status']?.toString().toLowerCase();
-        if (status == 'paid' || status == 'cancelled' || status == 'deleted') continue;
+        if (status == 'paid' || status == 'cancelled' || status == 'deleted')
+          continue;
 
         final tableId = (order['table_id'] as num?)?.toInt();
         if (tableId == null) continue;
-        if (cartController.isEditing && order['uuid'] == cartController.editingOrderId.value) {
+        if (cartController.isEditing &&
+            order['uuid'] == cartController.editingOrderId.value) {
           continue;
         }
-        
+
         // Mark both UUID and server_id to avoid double counting with Host data
         final uuid = order['uuid']?.toString();
         if (uuid != null) skipIds.add(uuid);
-        
+
         final serverId = order['server_id']?.toString();
         if (serverId != null && serverId.isNotEmpty) {
           skipIds.add(serverId);
@@ -225,7 +235,9 @@ class TablesController extends GetxController with WidgetsBindingObserver {
         if (payloadStr != null && payloadStr.isNotEmpty) {
           try {
             final payload = jsonDecode(payloadStr);
-            seats = _safeInt(payload['no_seats'] ?? payload['sales_odr_no_seats']);
+            seats = _safeInt(
+              payload['no_seats'] ?? payload['sales_odr_no_seats'],
+            );
           } catch (e) {}
         }
         occupancy[tableId] = (occupancy[tableId] ?? 0) + seats;
@@ -244,13 +256,15 @@ class TablesController extends GetxController with WidgetsBindingObserver {
     for (var areaMap in localAreas) {
       final tablesMap = await _dbHelper.getTablesForArea(areaMap['id']);
 
-      fetchedAreas.add(AreaModel(
-        id: areaMap['id'],
-        name: areaMap['name'],
-        isDefault: areaMap['is_default'],
-        priceGroupID: areaMap['price_group_id'],
-        tables: tablesMap.map((t) => TableModel.fromJson(t)).toList(),
-      ));
+      fetchedAreas.add(
+        AreaModel(
+          id: areaMap['id'],
+          name: areaMap['name'],
+          isDefault: areaMap['is_default'],
+          priceGroupID: areaMap['price_group_id'],
+          tables: tablesMap.map((t) => TableModel.fromJson(t)).toList(),
+        ),
+      );
     }
 
     if (fetchedAreas.isNotEmpty) {
@@ -260,9 +274,15 @@ class TablesController extends GetxController with WidgetsBindingObserver {
       }
       // Preserve selection if possible
       if (selectedArea.value != null) {
-        selectedArea.value = areas.firstWhere((a) => a.id == selectedArea.value!.id, orElse: () => areas.first);
+        selectedArea.value = areas.firstWhere(
+          (a) => a.id == selectedArea.value!.id,
+          orElse: () => areas.first,
+        );
       } else {
-        selectedArea.value = areas.firstWhere((a) => a.isDefault == 1, orElse: () => areas.first);
+        selectedArea.value = areas.firstWhere(
+          (a) => a.isDefault == 1,
+          orElse: () => areas.first,
+        );
       }
     }
   }
@@ -271,20 +291,32 @@ class TablesController extends GetxController with WidgetsBindingObserver {
     selectedArea.value = area;
   }
 
-  int getOccupiedCountForTable(TableModel table, {bool includeCurrentSelection = true}) {
+  int getOccupiedCountForTable(
+    TableModel table, {
+    bool includeCurrentSelection = true,
+  }) {
     final cartController = Get.find<CartController>();
     int occupied = 0;
 
     // 1. Count from server-synced processing tables
     for (var order in table.processingTable) {
       if (order is Map) {
-        final String? orderInvNo = order['sales_odr_inv_no']?.toString() ?? order['sq_inv_no']?.toString();
-        final String? orderId = (order['sales_odr_id'] ?? order['sq_id'] ?? order['uuid'] ?? order['local_uuid'])?.toString();
+        final String? orderInvNo =
+            order['sales_odr_inv_no']?.toString() ??
+            order['sq_inv_no']?.toString();
+        final String? orderId =
+            (order['sales_odr_id'] ??
+                    order['sq_id'] ??
+                    order['uuid'] ??
+                    order['local_uuid'])
+                ?.toString();
 
         // Skip current editing order's seats in occupied calculation
         if (cartController.isEditing &&
-            ((orderInvNo != null && orderInvNo == cartController.editingInvNo.value) ||
-                (orderId != null && orderId == cartController.editingOrderId.value))) {
+            ((orderInvNo != null &&
+                    orderInvNo == cartController.editingInvNo.value) ||
+                (orderId != null &&
+                    orderId == cartController.editingOrderId.value))) {
           continue;
         }
 
@@ -301,7 +333,8 @@ class TablesController extends GetxController with WidgetsBindingObserver {
     occupied += localOrdersOccupancy[table.id] ?? 0;
 
     // 3. Count current active selection in Cart
-    if (includeCurrentSelection && cartController.selectedTableId.value == table.id.toString()) {
+    if (includeCurrentSelection &&
+        cartController.selectedTableId.value == table.id.toString()) {
       occupied += cartController.selectedChairCount.value;
     }
 
@@ -312,7 +345,10 @@ class TablesController extends GetxController with WidgetsBindingObserver {
     final cartController = Get.find<CartController>();
 
     // Calculate occupied seats excluding current cart selection
-    int baseOccupiedCount = getOccupiedCountForTable(table, includeCurrentSelection: false);
+    int baseOccupiedCount = getOccupiedCountForTable(
+      table,
+      includeCurrentSelection: false,
+    );
 
     if (baseOccupiedCount < table.chairCount) {
       if (cartController.selectedTableId.value == table.id.toString()) {
@@ -320,18 +356,23 @@ class TablesController extends GetxController with WidgetsBindingObserver {
       } else {
         selectedChairCount.value = 0;
       }
-      Get.dialog(ChairSelectionDialog(table: table, occupiedCount: baseOccupiedCount));
+      Get.dialog(
+        ChairSelectionDialog(table: table, occupiedCount: baseOccupiedCount),
+      );
     } else {
-      Get.snackbar("table_full".tr, "table_full_msg".tr,
-          snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.redAccent,
-          colorText: Colors.white);
+      Get.snackbar(
+        "table_full".tr,
+        "table_full_msg".tr,
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
     }
   }
 
   void confirmSelection(TableModel table) {
     if (selectedChairCount.value == 0) {
-      showSafeSnackbar("selection_required".tr,  "select_chair_msg".tr);
+      showSafeSnackbar("selection_required".tr, "select_chair_msg".tr);
       return;
     }
 
@@ -356,7 +397,11 @@ class ChairSelectionDialog extends GetView<TablesController> {
   final TableModel table;
   final int occupiedCount;
 
-  const ChairSelectionDialog({super.key, required this.table, required this.occupiedCount});
+  const ChairSelectionDialog({
+    super.key,
+    required this.table,
+    required this.occupiedCount,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -367,7 +412,13 @@ class ChairSelectionDialog extends GetView<TablesController> {
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(table.name, style: AppTypography.cardTitle.copyWith(fontWeight: FontWeight.bold, color: colors.text)),
+          Text(
+            table.name,
+            style: AppTypography.cardTitle.copyWith(
+              fontWeight: FontWeight.bold,
+              color: colors.text,
+            ),
+          ),
           SizedBox(height: 4.h),
           Text(
             'select_chair_count'.tr,
@@ -378,53 +429,63 @@ class ChairSelectionDialog extends GetView<TablesController> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Obx(() => Wrap(
-            spacing: AppTypography.smallText,
-            runSpacing:AppTypography.smallText,
-            children: List.generate(table.chairCount, (index) {
-              final chairNum = index + 1;
-              final bool isAlreadyOccupied = chairNum <= occupiedCount;
+          Obx(
+            () => Wrap(
+              spacing: AppTypography.smallText,
+              runSpacing: AppTypography.smallText,
+              children: List.generate(table.chairCount, (index) {
+                final chairNum = index + 1;
+                final bool isAlreadyOccupied = chairNum <= occupiedCount;
 
-              // Correct logic as requested: Tapping chair X means selecting X - occupiedCount chairs.
-              // Highlights ONLY the tapped chair.
-              // final bool isCurrentlySelected = controller.selectedChairCount.value > 0 &&
-              //                                 (occupiedCount + controller.selectedChairCount.value == chairNum);
-              final bool isCurrentlySelected =
-                  chairNum > occupiedCount &&
-                      chairNum <= occupiedCount + controller.selectedChairCount.value;
+                // Correct logic as requested: Tapping chair X means selecting X - occupiedCount chairs.
+                // Highlights ONLY the tapped chair.
+                // final bool isCurrentlySelected = controller.selectedChairCount.value > 0 &&
+                //                                 (occupiedCount + controller.selectedChairCount.value == chairNum);
+                final bool isCurrentlySelected =
+                    chairNum > occupiedCount &&
+                    chairNum <=
+                        occupiedCount + controller.selectedChairCount.value;
 
-              return InkWell(
-                onTap: isAlreadyOccupied ? null : () {
-                   controller.selectedChairCount.value = chairNum - occupiedCount;
-                },
-                child: Container(
-                  width: AppTypography.iconXL,
-                  height:  AppTypography.iconXL,
-                  decoration: BoxDecoration(
-                    color: isCurrentlySelected
-                        ? AppTheme.primaryGreen
-                        : (isAlreadyOccupied ? Colors.red.withOpacity(0.2) : colors.textField),
-                    borderRadius: BorderRadius.circular(10.r),
-                    border: Border.all(
-                      color: isCurrentlySelected ? AppTheme.primaryGreen : colors.border,
-                      width: 1.5,
-                    ),
-                  ),
-                  child: Center(
-                    child: Text(
-                      chairNum.toString(),
-                      style: TextStyle(
+                return InkWell(
+                  onTap: isAlreadyOccupied
+                      ? null
+                      : () {
+                          controller.selectedChairCount.value =
+                              chairNum - occupiedCount;
+                        },
+                  child: Container(
+                    width: AppTypography.iconXL,
+                    height: AppTypography.iconXL,
+                    decoration: BoxDecoration(
+                      color: isCurrentlySelected
+                          ? AppTheme.primaryGreen
+                          : (isAlreadyOccupied
+                                ? Colors.red.withOpacity(0.2)
+                                : colors.textField),
+                      borderRadius: BorderRadius.circular(10.r),
+                      border: Border.all(
                         color: isCurrentlySelected
-                            ? Colors.white
-                            : (isAlreadyOccupied ? Colors.red : colors.text),
-                        fontWeight: FontWeight.bold,
+                            ? AppTheme.primaryGreen
+                            : colors.border,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        chairNum.toString(),
+                        style: TextStyle(
+                          color: isCurrentlySelected
+                              ? Colors.white
+                              : (isAlreadyOccupied ? Colors.red : colors.text),
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              );
-            }),
-          )),
+                );
+              }),
+            ),
+          ),
           SizedBox(height: 24.h),
           Row(
             children: [

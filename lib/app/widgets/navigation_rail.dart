@@ -22,8 +22,8 @@ class PosSidebar extends StatelessWidget {
   static double get _itemHeight {
     final isDesktop =
         !kIsWeb &&
-            (defaultTargetPlatform == TargetPlatform.macOS ||
-                defaultTargetPlatform == TargetPlatform.windows);
+        (defaultTargetPlatform == TargetPlatform.macOS ||
+            defaultTargetPlatform == TargetPlatform.windows);
 
     return isDesktop ? 120 : 90;
   }
@@ -81,7 +81,8 @@ class PosSidebar extends StatelessWidget {
             children: [
               _navItem(context, Icons.dashboard, "dashboard".tr, 0),
               // SizedBox(height: 10.h,),
-              if (showTables) _navItem(context, Icons.table_restaurant, "tables".tr, 1),
+              if (showTables)
+                _navItem(context, Icons.table_restaurant, "tables".tr, 1),
               // SizedBox(height: 10.h,),
               _navItem(context, Icons.receipt, "orders".tr, 2),
               // SizedBox(height: 10.h,),
@@ -91,7 +92,13 @@ class PosSidebar extends StatelessWidget {
               const Spacer(),
               Padding(
                 padding: EdgeInsets.only(bottom: 10.h),
-                child: _actionItem(context, Icons.logout, "logout".tr, onLogout, color: Colors.red),
+                child: _actionItem(
+                  context,
+                  Icons.logout,
+                  "logout".tr,
+                  onLogout,
+                  color: Colors.red,
+                ),
               ),
             ],
           ),
@@ -100,7 +107,12 @@ class PosSidebar extends StatelessWidget {
     );
   }
 
-  Widget _navItem(BuildContext context, IconData icon, String label, int index) {
+  Widget _navItem(
+    BuildContext context,
+    IconData icon,
+    String label,
+    int index,
+  ) {
     final isSelected = selectedIndex == index;
     final colors = AppColors.of(context);
     return GestureDetector(
@@ -139,7 +151,13 @@ class PosSidebar extends StatelessWidget {
     );
   }
 
-  Widget _actionItem(BuildContext context, IconData icon, String label, VoidCallback onTap, {Color? color}) {
+  Widget _actionItem(
+    BuildContext context,
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
+    Color? color,
+  }) {
     final colors = AppColors.of(context);
     return GestureDetector(
       onTap: onTap,

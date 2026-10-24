@@ -2,9 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/get_instance/src/extension_instance.dart';
-import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
+import 'package:get/get.dart';
 
 import '../../../../../../theme/app_theme.dart';
 import '../../../../../../theme/app_typography.dart';
@@ -173,7 +171,6 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
               SizedBox(width: 2.w),
               productDetails(),
               quantityControls(),
-              // SizedBox(width: 2.w),
               priceDisplay(),
             ],
           ),
@@ -267,7 +264,7 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
             return Padding(
               padding: EdgeInsets.only(top: 0.5.h),
               child: Text(
-                "Note: ${widget.cartItem.note.value}",
+                "${'note'.tr}: ${widget.cartItem.note.value}",
                 style: TextStyle(
                   fontSize: 2.5.sp,
                   color: Colors.orange.shade700,

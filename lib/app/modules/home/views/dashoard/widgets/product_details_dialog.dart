@@ -1,11 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/get_navigation/src/extension_navigation.dart';
-import 'package:get/get_navigation/src/snackbar/snackbar.dart';
-import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
-import 'package:get/get_state_manager/src/simple/get_view.dart';
+import 'package:get/get.dart';
 
 import '../../../../../theme/app_theme.dart';
 import '../../../../../theme/app_typography.dart';
@@ -20,19 +16,19 @@ class ProductDetailsDialog extends GetView<DashboardController> {
   final TextEditingController _noteController;
 
   ProductDetailsDialog({super.key, required this.product, this.existingItem})
-      : _noteController = TextEditingController(text: existingItem?.note.value ?? '');
+    : _noteController = TextEditingController(
+        text: existingItem?.note.value ?? '',
+      );
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
-    
+
     return AlertDialog(
       backgroundColor: colors.card,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.r)),
       titlePadding: EdgeInsets.zero,
-      // Setting scrollable to true allows the entire dialog body to scroll
-      // and automatically handles the keyboard by resizing/scrolling.
       scrollable: true,
       title: Container(
         padding: EdgeInsets.all(16.w),
@@ -45,7 +41,9 @@ class ProductDetailsDialog extends GetView<DashboardController> {
           children: [
             Expanded(
               child: Text(
-                existingItem != null ? "Edit ${product.name}" : product.name,
+                existingItem != null
+                    ? 'edit_item'.trParams({'name': product.name})
+                    : product.name,
                 style: AppTypography.cardTitle.copyWith(
                   fontWeight: FontWeight.bold,
                   color: colors.text,
@@ -69,47 +67,48 @@ class ProductDetailsDialog extends GetView<DashboardController> {
           children: [
             // Units Selection
             Text(
-              'Select Unit',
+              'select_unit'.tr,
               style: AppTypography.cardSubtitle.copyWith(
                 fontWeight: FontWeight.bold,
                 color: colors.text,
               ),
             ),
             SizedBox(height: 5.h),
-            Obx(() => Wrap(
-              spacing: 8.w,
-              runSpacing: 8.h,
-              children: controller.productUnits.map((unit) {
-                final isSelected = controller.selectedUnit.value?.unitId == unit.unitId;
+            Obx(
+              () => Wrap(
+                spacing: 8.w,
+                runSpacing: 8.h,
+                children: controller.productUnits.map((unit) {
+                  final isSelected =
+                      controller.selectedUnit.value?.unitId == unit.unitId;
 
-                // Calculate display price based on vatType
-                // vatType 0 = Exclusive (Price + Tax), vatType 1 = Inclusive (Price)
-                double displayPrice = unit.rate;
-                if (controller.vatType.value == 0) {
-                  displayPrice = unit.rate + (unit.rate * product.prd_tax / 100);
-                }
+                  double displayPrice = unit.rate;
+                  if (controller.vatType.value == 0) {
+                    displayPrice =
+                        unit.rate + (unit.rate * product.prd_tax / 100);
+                  }
 
-                return ChoiceChip(
-                    // (${displayPrice.toStringAsFixed(2)})
-                  label: Text('${unit.unitName}(${displayPrice.toStringAsFixed(2)})'),
-                  selected: isSelected,
-                  onSelected: (selected) {
-                    if (selected) {
-                      controller.selectedUnit.value = unit;
-                      debugPrint("Selected Unit: ${unit.unitName}");
-                      debugPrint("Base Qty: ${unit.unitBaseQty}");
-                    }
-                  },
-                  selectedColor: AppTheme.primaryGreen,
-                  backgroundColor: colors.textField,
-                  checkmarkColor: Colors.white,
-                  labelStyle: AppTypography.cardTitle.copyWith(
-                    color: isSelected ? Colors.white : colors.text,
-                    fontSize: AppTypography.smallText,
-                  ),
-                );
-              }).toList(),
-            )),
+                  return ChoiceChip(
+                    label: Text(
+                      '${unit.unitName}(${displayPrice.toStringAsFixed(2)})',
+                    ),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      if (selected) {
+                        controller.selectedUnit.value = unit;
+                      }
+                    },
+                    selectedColor: AppTheme.primaryGreen,
+                    backgroundColor: colors.textField,
+                    checkmarkColor: Colors.white,
+                    labelStyle: AppTypography.cardTitle.copyWith(
+                      color: isSelected ? Colors.white : colors.text,
+                      fontSize: AppTypography.smallText,
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
             Divider(height: 16, color: colors.border),
             Obx(() {
               final addons = (controller.selectedUnit.value?.existAddOns ?? [])
@@ -125,7 +124,7 @@ class ProductDetailsDialog extends GetView<DashboardController> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Add-ons',
+                      'add_ons'.tr,
                       style: AppTypography.cardSubtitle.copyWith(
                         fontWeight: FontWeight.bold,
                         color: colors.text,
@@ -133,8 +132,10 @@ class ProductDetailsDialog extends GetView<DashboardController> {
                     ),
                     SizedBox(height: 10.h),
                     Text(
-                      'No add-ons available',
-                      style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+                      'no_addons_available'.tr,
+                      style: AppTypography.cardSubtitle.copyWith(
+                        color: colors.subtext,
+                      ),
                     ),
                   ],
                 );
@@ -145,35 +146,39 @@ class ProductDetailsDialog extends GetView<DashboardController> {
                 children: [
                   if (addons.isNotEmpty) ...[
                     Text(
-                      'Add-ons',
+                      'add_ons'.tr,
                       style: AppTypography.cardSubtitle.copyWith(
                         fontWeight: FontWeight.bold,
                         color: colors.text,
                       ),
                     ),
                     SizedBox(height: 5.h),
-                    ...addons.map((addon) => _buildAddonQuantityItem(addon, colors)),
+                    ...addons.map(
+                      (addon) => _buildAddonQuantityItem(addon, colors),
+                    ),
                   ],
                   if (common.isNotEmpty) ...[
-                    if (addons.isNotEmpty) Divider(height: 12, color: colors.border),
+                    if (addons.isNotEmpty)
+                      Divider(height: 12, color: colors.border),
                     Text(
-                      'Paid add ons',
+                      'paid_addons'.tr,
                       style: AppTypography.cardSubtitle.copyWith(
                         fontWeight: FontWeight.bold,
                         color: colors.text,
                       ),
                     ),
                     SizedBox(height: 5.h),
-                    ...common.map((addon) => _buildAddonQuantityItem(addon, colors)),
+                    ...common.map(
+                      (addon) => _buildAddonQuantityItem(addon, colors),
+                    ),
                   ],
                   Divider(height: 16, color: colors.border),
-
                 ],
               );
             }),
             SizedBox(height: 10.h),
             Text(
-              'Note',
+              'note'.tr,
               style: AppTypography.cardSubtitle.copyWith(
                 fontWeight: FontWeight.bold,
                 color: colors.text,
@@ -184,15 +189,21 @@ class ProductDetailsDialog extends GetView<DashboardController> {
               controller: _noteController,
               maxLines: 2,
               maxLength: 100,
-              // Ensuring the field remains visible when keyboard is open
-              scrollPadding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 20),
+              scrollPadding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
               style: AppTypography.cardSubtitle.copyWith(color: colors.text),
               decoration: InputDecoration(
-                hintText: 'Add notes here',
-                hintStyle: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+                hintText: 'add_notes_hint'.tr,
+                hintStyle: AppTypography.cardSubtitle.copyWith(
+                  color: colors.subtext,
+                ),
                 filled: true,
                 fillColor: colors.textField,
-                contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 12.w,
+                  vertical: 8.h,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8.r),
                   borderSide: BorderSide.none,
@@ -205,52 +216,70 @@ class ProductDetailsDialog extends GetView<DashboardController> {
       ),
       actions: [
         PrimaryButton(
-            text: existingItem != null ? 'Update Cart' : 'Add to Cart',
-            onPressed: () {
-              try {
-                final selectedUnit = controller.selectedUnit.value;
+          text: existingItem != null ? 'update_cart'.tr : 'add_to_cart'.tr,
+          onPressed: () {
+            try {
+              final selectedUnit = controller.selectedUnit.value;
 
-                if (selectedUnit == null) {
-                  Get.snackbar("Error", "Please select a unit", snackPosition: SnackPosition.BOTTOM);
-                  return;
-                }
-
-                final selectedAddons = <AddonModel>[];
-                final currentUnitAddons = controller.selectedUnit.value?.existAddOns ?? [];
-
-                for (var a in currentUnitAddons) {
-                  if (a.prdaddon_flags == 1 && a.quantity.value > 0) {
-                    selectedAddons.add(
-                      a.copyWith(quantityValue: a.quantity.value),
-                    );
-                  }
-                }
-
-                for (var a in controller.commonAddons) {
-                  if (a.prdaddon_flags == 1 && a.quantity.value > 0) {
-                    selectedAddons.add(
-                      a.copyWith(quantityValue: a.quantity.value),
-                    );
-                  }
-                }
-
-                final cartController = controller.cartController;
-
-                if (Get.isDialogOpen ?? false) {
-                  Get.back();
-                }
-
-                if (existingItem != null) {
-                  cartController.updateItemDetails(existingItem!, selectedUnit, selectedAddons,note: _noteController.text.trim());
-                } else {
-                  cartController.addItemWithDetails(product, selectedUnit, selectedAddons,note: _noteController.text.trim());
-                }
-
-              } catch (e) {
-                debugPrint("Add to cart error: $e");
-                Get.snackbar("Error", "Something went wrong", snackPosition: SnackPosition.BOTTOM);
+              if (selectedUnit == null) {
+                Get.snackbar(
+                  'error'.tr,
+                  'select_unit_msg'.tr,
+                  snackPosition: SnackPosition.BOTTOM,
+                );
+                return;
               }
+
+              final selectedAddons = <AddonModel>[];
+              final currentUnitAddons =
+                  controller.selectedUnit.value?.existAddOns ?? [];
+
+              for (var a in currentUnitAddons) {
+                if (a.prdaddon_flags == 1 && a.quantity.value > 0) {
+                  selectedAddons.add(
+                    a.copyWith(quantityValue: a.quantity.value),
+                  );
+                }
+              }
+
+              for (var a in controller.commonAddons) {
+                if (a.prdaddon_flags == 1 && a.quantity.value > 0) {
+                  selectedAddons.add(
+                    a.copyWith(quantityValue: a.quantity.value),
+                  );
+                }
+              }
+
+              final cartController = controller.cartController;
+
+              if (Get.isDialogOpen ?? false) {
+                Get.back();
+              }
+
+              if (existingItem != null) {
+                cartController.updateItemDetails(
+                  existingItem!,
+                  selectedUnit,
+                  selectedAddons,
+                  note: _noteController.text.trim(),
+                );
+              } else {
+                cartController.addItemWithDetails(
+                  product,
+                  selectedUnit,
+                  selectedAddons,
+                  note: _noteController.text.trim(),
+                );
+              }
+            } catch (e) {
+              debugPrint("Add to cart error: $e");
+              Get.snackbar(
+                'error'.tr,
+                'unexpected_error'.tr,
+                snackPosition: SnackPosition.BOTTOM,
+              );
             }
+          },
         ),
       ],
     );
@@ -266,21 +295,25 @@ class ProductDetailsDialog extends GetView<DashboardController> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  addon.freeQty > 0 ? "${addon.name} (Free: ${addon.freeQty})" : addon.name,
+                  addon.freeQty > 0
+                      ? "${addon.name} (${'free'.tr}: ${addon.freeQty})"
+                      : addon.name,
                   style: AppTypography.cardSubtitle.copyWith(
                     fontWeight: FontWeight.w500,
                     color: colors.text,
                   ),
                 ),
                 Obx(() {
-                  // Display addon price including tax if vatType is Exclusive
                   double displayAddonPrice = addon.price;
                   if (controller.vatType.value == 0) {
-                    displayAddonPrice = addon.price + (addon.price * addon.taxPer / 100);
+                    displayAddonPrice =
+                        addon.price + (addon.price * addon.taxPer / 100);
                   }
                   return Text(
                     "+ ${displayAddonPrice.toStringAsFixed(2)} / ${addon.unitDisplay}",
-                    style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+                    style: AppTypography.cardSubtitle.copyWith(
+                      color: colors.subtext,
+                    ),
                   );
                 }),
               ],
@@ -302,14 +335,18 @@ class ProductDetailsDialog extends GetView<DashboardController> {
                     if (addon.quantity.value > 0) addon.quantity.value--;
                   },
                 ),
-                Obx(() => Container(
-                  width: 30.w, // Slightly wider for better centering
-                  alignment: Alignment.center,
-                  child: Text(
-                    "${addon.quantity.value}",
-                    style: AppTypography.cardTitle.copyWith(color: colors.text),
+                Obx(
+                  () => Container(
+                    width: 30.w,
+                    alignment: Alignment.center,
+                    child: Text(
+                      "${addon.quantity.value}",
+                      style: AppTypography.cardTitle.copyWith(
+                        color: colors.text,
+                      ),
+                    ),
                   ),
-                )),
+                ),
                 _buildSmallQtyBtn(
                   icon: Icons.add,
                   onPressed: () => addon.quantity.value++,

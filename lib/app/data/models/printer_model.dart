@@ -18,9 +18,9 @@ class PrinterModel {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is PrinterModel &&
-              runtimeType == other.runtimeType &&
-              address == other.address;
+      other is PrinterModel &&
+          runtimeType == other.runtimeType &&
+          address == other.address;
 
   @override
   int get hashCode => address.hashCode;

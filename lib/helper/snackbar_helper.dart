@@ -3,8 +3,7 @@ import 'package:get/get_navigation/src/extension_navigation.dart';
 import 'package:get/get_navigation/src/snackbar/snackbar.dart';
 
 void showSafeSnackbar(String title, String message) {
-  Get.closeAllSnackbars(); // 🔥 important
-
+  Get.closeAllSnackbars();
   Get.snackbar(
     title,
     message,

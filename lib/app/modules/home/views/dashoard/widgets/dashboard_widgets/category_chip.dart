@@ -25,7 +25,10 @@ class CategoryChip extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeInOut,
-        padding: EdgeInsets.symmetric(horizontal: ScreenType.isMobile()?10.w:2.w, vertical: AppTypography.sizeCategory),
+        padding: EdgeInsets.symmetric(
+          horizontal: ScreenType.isMobile() ? 10.w : 2.w,
+          vertical: AppTypography.sizeCategory,
+        ),
         decoration: BoxDecoration(
           color: isSelected ? AppTheme.primaryGreen : colors.card,
           borderRadius: BorderRadius.circular(10.r),
@@ -34,13 +37,13 @@ class CategoryChip extends StatelessWidget {
           ),
           boxShadow: isSelected
               ? [
-            BoxShadow(
-              color: AppTheme.primaryGreen.withOpacity(0.3),
-              blurRadius: 10,
-              spreadRadius: 2,
-              offset: const Offset(0, 4),
-            ),
-          ]
+                  BoxShadow(
+                    color: AppTheme.primaryGreen.withOpacity(0.3),
+                    blurRadius: 10,
+                    spreadRadius: 2,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
               : [],
         ),
         child: Text(

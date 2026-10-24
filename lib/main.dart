@@ -28,7 +28,9 @@ void main() async {
   await LocalHubServer.instance.start();
   final apiService = Get.put(ApiService(), permanent: true);
   Get.put(SyncService(), permanent: true);
-  debugPrint('STORAGE: ${GetStorage().getKeys()} -> ${GetStorage().getValues()}');
+  debugPrint(
+    'STORAGE: ${GetStorage().getKeys()} -> ${GetStorage().getValues()}',
+  );
   final themeController = Get.put(ThemeController(), permanent: true);
 
   final storage = GetStorage();
@@ -39,10 +41,12 @@ void main() async {
       initialRoute = Routes.SYNC;
     } else {
       try {
-        final tempDio = Dio(BaseOptions(
-          baseUrl: apiService.baseUrl,
-          connectTimeout: const Duration(seconds: 10),
-        ));
+        final tempDio = Dio(
+          BaseOptions(
+            baseUrl: apiService.baseUrl,
+            connectTimeout: const Duration(seconds: 10),
+          ),
+        );
 
         final response = await tempDio.post(
           "mobileapp/user/check_active_app",
@@ -53,7 +57,9 @@ void main() async {
           log("Main: Session active. App State UPI: ${AppState.upiId}");
           initialRoute = Routes.HOME;
         } else {
-          log("Main: Session check failed (${response.data['status']}), clearing data.");
+          log(
+            "Main: Session check failed (${response.data['status']}), clearing data.",
+          );
           await AppState.clearAllData();
           sessionExpired = true;
         }
@@ -65,7 +71,9 @@ void main() async {
           await AppState.clearAllData();
           sessionExpired = true;
         } else {
-          log("Main: Network error during session check, allowing offline access.");
+          log(
+            "Main: Network error during session check, allowing offline access.",
+          );
           initialRoute = Routes.HOME;
         }
       }
@@ -78,7 +86,9 @@ void main() async {
       storage.write('as_upi_id', dbUpi);
       log("Main: Restored UPI ID from Database: $dbUpi");
     }
-    final dbUpiEnable = await DatabaseHelper.instance.getSetting('as_upi_enable');
+    final dbUpiEnable = await DatabaseHelper.instance.getSetting(
+      'as_upi_enable',
+    );
     if (dbUpiEnable != null) {
       storage.write('as_upi_enable', int.tryParse(dbUpiEnable) ?? 0);
     }
@@ -87,10 +97,7 @@ void main() async {
     storage.write('session_expired_flag', true);
   }
   // print("UPI: ${AppState.upiId}");
-  runApp(MyApp(
-    initialRoute: initialRoute,
-    themeController: themeController,
-  ));
+  runApp(MyApp(initialRoute: initialRoute, themeController: themeController));
 }
 
 class MyApp extends StatelessWidget {
@@ -110,22 +117,24 @@ class MyApp extends StatelessWidget {
       minTextAdapt: true,
       splitScreenMode: true,
       builder: (context, child) {
-        return Obx(() => GetMaterialApp(
-          title: 'Restaurant POS',
-          debugShowCheckedModeBanner: false,
-          initialRoute: initialRoute,
-          getPages: AppPages.routes,
-          theme: AppTheme.lightTheme,
-          darkTheme: AppTheme.darkTheme,
-          themeMode: themeController.isDark.value
-              ? ThemeMode.dark
-              : ThemeMode.light,
-          translations: AppTranslations(),
-          locale: const Locale('en', 'US'),
-          fallbackLocale: const Locale('en', 'US'),
-          defaultTransition: Transition.fade,
-          transitionDuration: const Duration(milliseconds: 200),
-        ));
+        return Obx(
+          () => GetMaterialApp(
+            title: 'Restaurant POS',
+            debugShowCheckedModeBanner: false,
+            initialRoute: initialRoute,
+            getPages: AppPages.routes,
+            theme: AppTheme.lightTheme,
+            darkTheme: AppTheme.darkTheme,
+            themeMode: themeController.isDark.value
+                ? ThemeMode.dark
+                : ThemeMode.light,
+            translations: AppTranslations(),
+            locale: const Locale('en', 'US'),
+            fallbackLocale: const Locale('en', 'US'),
+            defaultTransition: Transition.fade,
+            transitionDuration: const Duration(milliseconds: 200),
+          ),
+        );
       },
     );
   }

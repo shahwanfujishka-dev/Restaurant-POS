@@ -29,11 +29,10 @@ class AppTypography {
     color: AppTheme.subTextColor,
   );
 
-  static TextStyle get bodyText => TextStyle(
-    fontSize: ScreenType.isMobile() ? 16.sp : 7.sp,
-  );
+  static TextStyle get bodyText =>
+      TextStyle(fontSize: ScreenType.isMobile() ? 16.sp : 7.sp);
 
-// ---------- CARD TEXT ----------
+  // ---------- CARD TEXT ----------
   static TextStyle get cardTitle => TextStyle(
     fontWeight: FontWeight.bold,
     fontSize: ScreenType.isMobile() ? 16.sp : 5.sp,
@@ -56,37 +55,26 @@ class AppTypography {
     color: AppTheme.white,
   );
 
-  static double get iconSmall =>
-      ScreenType.isMobile() ? 18.sp : 36.sp;
+  static double get iconSmall => ScreenType.isMobile() ? 18.sp : 36.sp;
 
-  static double get iconMedium =>
-      ScreenType.isMobile() ? 24.sp : 44.sp;
+  static double get iconMedium => ScreenType.isMobile() ? 24.sp : 44.sp;
 
-  static double get iconLarge =>
-      ScreenType.isMobile() ? 30.sp : 8.sp;
+  static double get iconLarge => ScreenType.isMobile() ? 30.sp : 8.sp;
 
-  static double get iconXL =>
-      ScreenType.isMobile() ? 36.sp : 12.sp;
+  static double get iconXL => ScreenType.isMobile() ? 36.sp : 12.sp;
 
-  static double get foodIcon =>
-      ScreenType.isMobile() ? 60.sp : 20.sp;
+  static double get foodIcon => ScreenType.isMobile() ? 60.sp : 20.sp;
 
-  static double get sizeTable =>
-      ScreenType.isMobile() ? 20.sp : 5.sp;
-  static double get sizeCategory =>
-      ScreenType.isMobile() ? 12.sp : 5.sp;
+  static double get sizeTable => ScreenType.isMobile() ? 20.sp : 5.sp;
+  static double get sizeCategory => ScreenType.isMobile() ? 12.sp : 5.sp;
 
-  static double get sizeText =>
-      ScreenType.isMobile() ? 18.sp : 5.sp;
+  static double get sizeText => ScreenType.isMobile() ? 18.sp : 5.sp;
 
-  static double get smallText =>
-      ScreenType.isMobile() ? 12.sp : 3.sp;
+  static double get smallText => ScreenType.isMobile() ? 12.sp : 3.sp;
 
-  static double get sizeArea =>
-      ScreenType.isMobile() ? 200.sp : 50.sp;
+  static double get sizeArea => ScreenType.isMobile() ? 200.sp : 50.sp;
 
-  static double get sizeDialogue =>
-      ScreenType.isMobile() ? 200.sp : 150.sp;
+  static double get sizeDialogue => ScreenType.isMobile() ? 200.sp : 150.sp;
 
   static double get sizePayment => ScreenType.isMobile() ? 290.sp : 75.sp;
 }

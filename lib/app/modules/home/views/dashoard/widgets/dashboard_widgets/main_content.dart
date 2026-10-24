@@ -1,9 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/get_instance/src/extension_instance.dart';
-import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
-import 'package:get/get_state_manager/src/simple/get_view.dart';
 import 'package:get/get.dart' hide ScreenType;
 
 import '../../../../../../../helper/screen_type.dart';
@@ -33,82 +29,103 @@ class MainContent extends GetView<DashboardController> {
           ScreenType.isMobile()
               ? _buildMobileLayout(context)
               : _buildTabletLayout(context),
-          
-          Obx(() => controller.showLocalError.value
-              ? Positioned(
-                  bottom: AppTypography.sizeText,
-                  left: AppTypography.sizeText,
-                  right: AppTypography.sizeText,
-                  child: Material(
-                    color: Colors.transparent,
-                    child: TweenAnimationBuilder<double>(
-                      duration: const Duration(milliseconds: 300),
-                      tween: Tween(begin: 0.0, end: 1.0),
-                      builder: (context, value, child) {
-                        return Opacity(
-                          opacity: value,
-                          child: Transform.translate(
-                            offset: Offset(0, 20 * (1 - value)),
-                            child: child,
-                          ),
-                        );
-                      },
-                      child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 6.h),
-                        decoration: BoxDecoration(
-                          color: colors.isDark ? Colors.red.shade900 : Colors.red.shade700,
-                          borderRadius: BorderRadius.circular(12.r),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.3),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            )
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.warning_amber_rounded, color: Colors.white, size: AppTypography.sizeText),
-                            SizedBox(width: 6.w),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    controller.localErrorTitle.value,
-                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize:AppTypography.sizeText),
-                                  ),
-                                  Text(
-                                    controller.localErrorMessage.value,
-                                    style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: AppTypography.sizeText),
-                                  ),
-                                ],
-                              ),
+
+          Obx(
+            () => controller.showLocalError.value
+                ? Positioned(
+                    bottom: AppTypography.sizeText,
+                    left: AppTypography.sizeText,
+                    right: AppTypography.sizeText,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: TweenAnimationBuilder<double>(
+                        duration: const Duration(milliseconds: 300),
+                        tween: Tween(begin: 0.0, end: 1.0),
+                        builder: (context, value, child) {
+                          return Opacity(
+                            opacity: value,
+                            child: Transform.translate(
+                              offset: Offset(0, 20 * (1 - value)),
+                              child: child,
                             ),
-                            IconButton(
-                              icon: Icon(Icons.close, color: Colors.white, size: AppTypography.sizeText),
-                              onPressed: () => controller.showLocalError.value = false,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                            )
-                          ],
+                          );
+                        },
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 8.w,
+                            vertical: 6.h,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colors.isDark
+                                ? Colors.red.shade900
+                                : Colors.red.shade700,
+                            borderRadius: BorderRadius.circular(12.r),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                color: Colors.white,
+                                size: AppTypography.sizeText,
+                              ),
+                              SizedBox(width: 6.w),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      controller.localErrorTitle.value.tr,
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: AppTypography.sizeText,
+                                      ),
+                                    ),
+                                    Text(
+                                      controller.localErrorMessage.value.tr,
+                                      style: TextStyle(
+                                        color: Colors.white.withValues(alpha: 0.9),
+                                        fontSize: AppTypography.sizeText,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: Icon(
+                                  Icons.close,
+                                  color: Colors.white,
+                                  size: AppTypography.sizeText,
+                                ),
+                                onPressed: () =>
+                                    controller.showLocalError.value = false,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                )
-              : const SizedBox.shrink(),
+                  )
+                : const SizedBox.shrink(),
           ),
 
-          Obx(() => controller.isLoadingDetails.value
-              ? Container(
-            color: Colors.black.withOpacity(0.3),
-            child: const Center(
-              child: CircularProgressIndicator(),
-            ),
-          )
-              : const SizedBox.shrink(),
+          Obx(
+            () => controller.isLoadingDetails.value
+                ? Container(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    child: const Center(child: CircularProgressIndicator()),
+                  )
+                : const SizedBox.shrink(),
           ),
         ],
       ),
@@ -122,13 +139,15 @@ class MainContent extends GetView<DashboardController> {
     return Column(
       children: [
         Obx(() {
-          final currentType = orderTypeController.selectedType.value ?? AppState.orderType;
+          final currentType =
+              orderTypeController.selectedType.value ?? AppState.orderType;
           final isDineIn = currentType == OrderType.dineIn;
           final isEditing = cartController.isEditing;
 
           // Only show this bar if it's Dine In (and a table is selected) or if we are Editing an order
           if (!isDineIn && !isEditing) return const SizedBox.shrink();
-          if (isDineIn && !cartController.hasSelectedTable && !isEditing) return const SizedBox.shrink();
+          if (isDineIn && !cartController.hasSelectedTable && !isEditing)
+            return const SizedBox.shrink();
 
           return GestureDetector(
             onTap: () {
@@ -141,22 +160,24 @@ class MainContent extends GetView<DashboardController> {
               padding: EdgeInsets.symmetric(vertical: 8.h, horizontal: 16.w),
               decoration: BoxDecoration(
                 color: isEditing
-                    ? Colors.blue.withOpacity(0.1)
-                    : AppTheme.primaryGreen.withOpacity(0.1),
+                    ? Colors.blue.withValues(alpha: 0.1)
+                    : AppTheme.primaryGreen.withValues(alpha: 0.1),
                 border: Border(
                   bottom: BorderSide(
-                      color: isEditing
-                          ? Colors.blue.withOpacity(0.2)
-                          : AppTheme.primaryGreen.withOpacity(0.2)
+                    color: isEditing
+                        ? Colors.blue.withValues(alpha: 0.2)
+                        : AppTheme.primaryGreen.withValues(alpha: 0.2),
                   ),
                 ),
               ),
               child: Row(
                 children: [
                   Icon(
-                      isDineIn ? Icons.table_restaurant : Icons.shopping_bag_outlined,
-                      color: isEditing ? Colors.blue : AppTheme.primaryGreen,
-                      size: 22.sp
+                    isDineIn
+                        ? Icons.table_restaurant
+                        : Icons.shopping_bag_outlined,
+                    color: isEditing ? Colors.blue : AppTheme.primaryGreen,
+                    size: 22.sp,
                   ),
                   SizedBox(width: 12.w),
                   Expanded(
@@ -167,15 +188,24 @@ class MainContent extends GetView<DashboardController> {
                           children: [
                             if (isEditing)
                               Container(
-                                padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 6.w,
+                                  vertical: 2.h,
+                                ),
                                 margin: EdgeInsets.only(right: 8.w),
                                 decoration: BoxDecoration(
                                   color: Colors.blue,
                                   borderRadius: BorderRadius.circular(4.r),
                                 ),
                                 child: Text(
-                                  "EDITING #${cartController.editingOrderId.value}",
-                                  style: TextStyle(color: Colors.white, fontSize: 8.sp, fontWeight: FontWeight.bold),
+                                  'editing_order'.trParams({
+                                    'id': cartController.editingOrderId.value,
+                                  }),
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 8.sp,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             if (isDineIn) ...[
@@ -183,7 +213,9 @@ class MainContent extends GetView<DashboardController> {
                                 "(${cartController.selectedAreaName.value})",
                                 style: AppTypography.cardSubtitle.copyWith(
                                   fontWeight: FontWeight.bold,
-                                  color: isEditing ? Colors.blue : AppTheme.primaryGreen,
+                                  color: isEditing
+                                      ? Colors.blue
+                                      : AppTheme.primaryGreen,
                                   fontSize: 10.sp,
                                 ),
                               ),
@@ -191,7 +223,9 @@ class MainContent extends GetView<DashboardController> {
                                 ' - ${cartController.selectedTableName.value}',
                                 style: AppTypography.cardSubtitle.copyWith(
                                   fontWeight: FontWeight.bold,
-                                  color: isEditing ? Colors.blue : AppTheme.primaryGreen,
+                                  color: isEditing
+                                      ? Colors.blue
+                                      : AppTheme.primaryGreen,
                                 ),
                               ),
                             ] else if (!isEditing)
@@ -207,7 +241,7 @@ class MainContent extends GetView<DashboardController> {
                         ),
                         if (isDineIn)
                           Text(
-                            'Chair ${cartController.selectedChairCount.value}',
+                            '${'chair'.tr} ${cartController.selectedChairCount.value}',
                             style: AppTypography.cardSubtitle.copyWith(
                               fontSize: 11.sp,
                               color: colors.subtext,
@@ -219,19 +253,26 @@ class MainContent extends GetView<DashboardController> {
                   if (isEditing)
                     TextButton(
                       onPressed: () => cartController.stopEditing(),
-                      child: const Text("Cancel", style: TextStyle(color: Colors.red)),
+                      child: Text(
+                        'cancel'.tr,
+                        style: const TextStyle(color: Colors.red),
+                      ),
                     )
                   else if (isDineIn) ...[
                     Text(
-                      'Change',
+                      'change'.tr,
                       style: TextStyle(
                         color: AppTheme.primaryGreen,
                         fontSize: 12.sp,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    Icon(Icons.chevron_right, color: AppTheme.primaryGreen, size: 18.sp),
-                  ]
+                    Icon(
+                      Icons.chevron_right,
+                      color: AppTheme.primaryGreen,
+                      size: 18.sp,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -283,21 +324,33 @@ class MainContent extends GetView<DashboardController> {
               onChanged: (value) => controller.updateSearch(value),
               style: TextStyle(color: colors.text),
               decoration: InputDecoration(
-                hintText: 'Search products...',
-                hintStyle: TextStyle(color: colors.subtext, fontSize: AppTypography.smallText),
-                prefixIcon: Icon(Icons.search, color: AppTheme.primaryGreen, size: AppTypography.sizeTable),
-                suffixIcon: Obx(() => controller.searchKeyword.value.isNotEmpty
-                    ? IconButton(
-                  icon: Icon(Icons.clear, color: colors.subtext),
-                  onPressed: () {
-                    controller.searchController.clear();
-                    controller.updateSearch('');
-                  },
-                )
-                    : const SizedBox.shrink()),
+                hintText: 'search_products'.tr,
+                hintStyle: TextStyle(
+                  color: colors.subtext,
+                  fontSize: AppTypography.smallText,
+                ),
+                prefixIcon: Icon(
+                  Icons.search,
+                  color: AppTheme.primaryGreen,
+                  size: AppTypography.sizeTable,
+                ),
+                suffixIcon: Obx(
+                  () => controller.searchKeyword.value.isNotEmpty
+                      ? IconButton(
+                          icon: Icon(Icons.clear, color: colors.subtext),
+                          onPressed: () {
+                            controller.searchController.clear();
+                            controller.updateSearch('');
+                          },
+                        )
+                      : const SizedBox.shrink(),
+                ),
                 filled: true,
                 fillColor: colors.textField,
-                contentPadding: EdgeInsets.symmetric(vertical: 0, horizontal: 16.w),
+                contentPadding: EdgeInsets.symmetric(
+                  vertical: 0,
+                  horizontal: 16.w,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12.r),
                   borderSide: BorderSide.none,
@@ -308,7 +361,10 @@ class MainContent extends GetView<DashboardController> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12.r),
-                  borderSide: BorderSide(color: AppTheme.primaryGreen, width: 1),
+                  borderSide: BorderSide(
+                    color: AppTheme.primaryGreen,
+                    width: 1,
+                  ),
                 ),
               ),
             ),
@@ -330,12 +386,14 @@ class MainContent extends GetView<DashboardController> {
       decoration: BoxDecoration(
         color: AppTheme.primaryGreen.withOpacity(0.05),
         borderRadius: BorderRadius.circular(12.r),
-        border: Border.all(
-          color: AppTheme.primaryGreen.withOpacity(0.1),
-        ),
+        border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.1)),
       ),
       child: IconButton(
-        icon: Icon(Icons.refresh, color: AppTheme.primaryGreen, size: AppTypography.sizeTable),
+        icon: Icon(
+          Icons.refresh,
+          color: AppTheme.primaryGreen,
+          size: AppTypography.sizeTable,
+        ),
         onPressed: () => controller.refreshDashboard(),
         padding: EdgeInsets.zero,
       ),
@@ -354,7 +412,8 @@ class MainContent extends GetView<DashboardController> {
         );
       }
 
-      if (controller.favorites.isEmpty && !controller.isLoadingFavorites.value) {
+      if (controller.favorites.isEmpty &&
+          !controller.isLoadingFavorites.value) {
         return const SizedBox.shrink();
       }
 
@@ -376,12 +435,14 @@ class MainContent extends GetView<DashboardController> {
             dropdownColor: colors.card,
             value: controller.selectedFavoriteId.value,
             icon: Icon(
-                Icons.favorite_rounded,
-                color: controller.selectedFavoriteId.value != null ? AppTheme.primaryGreen : colors.subtext,
-                size: AppTypography.sizeText
+              Icons.favorite_rounded,
+              color: controller.selectedFavoriteId.value != null
+                  ? AppTheme.primaryGreen
+                  : colors.subtext,
+              size: AppTypography.sizeText,
             ),
             hint: Text(
-              "FAV",
+              'fav'.tr,
               style: TextStyle(
                 color: colors.subtext,
                 fontSize: AppTypography.smallText,
@@ -398,12 +459,17 @@ class MainContent extends GetView<DashboardController> {
             items: [
               DropdownMenuItem<int?>(
                 value: null,
-                child: Text("ALL", style: TextStyle(color: colors.text)),
+                child: Text('all'.tr, style: TextStyle(color: colors.text)),
               ),
-              ...controller.favorites.map<DropdownMenuItem<int?>>((FavoriteModel fav) {
+              ...controller.favorites.map<DropdownMenuItem<int?>>((
+                FavoriteModel fav,
+              ) {
                 return DropdownMenuItem<int?>(
                   value: fav.id,
-                  child: Text(fav.name.toUpperCase(), style: TextStyle(color: colors.text)),
+                  child: Text(
+                    fav.name.toUpperCase(),
+                    style: TextStyle(color: colors.text),
+                  ),
                 );
               }),
             ],
@@ -423,7 +489,8 @@ class MainContent extends GetView<DashboardController> {
         return const SizedBox.shrink();
       }
 
-      if (controller.isLoadingCategories.value && controller.categories.isEmpty) {
+      if (controller.isLoadingCategories.value &&
+          controller.categories.isEmpty) {
         return CategoryShimmer(direction: direction);
       }
 
@@ -432,32 +499,50 @@ class MainContent extends GetView<DashboardController> {
           width: isHorizontal ? double.infinity : 40.w,
           height: isHorizontal ? 45.h : double.infinity,
           color: colors.bg,
-          child: Center(child: Text("No categories", style: TextStyle(color: colors.subtext))),
+          child: Center(
+            child: Text(
+              'no_categories'.tr,
+              style: TextStyle(color: colors.subtext),
+            ),
+          ),
         );
       }
 
       return Container(
         color: colors.bg,
-        padding: EdgeInsets.symmetric(vertical: 1.h, horizontal: isHorizontal ? 10.w : 1.w),
+        padding: EdgeInsets.symmetric(
+          vertical: 1.h,
+          horizontal: isHorizontal ? 10.w : 1.w,
+        ),
         width: isHorizontal ? null : 40.w,
         height: isHorizontal ? 45.h : null,
         child: ListView.separated(
           key: ValueKey(direction), // Add key to prevent layout issues
           controller: controller.categoryScrollController,
           scrollDirection: direction,
-          itemCount: controller.categories.length + (controller.isMoreLoadingCategories.value ? 1 : 0),
-          separatorBuilder: (_, __) => isHorizontal ? SizedBox(width: 5.w) : SizedBox(height: 5.h),
+          itemCount:
+              controller.categories.length +
+              (controller.isMoreLoadingCategories.value ? 1 : 0),
+          separatorBuilder: (_, __) =>
+              isHorizontal ? SizedBox(width: 5.w) : SizedBox(height: 5.h),
           itemBuilder: (context, index) {
             if (index == controller.categories.length) {
-              return const Center(child: Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator(strokeWidth: 2)));
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              );
             }
             final category = controller.categories[index];
 
-            return Obx(() => CategoryChip(
-              label: category.name,
-              isSelected: controller.selectedCategoryId.value == category.id,
-              onTap: () => controller.selectCategory(category.id),
-            ));
+            return Obx(
+              () => CategoryChip(
+                label: category.name.tr,
+                isSelected: controller.selectedCategoryId.value == category.id,
+                onTap: () => controller.selectCategory(category.id),
+              ),
+            );
           },
         ),
       );

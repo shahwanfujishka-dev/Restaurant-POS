@@ -17,9 +17,7 @@ class LocalHubNetwork {
         debugPrint('Interface: ${interface.name}');
 
         for (final address in interface.addresses) {
-          debugPrint(
-            '  Address: ${address.address}',
-          );
+          debugPrint('  Address: ${address.address}');
         }
       }
 
@@ -53,9 +51,7 @@ class LocalHubNetwork {
 
       return null;
     } catch (e) {
-      debugPrint(
-        'LOCAL HUB NETWORK ERROR: $e',
-      );
+      debugPrint('LOCAL HUB NETWORK ERROR: $e');
 
       return null;
     }
@@ -68,9 +64,7 @@ class LocalHubNetwork {
       return false;
     }
 
-    final numbers = parts
-        .map(int.tryParse)
-        .toList();
+    final numbers = parts.map(int.tryParse).toList();
 
     if (numbers.any((e) => e == null)) {
       return false;

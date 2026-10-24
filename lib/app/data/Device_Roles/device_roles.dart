@@ -2,15 +2,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:get_storage/get_storage.dart';
 
-enum DeviceRole {
-  server,
-  client,
-}
+enum DeviceRole { server, client }
 
-enum OperationMode {
-  online,
-  local,
-}
+enum OperationMode { online, local }
 
 class DeviceConfig {
   static final GetStorage _storage = GetStorage();
@@ -40,12 +34,11 @@ class DeviceConfig {
   // ROLE (Automatically determined by Platform)
   // ============================================================
 
-
   static DeviceRole get role {
     final stored = _storage.read<String>(_deviceRoleKey);
     if (stored != null) {
       return DeviceRole.values.firstWhere(
-            (r) => r.name == stored,
+        (r) => r.name == stored,
         orElse: () => _defaultRoleForPlatform,
       );
     }
@@ -74,23 +67,18 @@ class DeviceConfig {
     final value = _storage.read<String>(_operationModeKey);
 
     return OperationMode.values.firstWhere(
-          (mode) => mode.name == value,
+      (mode) => mode.name == value,
       orElse: () => OperationMode.online,
     );
   }
 
   static Future<void> setOperationMode(OperationMode value) async {
-    await _storage.write(
-      _operationModeKey,
-      value.name,
-    );
+    await _storage.write(_operationModeKey, value.name);
   }
 
-  static bool get isOnline =>
-      operationMode == OperationMode.online;
+  static bool get isOnline => operationMode == OperationMode.online;
 
-  static bool get isLocal =>
-      operationMode == OperationMode.local;
+  static bool get isLocal => operationMode == OperationMode.local;
 
   // ============================================================
   // HOST IP
@@ -106,10 +94,7 @@ class DeviceConfig {
       return;
     }
 
-    await _storage.write(
-      _hostIpKey,
-      value.trim(),
-    );
+    await _storage.write(_hostIpKey, value.trim());
   }
 
   // ============================================================
@@ -121,10 +106,7 @@ class DeviceConfig {
   }
 
   static Future<void> setHostPort(int value) async {
-    await _storage.write(
-      _hostPortKey,
-      value,
-    );
+    await _storage.write(_hostPortKey, value);
   }
 
   // ============================================================
@@ -136,10 +118,7 @@ class DeviceConfig {
   }
 
   static Future<void> setDeviceId(String value) async {
-    await _storage.write(
-      _deviceIdKey,
-      value.trim(),
-    );
+    await _storage.write(_deviceIdKey, value.trim());
   }
 
   // ============================================================
@@ -150,14 +129,10 @@ class DeviceConfig {
     return _storage.read<String>(_authTokenKey) ?? '';
   }
 
-  static bool get hasAuthToken =>
-      authToken.trim().isNotEmpty;
+  static bool get hasAuthToken => authToken.trim().isNotEmpty;
 
   static Future<void> setAuthToken(String value) async {
-    await _storage.write(
-      _authTokenKey,
-      value,
-    );
+    await _storage.write(_authTokenKey, value);
   }
 
   static Future<void> clearAuthToken() async {

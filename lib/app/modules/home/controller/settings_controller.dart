@@ -119,10 +119,9 @@ class SettingsController extends GetxController {
       return false;
     }
     try {
-      await LocalHubClient.instance.testConnection(
-        hostIp: ip,
-        port: hostPort.value,
-      ).timeout(const Duration(seconds: 3));
+      await LocalHubClient.instance
+          .testConnection(hostIp: ip, port: hostPort.value)
+          .timeout(const Duration(seconds: 3));
       isHubConnected.value = true;
       return true;
     } catch (_) {
@@ -175,13 +174,19 @@ class SettingsController extends GetxController {
           title: const Text("Switch to Online Mode?"),
           content: Text(
             "${connectedDevices.length} device(s) are currently connected to this host. "
-                "Switching to Online Mode will stop the local server and disconnect them immediately.",
+            "Switching to Online Mode will stop the local server and disconnect them immediately.",
           ),
           actions: [
-            TextButton(onPressed: () => Get.back(result: false), child: const Text("Cancel")),
+            TextButton(
+              onPressed: () => Get.back(result: false),
+              child: const Text("Cancel"),
+            ),
             TextButton(
               onPressed: () => Get.back(result: true),
-              child: const Text("Switch Anyway", style: TextStyle(color: Colors.red)),
+              child: const Text(
+                "Switch Anyway",
+                style: TextStyle(color: Colors.red),
+              ),
             ),
           ],
         ),
@@ -220,19 +225,28 @@ class SettingsController extends GetxController {
     const int chunkSize = 32;
     for (int start = 1; start <= 254; start += chunkSize) {
       final end = math.min(start + chunkSize - 1, 254);
-      final candidates = [for (int i = start; i <= end; i++) if ('$prefix.$i' != myIp) '$prefix.$i'];
-      final results = await Future.wait(candidates.map((ip) async {
-        try {
-          final status = await LocalHubClient.instance
-              .testConnection(hostIp: ip, port: port)
-              .timeout(const Duration(milliseconds: 350));
-          return MapEntry(ip, status);
-        } catch (_) { return null; }
-      }));
+      final candidates = [
+        for (int i = start; i <= end; i++)
+          if ('$prefix.$i' != myIp) '$prefix.$i',
+      ];
+      final results = await Future.wait(
+        candidates.map((ip) async {
+          try {
+            final status = await LocalHubClient.instance
+                .testConnection(hostIp: ip, port: port)
+                .timeout(const Duration(milliseconds: 350));
+            return MapEntry(ip, status);
+          } catch (_) {
+            return null;
+          }
+        }),
+      );
       for (final entry in results) {
         if (entry == null) continue;
         final respondingId = entry.value['hostDeviceId']?.toString();
-        if (respondingId != null && respondingId.isNotEmpty && respondingId != myDeviceId) {
+        if (respondingId != null &&
+            respondingId.isNotEmpty &&
+            respondingId != myDeviceId) {
           return {'ip': entry.key, 'deviceId': respondingId};
         }
       }
@@ -253,15 +267,24 @@ class SettingsController extends GetxController {
               .testConnection(hostIp: knownPeerIp, port: hostPort.value)
               .timeout(const Duration(seconds: 2));
           final respondingId = status['hostDeviceId']?.toString();
-          if (respondingId != null && respondingId.isNotEmpty && respondingId != myDeviceId) conflictIp = knownPeerIp;
+          if (respondingId != null &&
+              respondingId.isNotEmpty &&
+              respondingId != myDeviceId)
+            conflictIp = knownPeerIp;
         } catch (_) {}
       }
       if (conflictIp == null) {
-        final scanResult = await _scanSubnetForHost(myDeviceId: myDeviceId, port: hostPort.value);
+        final scanResult = await _scanSubnetForHost(
+          myDeviceId: myDeviceId,
+          port: hostPort.value,
+        );
         if (scanResult != null) conflictIp = scanResult['ip'];
       }
       if (conflictIp != null) {
-        Get.snackbar('Host Already Running', 'Another device is already acting as the Main Cashier at $conflictIp on this network. Only one host is allowed.');
+        Get.snackbar(
+          'Host Already Running',
+          'Another device is already acting as the Main Cashier at $conflictIp on this network. Only one host is allowed.',
+        );
         return;
       }
       await DeviceConfig.setRole(DeviceRole.server);
@@ -271,7 +294,11 @@ class SettingsController extends GetxController {
         _startConnectedDevicesPolling();
       }
       _refreshControllers();
-      Get.snackbar('Host Mode Enabled', 'This device is now the Main Cashier.', snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'Host Mode Enabled',
+        'This device is now the Main Cashier.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
     } finally {
       isChangingRole.value = false;
     }
@@ -283,10 +310,21 @@ class SettingsController extends GetxController {
       final confirm = await Get.dialog<bool>(
         AlertDialog(
           title: const Text("Switch to Client?"),
-          content: Text("${connectedDevices.length} device(s) are currently connected to this host. Switching roles will disconnect them immediately."),
+          content: Text(
+            "${connectedDevices.length} device(s) are currently connected to this host. Switching roles will disconnect them immediately.",
+          ),
           actions: [
-            TextButton(onPressed: () => Get.back(result: false), child: const Text("Cancel")),
-            TextButton(onPressed: () => Get.back(result: true), child: const Text("Switch Anyway", style: TextStyle(color: Colors.red))),
+            TextButton(
+              onPressed: () => Get.back(result: false),
+              child: const Text("Cancel"),
+            ),
+            TextButton(
+              onPressed: () => Get.back(result: true),
+              child: const Text(
+                "Switch Anyway",
+                style: TextStyle(color: Colors.red),
+              ),
+            ),
           ],
         ),
       );
@@ -304,7 +342,11 @@ class SettingsController extends GetxController {
       deviceRoleRx.value = DeviceRole.client;
       if (isLocalMode) toggleBackgroundSync(false);
       _refreshControllers();
-      Get.snackbar('Client Mode Enabled', 'Enter the Main Cashier IP below to connect.', snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'Client Mode Enabled',
+        'Enter the Main Cashier IP below to connect.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
     } finally {
       isChangingRole.value = false;
     }
@@ -316,15 +358,24 @@ class SettingsController extends GetxController {
       final String? probeIp = await LocalHubNetwork.getLocalIp();
       if (probeIp != null) {
         try {
-          final status = await LocalHubClient.instance.testConnection(hostIp: probeIp, port: hostPort.value);
+          final status = await LocalHubClient.instance.testConnection(
+            hostIp: probeIp,
+            port: hostPort.value,
+          );
           final String? respondingDeviceId = status['hostDeviceId']?.toString();
-          if (respondingDeviceId != null && respondingDeviceId.isNotEmpty && respondingDeviceId != myDeviceId) {
-            Get.snackbar('Host Already Running', 'Another device is already acting as the Main Cashier on this network ($probeIp). Only one host is allowed.');
+          if (respondingDeviceId != null &&
+              respondingDeviceId.isNotEmpty &&
+              respondingDeviceId != myDeviceId) {
+            Get.snackbar(
+              'Host Already Running',
+              'Another device is already acting as the Main Cashier on this network ($probeIp). Only one host is allowed.',
+            );
             return;
           }
         } catch (_) {}
       }
-      if (!LocalHubServer.instance.isRunning) await LocalHubServer.instance.start();
+      if (!LocalHubServer.instance.isRunning)
+        await LocalHubServer.instance.start();
       isHubServerRunning.value = true;
       final ip = LocalHubServer.instance.hostAddress;
       if (ip != null) {
@@ -354,16 +405,28 @@ class SettingsController extends GetxController {
   Future<void> testHubConnection() async {
     final ip = hostIp.value?.trim();
     if (ip == null || ip.isEmpty) {
-      Get.snackbar('Host IP Required', 'Please enter the IP of the Main Cashier.', snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'Host IP Required',
+        'Please enter the IP of the Main Cashier.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
       return;
     }
     try {
       isTestingHubConnection.value = true;
-      await LocalHubClient.instance.testConnection(hostIp: ip, port: hostPort.value);
+      await LocalHubClient.instance.testConnection(
+        hostIp: ip,
+        port: hostPort.value,
+      );
       final currentDeviceId = await _getOrCreateDeviceId();
       final registration = await LocalHubClient.instance.registerDevice(
-        hostIp: ip, port: hostPort.value, deviceName: '${DeviceConfig.isDesktop ? "Desktop" : "Mobile"} Client',
-        role: 'client', deviceId: currentDeviceId, userId: AppState.userId?.toString(), userName: AppState.username,
+        hostIp: ip,
+        port: hostPort.value,
+        deviceName: '${DeviceConfig.isDesktop ? "Desktop" : "Mobile"} Client',
+        role: 'client',
+        deviceId: currentDeviceId,
+        userId: AppState.userId?.toString(),
+        userName: AppState.username,
       );
       final token = registration['data']?['authToken']?.toString() ?? '';
       if (token.isNotEmpty) {
@@ -371,21 +434,33 @@ class SettingsController extends GetxController {
         isHubConnected.value = true;
         Get.find<SyncService>().syncPendingHubOrders();
         _refreshControllers();
-        if (Get.isRegistered<PrinterController>()) Get.find<PrinterController>().syncPrinterAssignmentsFromHub();
-        Get.snackbar('Success', 'Connected to Main Cashier', snackPosition: SnackPosition.BOTTOM);
+        if (Get.isRegistered<PrinterController>())
+          Get.find<PrinterController>().syncPrinterAssignmentsFromHub();
+        Get.snackbar(
+          'Success',
+          'Connected to Main Cashier',
+          snackPosition: SnackPosition.BOTTOM,
+        );
       }
     } catch (e) {
       isHubConnected.value = false;
-      Get.snackbar('Connection Failed', 'Could not reach Main Cashier.', snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'Connection Failed',
+        'Could not reach Main Cashier.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
     } finally {
       isTestingHubConnection.value = false;
     }
   }
 
   void _refreshControllers() {
-    if (Get.isRegistered<DashboardController>()) Get.find<DashboardController>().refreshDashboardData();
-    if (Get.isRegistered<TablesController>()) Get.find<TablesController>().fetchTables();
-    if (Get.isRegistered<OrdersController>()) Get.find<OrdersController>().fetchOrders();
+    if (Get.isRegistered<DashboardController>())
+      Get.find<DashboardController>().refreshDashboardData();
+    if (Get.isRegistered<TablesController>())
+      Get.find<TablesController>().fetchTables();
+    if (Get.isRegistered<OrdersController>())
+      Get.find<OrdersController>().fetchOrders();
   }
 
   Future<String> _getOrCreateDeviceId() async {
@@ -413,24 +488,38 @@ class SettingsController extends GetxController {
     try {
       await _syncService.syncMasterData();
       _refreshControllers();
-      Get.snackbar('Success', 'Data synced successfully', snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'Success',
+        'Data synced successfully',
+        snackPosition: SnackPosition.BOTTOM,
+      );
     } catch (e) {
-      Get.snackbar('Error', 'Failed to sync data: $e', snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'Error',
+        'Failed to sync data: $e',
+        snackPosition: SnackPosition.BOTTOM,
+      );
     }
   }
 
   Future<void> refreshPendingCount() async {
     // 🔥 Fix: Use distinct UUID count so an order + payment count as 1 item
-    pendingCount.value = await DatabaseHelper.instance.getDistinctUnsyncedCount();
+    pendingCount.value = await DatabaseHelper.instance
+        .getDistinctUnsyncedCount();
   }
 
   Future<void> syncOrdersToLive() async {
     if (isLocalMode && isClient) return;
     if (isSyncingOrders.value) return;
     try {
-      final result = await InternetAddress.lookup('google.com').timeout(const Duration(seconds: 5));
+      final result = await InternetAddress.lookup(
+        'google.com',
+      ).timeout(const Duration(seconds: 5));
       if (result.isEmpty || result[0].rawAddress.isEmpty) {
-        showSafeSnackbar("No Internet", "Please check your network connection.");
+        showSafeSnackbar(
+          "No Internet",
+          "Please check your network connection.",
+        );
         return;
       }
     } catch (_) {
@@ -438,7 +527,10 @@ class SettingsController extends GetxController {
       return;
     }
     if (_syncService.isSyncing.value) {
-      showSafeSnackbar("Sync In Progress", "Orders are already syncing. Please wait.");
+      showSafeSnackbar(
+        "Sync In Progress",
+        "Orders are already syncing. Please wait.",
+      );
       return;
     }
     isSyncingOrders.value = true;
@@ -447,9 +539,15 @@ class SettingsController extends GetxController {
       await refreshPendingCount();
       _refreshControllers();
       if (pendingCount.value == 0) {
-        showSafeSnackbar("Sync Complete", "All data has been synced to the live server.");
+        showSafeSnackbar(
+          "Sync Complete",
+          "All data has been synced to the live server.",
+        );
       } else {
-        showSafeSnackbar("Sync Partial", "Some items could not be synced. Check logs for details.");
+        showSafeSnackbar(
+          "Sync Partial",
+          "Some items could not be synced. Check logs for details.",
+        );
       }
     } catch (e) {
       showSafeSnackbar("Sync Error", "An error occurred: $e");

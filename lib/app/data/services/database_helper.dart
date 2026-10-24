@@ -51,21 +51,25 @@ class DatabaseHelper {
   }
 
   Future<void> _ensureOrderColumns(Database db) async {
-    final cols = (await db.rawQuery('PRAGMA table_info(orders)'))
-        .map((c) => c['name'].toString())
-        .toSet();
+    final cols = (await db.rawQuery(
+      'PRAGMA table_info(orders)',
+    )).map((c) => c['name'].toString()).toSet();
     if (!cols.contains('create_payload')) {
       await db.execute('ALTER TABLE orders ADD COLUMN create_payload TEXT');
     }
     if (!cols.contains('hub_synced')) {
-      await db.execute('ALTER TABLE orders ADD COLUMN hub_synced INTEGER DEFAULT 1');
+      await db.execute(
+        'ALTER TABLE orders ADD COLUMN hub_synced INTEGER DEFAULT 1',
+      );
     }
     if (!cols.contains('updated_at')) {
       await db.execute('ALTER TABLE orders ADD COLUMN updated_at TEXT');
     }
   }
 
-  Future<void> mergeTokenPrinterAssignments(List<Map<String, dynamic>> assignments) async {
+  Future<void> mergeTokenPrinterAssignments(
+    List<Map<String, dynamic>> assignments,
+  ) async {
     if (assignments.isEmpty) return;
     final db = await instance.database;
     await db.transaction((txn) async {
@@ -73,12 +77,16 @@ class DatabaseHelper {
       for (var a in assignments) {
         final addr = a['printer_address']?.toString() ?? '';
         if (addr.isEmpty) continue; // don't overwrite with a blank assignment
-        batch.insert('token_printer_assignments', {
-          'token_printer_id': _toInt(a['token_printer_id']),
-          'printer_address': addr,
-          'printer_name': a['printer_name']?.toString() ?? '',
-          'printer_type': a['printer_type']?.toString() ?? '',
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        batch.insert(
+          'token_printer_assignments',
+          {
+            'token_printer_id': _toInt(a['token_printer_id']),
+            'printer_address': addr,
+            'printer_name': a['printer_name']?.toString() ?? '',
+            'printer_type': a['printer_type']?.toString() ?? '',
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
       await batch.commit(noResult: true);
     });
@@ -151,10 +159,16 @@ class DatabaseHelper {
       ''');
     }
     if (oldVersion < 6) {
-      await db.execute('ALTER TABLE bulk_product_units ADD COLUMN unit_name TEXT');
-      await db.execute('ALTER TABLE bulk_product_units ADD COLUMN unit_display TEXT');
+      await db.execute(
+        'ALTER TABLE bulk_product_units ADD COLUMN unit_name TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE bulk_product_units ADD COLUMN unit_display TEXT',
+      );
       await db.execute('ALTER TABLE bulk_product_units ADD COLUMN rate REAL');
-      await db.execute('ALTER TABLE bulk_product_units ADD COLUMN unit_base_qty REAL');
+      await db.execute(
+        'ALTER TABLE bulk_product_units ADD COLUMN unit_base_qty REAL',
+      );
     }
     if (oldVersion < 7) {
       await db.execute('''
@@ -213,9 +227,15 @@ class DatabaseHelper {
     }
     if (oldVersion < 12) {
       try {
-        await db.execute('ALTER TABLE payments ADD COLUMN cash_ledger_id INTEGER');
-        await db.execute('ALTER TABLE payments ADD COLUMN bank_ledger_id INTEGER');
-        await db.execute('ALTER TABLE payments ADD COLUMN discount_amount REAL');
+        await db.execute(
+          'ALTER TABLE payments ADD COLUMN cash_ledger_id INTEGER',
+        );
+        await db.execute(
+          'ALTER TABLE payments ADD COLUMN bank_ledger_id INTEGER',
+        );
+        await db.execute(
+          'ALTER TABLE payments ADD COLUMN discount_amount REAL',
+        );
       } catch (e) {}
     }
     if (oldVersion < 13) {
@@ -247,7 +267,9 @@ class DatabaseHelper {
     }
     if (oldVersion < 16) {
       try {
-        await db.execute('ALTER TABLE products ADD COLUMN is_veg INTEGER DEFAULT 0');
+        await db.execute(
+          'ALTER TABLE products ADD COLUMN is_veg INTEGER DEFAULT 0',
+        );
       } catch (e) {}
     }
     if (oldVersion < 17) {
@@ -262,17 +284,23 @@ class DatabaseHelper {
     }
     if (oldVersion < 19) {
       try {
-        await db.execute('ALTER TABLE products ADD COLUMN cat_token_printer INTEGER DEFAULT 0');
+        await db.execute(
+          'ALTER TABLE products ADD COLUMN cat_token_printer INTEGER DEFAULT 0',
+        );
       } catch (e) {}
     }
     if (oldVersion < 20) {
       try {
-        await db.execute('ALTER TABLE orders ADD COLUMN created_by_device_id TEXT');
+        await db.execute(
+          'ALTER TABLE orders ADD COLUMN created_by_device_id TEXT',
+        );
       } catch (e) {}
     }
     if (oldVersion < 21) {
       try {
-        await db.execute('ALTER TABLE orders ADD COLUMN hub_synced INTEGER DEFAULT 1');
+        await db.execute(
+          'ALTER TABLE orders ADD COLUMN hub_synced INTEGER DEFAULT 1',
+        );
       } catch (e) {}
     }
     if (oldVersion < 22) {
@@ -281,7 +309,9 @@ class DatabaseHelper {
       } catch (e) {}
     }
     if (oldVersion < 23) {
-      try { await db.execute('ALTER TABLE orders ADD COLUMN updated_at TEXT'); } catch (e) {}
+      try {
+        await db.execute('ALTER TABLE orders ADD COLUMN updated_at TEXT');
+      } catch (e) {}
     }
   }
 
@@ -542,18 +572,28 @@ CREATE TABLE orders (
   // --- App Settings ---
   Future<void> saveSetting(String key, String value) async {
     final db = await instance.database;
-    await db.insert('app_settings', {'key': key, 'value': value}, conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert('app_settings', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<String?> getSetting(String key) async {
     final db = await instance.database;
-    final List<Map<String, dynamic>> maps = await db.query('app_settings', where: 'key = ?', whereArgs: [key]);
+    final List<Map<String, dynamic>> maps = await db.query(
+      'app_settings',
+      where: 'key = ?',
+      whereArgs: [key],
+    );
     if (maps.isNotEmpty) return maps.first['value'] as String;
     return null;
   }
 
   // --- Ledgers (Cash/Bank Accounts) ---
-  Future<void> insertLedgers(List<Map<String, dynamic>> ledgers, String type) async {
+  Future<void> insertLedgers(
+    List<Map<String, dynamic>> ledgers,
+    String type,
+  ) async {
     final db = await instance.database;
     await db.transaction((txn) async {
       // Clear existing ledgers of this type before inserting fresh ones
@@ -608,7 +648,10 @@ CREATE TABLE orders (
           'name': customer['name'],
           'mobile': customer['mobile'],
           'vat_no': customer['vat_no'],
-          'address': customer['cust_home_addr'] ?? customer['dflt_delvry_addr'] ?? customer['address'],
+          'address':
+              customer['cust_home_addr'] ??
+              customer['dflt_delvry_addr'] ??
+              customer['address'],
           'email': customer['email'],
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
@@ -637,12 +680,17 @@ CREATE TABLE orders (
         'ledger_id': customer['ledger_id'] ?? 0,
       }, conflictAlgorithm: ConflictAlgorithm.ignore);
     } else {
-      await db.update('customers', {
-        'name': customer['name'],
-        'address': customer['address'],
-        'vat_no': customer['vat_no'],
-        'ledger_id': customer['ledger_id'] ?? existing.first['ledger_id'],
-      }, where: 'mobile = ?', whereArgs: [mobile]);
+      await db.update(
+        'customers',
+        {
+          'name': customer['name'],
+          'address': customer['address'],
+          'vat_no': customer['vat_no'],
+          'ledger_id': customer['ledger_id'] ?? existing.first['ledger_id'],
+        },
+        where: 'mobile = ?',
+        whereArgs: [mobile],
+      );
     }
   }
 
@@ -653,7 +701,12 @@ CREATE TABLE orders (
 
   Future<List<Map<String, dynamic>>> searchCustomers(String query) async {
     final db = await instance.database;
-    return await db.query('customers', where: 'name LIKE ? OR mobile LIKE ?', whereArgs: ['%$query%', '%$query%'], orderBy: 'name ASC');
+    return await db.query(
+      'customers',
+      where: 'name LIKE ? OR mobile LIKE ?',
+      whereArgs: ['%$query%', '%$query%'],
+      orderBy: 'name ASC',
+    );
   }
 
   // --- Payments ---
@@ -664,22 +717,47 @@ CREATE TABLE orders (
 
   Future<List<Map<String, dynamic>>> getUnsyncedPayments() async {
     final db = await instance.database;
-    return await db.query('payments', where: 'is_synced = ?', whereArgs: [0], orderBy: 'id ASC');
+    return await db.query(
+      'payments',
+      where: 'is_synced = ?',
+      whereArgs: [0],
+      orderBy: 'id ASC',
+    );
   }
 
   Future<void> updatePaymentSyncStatus(int id, int isSynced) async {
     final db = await instance.database;
-    await db.update('payments', {'is_synced': isSynced}, where: 'id = ?', whereArgs: [id]);
+    await db.update(
+      'payments',
+      {'is_synced': isSynced},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
-  Future<void> insertOrder(Map<String, dynamic> order, List<Map<String, dynamic>> items) async {
+  Future<void> insertOrder(
+    Map<String, dynamic> order,
+    List<Map<String, dynamic>> items,
+  ) async {
     final db = await instance.database;
     await db.transaction((txn) async {
-      await txn.insert('orders', order, conflictAlgorithm: ConflictAlgorithm.replace);
+      await txn.insert(
+        'orders',
+        order,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
       final String uuid = order['uuid'];
-      await txn.delete('order_items', where: 'order_uuid = ?', whereArgs: [uuid]);
+      await txn.delete(
+        'order_items',
+        where: 'order_uuid = ?',
+        whereArgs: [uuid],
+      );
       for (var item in items) {
-        await txn.insert('order_items', item, conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.insert(
+          'order_items',
+          item,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
     });
   }
@@ -695,13 +773,17 @@ CREATE TABLE orders (
 
   Future<int> getUnsyncedOrdersCount() async {
     final db = await instance.database;
-    final result = await db.rawQuery('SELECT COUNT(*) as count FROM orders WHERE is_synced = 0');
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM orders WHERE is_synced = 0',
+    );
     return Sqflite.firstIntValue(result) ?? 0;
   }
 
   Future<int> getUnsyncedPaymentsCount() async {
     final db = await instance.database;
-    final result = await db.rawQuery('SELECT COUNT(*) as count FROM payments WHERE is_synced = 0');
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM payments WHERE is_synced = 0',
+    );
     return Sqflite.firstIntValue(result) ?? 0;
   }
 
@@ -722,15 +804,27 @@ CREATE TABLE orders (
     return await db.query('orders', orderBy: 'created_at DESC');
   }
 
-  Future<List<Map<String, dynamic>>> getOrdersByStatus(List<String> statuses) async {
+  Future<List<Map<String, dynamic>>> getOrdersByStatus(
+    List<String> statuses,
+  ) async {
     final db = await instance.database;
-    final String statusPlaceholder = List.filled(statuses.length, '?').join(',');
-    return await db.rawQuery('SELECT * FROM orders WHERE status IN ($statusPlaceholder) ORDER BY created_at DESC', statuses);
+    final String statusPlaceholder = List.filled(
+      statuses.length,
+      '?',
+    ).join(',');
+    return await db.rawQuery(
+      'SELECT * FROM orders WHERE status IN ($statusPlaceholder) ORDER BY created_at DESC',
+      statuses,
+    );
   }
 
   Future<List<Map<String, dynamic>>> getOrderItemsByUuid(String uuid) async {
     final db = await instance.database;
-    return await db.query('order_items', where: 'order_uuid = ?', whereArgs: [uuid]);
+    return await db.query(
+      'order_items',
+      where: 'order_uuid = ?',
+      whereArgs: [uuid],
+    );
   }
 
   Future<List<Map<String, dynamic>>> getOrdersPendingHubSync() async {
@@ -744,10 +838,24 @@ CREATE TABLE orders (
 
   Future<void> markOrderHubSynced(String uuid) async {
     final db = await instance.database;
-    await db.update('orders', {'hub_synced': 1}, where: 'uuid = ?', whereArgs: [uuid]);
+    await db.update(
+      'orders',
+      {'hub_synced': 1},
+      where: 'uuid = ?',
+      whereArgs: [uuid],
+    );
   }
 
-  Future<int> updateOrderStatusByServerId(String serverId, String status, {int? isSynced, double? total, double? tax, String? payload, String? invNo, String? branchInv}) async {
+  Future<int> updateOrderStatusByServerId(
+    String serverId,
+    String status, {
+    int? isSynced,
+    double? total,
+    double? tax,
+    String? payload,
+    String? invNo,
+    String? branchInv,
+  }) async {
     final db = await instance.database;
     final Map<String, dynamic> values = {'status': status};
     if (isSynced != null) values['is_synced'] = isSynced;
@@ -755,25 +863,45 @@ CREATE TABLE orders (
     if (tax != null) values['total_tax'] = tax;
     if (payload != null) values['payload'] = payload;
     if (invNo != null) values['inv_no'] = invNo;
-    if (branchInv != null && branchInv.trim().isNotEmpty) values['branch_inv'] = branchInv;
+    if (branchInv != null && branchInv.trim().isNotEmpty)
+      values['branch_inv'] = branchInv;
 
-    int count = await db.update('orders', values, where: 'server_id = ?', whereArgs: [serverId]);
+    int count = await db.update(
+      'orders',
+      values,
+      where: 'server_id = ?',
+      whereArgs: [serverId],
+    );
     if (count == 0) {
-      count = await db.update('orders', values, where: 'uuid = ?', whereArgs: [serverId]);
+      count = await db.update(
+        'orders',
+        values,
+        where: 'uuid = ?',
+        whereArgs: [serverId],
+      );
     }
     return count;
   }
 
-  Future<void> cacheServerOrders(List<dynamic> serverOrders, {bool isSold = false}) async {
+  Future<void> cacheServerOrders(
+    List<dynamic> serverOrders, {
+    bool isSold = false,
+  }) async {
     final db = await instance.database;
     await db.transaction((txn) async {
       for (var json in serverOrders) {
         final serverId = (json['sales_odr_id'] ?? '').toString();
         if (serverId.isEmpty) continue;
         final invNo = (json['sales_odr_inv_no'] ?? '').toString();
-        final branchInv = (json['sales_odr_branch_inv'] ?? json['sales_branch_inv'] ?? json['sales_odr_sales_branch_inv'] ?? '').toString();
+        final branchInv =
+            (json['sales_odr_branch_inv'] ??
+                    json['sales_branch_inv'] ??
+                    json['sales_odr_sales_branch_inv'] ??
+                    '')
+                .toString();
 
-        int posStatus = (json['sales_odr_pos_status'] as num? ?? (isSold ? 3 : 1)).toInt();
+        int posStatus =
+            (json['sales_odr_pos_status'] as num? ?? (isSold ? 3 : 1)).toInt();
         String status = 'pending';
         if (posStatus == 0) status = 'draft';
         if (posStatus == 2) status = 'billed';
@@ -786,9 +914,18 @@ CREATE TABLE orders (
           if (branchInv.isNotEmpty) 'branch_inv': branchInv,
           'order_type_id': (json['sales_odr_order_type'] as num? ?? 0).toInt(),
           'table_id': (json['sales_odr_table_id'] ?? 0).toString(),
-          'customer_name': json['sales_odr_table_name']?.toString() ?? json['ledger_name']?.toString() ?? 'N/A',
-          'total_amount': _toDouble(json['sales_odr_total'] ?? json['tot_amount'] ?? json['total_amount']),
-          'total_tax': _toDouble(json['sales_odr_tax'] ?? json['tot_tax'] ?? json['total_tax']),
+          'customer_name':
+              json['sales_odr_table_name']?.toString() ??
+              json['ledger_name']?.toString() ??
+              'N/A',
+          'total_amount': _toDouble(
+            json['sales_odr_total'] ??
+                json['tot_amount'] ??
+                json['total_amount'],
+          ),
+          'total_tax': _toDouble(
+            json['sales_odr_tax'] ?? json['tot_tax'] ?? json['total_tax'],
+          ),
           'status': status,
           'is_synced': 1,
         };
@@ -802,13 +939,22 @@ CREATE TABLE orders (
         );
 
         if (existing.isNotEmpty) {
-          if ((existing.first['is_synced'] as int? ?? 0) == 0) continue; // local edits win
-          await txn.update('orders', values, where: 'uuid = ?', whereArgs: [existing.first['uuid']]);
+          if ((existing.first['is_synced'] as int? ?? 0) == 0)
+            continue; // local edits win
+          await txn.update(
+            'orders',
+            values,
+            where: 'uuid = ?',
+            whereArgs: [existing.first['uuid']],
+          );
         } else {
           await txn.insert('orders', {
             ...values,
             'uuid': serverId,
-            'created_at': DateTime.tryParse(json['sales_odr_datetime'] ?? '')?.toIso8601String() ??
+            'created_at':
+                DateTime.tryParse(
+                  json['sales_odr_datetime'] ?? '',
+                )?.toIso8601String() ??
                 DateTime.now().toIso8601String(),
           }, conflictAlgorithm: ConflictAlgorithm.replace);
         }
@@ -830,9 +976,11 @@ CREATE TABLE orders (
   /// Remove synced, still-open orders that the server no longer lists (paid or cancelled elsewhere).
   Future<void> pruneSyncedActiveOrders(Set<String> liveServerIds) async {
     final db = await instance.database;
-    final rows = await db.query('orders',
-        columns: ['uuid', 'server_id'],
-        where: "is_synced = 1 AND status NOT IN ('paid','cancelled')");
+    final rows = await db.query(
+      'orders',
+      columns: ['uuid', 'server_id'],
+      where: "is_synced = 1 AND status NOT IN ('paid','cancelled')",
+    );
     for (final r in rows) {
       final sid = r['server_id']?.toString() ?? '';
       if (sid.isNotEmpty && !liveServerIds.contains(sid)) {
@@ -840,27 +988,53 @@ CREATE TABLE orders (
       }
     }
   }
-  Future<void> updateOrderStatusByUuid(String uuid, String status, {int? isSynced, String? serverId, String? invNo, String? branchInv, String? payload, double? total, double? tax}) async {
+
+  Future<void> updateOrderStatusByUuid(
+    String uuid,
+    String status, {
+    int? isSynced,
+    String? serverId,
+    String? invNo,
+    String? branchInv,
+    String? payload,
+    double? total,
+    double? tax,
+  }) async {
     final db = await instance.database;
     final Map<String, dynamic> values = {'status': status};
     if (isSynced != null) values['is_synced'] = isSynced;
     if (serverId != null) values['server_id'] = serverId;
     if (invNo != null) values['inv_no'] = invNo;
-    if (branchInv != null && branchInv.trim().isNotEmpty) values['branch_inv'] = branchInv;
+    if (branchInv != null && branchInv.trim().isNotEmpty)
+      values['branch_inv'] = branchInv;
     if (payload != null) values['payload'] = payload;
     if (total != null) values['total_amount'] = total;
     if (tax != null) values['total_tax'] = tax;
 
-    int count = await db.update('orders', values, where: 'uuid = ?', whereArgs: [uuid]);
+    int count = await db.update(
+      'orders',
+      values,
+      where: 'uuid = ?',
+      whereArgs: [uuid],
+    );
     if (count == 0) {
-      count = await db.update('orders', values, where: 'server_id = ?', whereArgs: [uuid]);
+      count = await db.update(
+        'orders',
+        values,
+        where: 'server_id = ?',
+        whereArgs: [uuid],
+      );
     }
   }
 
-  Future<void> saveOrderOffline(Map<String, dynamic> orderValues, List<Map<String, dynamic>> itemValues) async {
+  Future<void> saveOrderOffline(
+    Map<String, dynamic> orderValues,
+    List<Map<String, dynamic>> itemValues,
+  ) async {
     final db = await instance.database;
     await db.transaction((txn) async {
-      final String id = (orderValues['server_id'] ?? orderValues['uuid']).toString();
+      final String id = (orderValues['server_id'] ?? orderValues['uuid'])
+          .toString();
       final nowIso = DateTime.now().toIso8601String();
 
       // Try to find existing record to get its real UUID
@@ -875,18 +1049,32 @@ CREATE TABLE orders (
       String targetUuid;
       if (existing.isNotEmpty) {
         targetUuid = existing.first['uuid'];
-        orderValues.remove('created_at');      // keep creation time
-        orderValues['updated_at'] = nowIso;    // every edit/settle moves it to "latest"
-        await txn.update('orders', orderValues, where: 'uuid = ?', whereArgs: [targetUuid]);
+        orderValues.remove('created_at'); // keep creation time
+        orderValues['updated_at'] =
+            nowIso; // every edit/settle moves it to "latest"
+        await txn.update(
+          'orders',
+          orderValues,
+          where: 'uuid = ?',
+          whereArgs: [targetUuid],
+        );
       } else {
         targetUuid = orderValues['uuid'] ?? id;
         orderValues['uuid'] = targetUuid;
         orderValues['updated_at'] ??= orderValues['created_at'] ?? nowIso;
-        await txn.insert('orders', orderValues, conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.insert(
+          'orders',
+          orderValues,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
 
       // Sync items table
-      await txn.delete('order_items', where: 'order_uuid = ?', whereArgs: [targetUuid]);
+      await txn.delete(
+        'order_items',
+        where: 'order_uuid = ?',
+        whereArgs: [targetUuid],
+      );
       for (var item in itemValues) {
         item['order_uuid'] = targetUuid;
         await txn.insert('order_items', item);
@@ -907,22 +1095,44 @@ CREATE TABLE orders (
 
       if (maps.isNotEmpty) {
         final String uuid = maps.first['uuid'];
-        await txn.delete('order_items', where: 'order_uuid = ?', whereArgs: [uuid]);
-        await txn.delete('payments', where: 'order_uuid = ?', whereArgs: [uuid]);
+        await txn.delete(
+          'order_items',
+          where: 'order_uuid = ?',
+          whereArgs: [uuid],
+        );
+        await txn.delete(
+          'payments',
+          where: 'order_uuid = ?',
+          whereArgs: [uuid],
+        );
       }
 
-      await txn.delete('orders', where: 'uuid = ? OR server_id = ?', whereArgs: [id, id]);
+      await txn.delete(
+        'orders',
+        where: 'uuid = ? OR server_id = ?',
+        whereArgs: [id, id],
+      );
     });
   }
 
   Future<void> markOrderSyncStatus(String id, int isSynced) async {
     final db = await instance.database;
-    await db.update('orders', {'is_synced': isSynced}, where: 'uuid = ?', whereArgs: [id, id]);
+    await db.update(
+      'orders',
+      {'is_synced': isSynced},
+      where: 'uuid = ?',
+      whereArgs: [id, id],
+    );
   }
 
   Future<void> markItemAsPrinted(int itemId) async {
     final db = await instance.database;
-    await db.update('order_items', {'is_printed': 1}, where: 'id = ?', whereArgs: [itemId]);
+    await db.update(
+      'order_items',
+      {'is_printed': 1},
+      where: 'id = ?',
+      whereArgs: [itemId],
+    );
   }
 
   // --- Printers ---
@@ -936,7 +1146,12 @@ CREATE TABLE orders (
     return await db.query('category_printers');
   }
 
-  Future<void> saveTokenPrinterAssignment(int tokenPrinterId, String address, String name, String type) async {
+  Future<void> saveTokenPrinterAssignment(
+    int tokenPrinterId,
+    String address,
+    String name,
+    String type,
+  ) async {
     final db = await instance.database;
     await db.insert('token_printer_assignments', {
       'token_printer_id': tokenPrinterId,
@@ -948,7 +1163,11 @@ CREATE TABLE orders (
 
   Future<void> deleteTokenPrinterAssignment(int tokenPrinterId) async {
     final db = await instance.database;
-    await db.delete('token_printer_assignments', where: 'token_printer_id = ?', whereArgs: [tokenPrinterId]);
+    await db.delete(
+      'token_printer_assignments',
+      where: 'token_printer_id = ?',
+      whereArgs: [tokenPrinterId],
+    );
   }
 
   Future<List<Map<String, dynamic>>> getActiveLocalOrders() async {
@@ -962,10 +1181,10 @@ CREATE TABLE orders (
   }
 
   Future<int> _maxUsedSeq(
-      DatabaseExecutor ex,
-      RegExp re, {
-        bool includeReserved = false,
-      }) async {
+    DatabaseExecutor ex,
+    RegExp re, {
+    bool includeReserved = false,
+  }) async {
     int max = 0;
 
     final rows = await ex.rawQuery(
@@ -1010,17 +1229,28 @@ CREATE TABLE orders (
     final box = GetStorage();
     return await db.transaction((txn) async {
       final key = 'local_inv_seq_$branchCode';
-      final rows = await txn.query('app_settings', where: 'key = ?', whereArgs: [key]);
-      int current = rows.isNotEmpty ? (int.tryParse(rows.first['value'].toString()) ?? 0) : 0;
+      final rows = await txn.query(
+        'app_settings',
+        where: 'key = ?',
+        whereArgs: [key],
+      );
+      int current = rows.isNotEmpty
+          ? (int.tryParse(rows.first['value'].toString()) ?? 0)
+          : 0;
 
       current = math.max(current, box.read<int>(key) ?? 0); // backup copy
 
       final re = RegExp('^M-${RegExp.escape(branchCode)}(\\d+)\$');
-      current = math.max(current, await _maxUsedSeq(txn, re, includeReserved: true));
+      current = math.max(
+        current,
+        await _maxUsedSeq(txn, re, includeReserved: true),
+      );
 
       final next = current + 1;
-      await txn.insert('app_settings', {'key': key, 'value': next.toString()},
-          conflictAlgorithm: ConflictAlgorithm.replace);
+      await txn.insert('app_settings', {
+        'key': key,
+        'value': next.toString(),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
       await box.write(key, next);
       return 'M-$branchCode${next.toString().padLeft(4, '0')}';
     });
@@ -1030,21 +1260,34 @@ CREATE TABLE orders (
     final db = await instance.database;
     final box = GetStorage();
     return await db.transaction((txn) async {
-      final b = branchCode.toLowerCase();               // "MPM" and "mpm" share one counter
+      final b = branchCode.toLowerCase(); // "MPM" and "mpm" share one counter
       final key = 'local_so_seq_$b';
-      final rows = await txn.query('app_settings', where: 'key = ?', whereArgs: [key]);
-      final fromDb = rows.isNotEmpty ? (int.tryParse(rows.first['value'].toString()) ?? 0) : 0;
+      final rows = await txn.query(
+        'app_settings',
+        where: 'key = ?',
+        whereArgs: [key],
+      );
+      final fromDb = rows.isNotEmpty
+          ? (int.tryParse(rows.first['value'].toString()) ?? 0)
+          : 0;
       final fromBox = box.read<int>(key) ?? 0;
 
-      final re = RegExp('^M-${RegExp.escape(branchCode)}/SO/(\\d+)\$', caseSensitive: false);
+      final re = RegExp(
+        '^M-${RegExp.escape(branchCode)}/SO/(\\d+)\$',
+        caseSensitive: false,
+      );
       final fromOrders = await _maxUsedSeq(txn, re);
 
       final current = math.max(fromDb, math.max(fromBox, fromOrders));
-      debugPrint('[SO-SEQ] branch="$branchCode" db=$fromDb box=$fromBox orders=$fromOrders');
+      debugPrint(
+        '[SO-SEQ] branch="$branchCode" db=$fromDb box=$fromBox orders=$fromOrders',
+      );
 
       final next = current + 1;
-      await txn.insert('app_settings', {'key': key, 'value': next.toString()},
-          conflictAlgorithm: ConflictAlgorithm.replace);
+      await txn.insert('app_settings', {
+        'key': key,
+        'value': next.toString(),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
       await box.write(key, next);
       return 'M-$branchCode/SO/${next.toString().padLeft(4, '0')}';
     });
@@ -1055,7 +1298,11 @@ CREATE TABLE orders (
     final db = await instance.database;
     final batch = db.batch();
     for (var cat in categories) {
-      batch.insert('categories', cat, conflictAlgorithm: ConflictAlgorithm.replace);
+      batch.insert(
+        'categories',
+        cat,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
     }
     await batch.commit(noResult: true);
   }
@@ -1070,13 +1317,20 @@ CREATE TABLE orders (
     await db.transaction((txn) async {
       final batch = txn.batch();
       for (var prod in products) {
-        batch.insert('products', prod, conflictAlgorithm: ConflictAlgorithm.replace);
+        batch.insert(
+          'products',
+          prod,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
       await batch.commit(noResult: true);
     });
   }
 
-  Future<List<Map<String, dynamic>>> getProducts({String? categoryId, int priceGroupId = 0}) async {
+  Future<List<Map<String, dynamic>>> getProducts({
+    String? categoryId,
+    int priceGroupId = 0,
+  }) async {
     final db = await instance.database;
 
     // Fallback: If product doesn't exist in specific price group, use default group (0)
@@ -1103,10 +1357,14 @@ CREATE TABLE orders (
     return await db.rawQuery(query, args);
   }
 
-  Future<List<Map<String, dynamic>>> searchProducts(String query, {int priceGroupId = 0}) async {
+  Future<List<Map<String, dynamic>>> searchProducts(
+    String query, {
+    int priceGroupId = 0,
+  }) async {
     final db = await instance.database;
 
-    return await db.rawQuery('''
+    return await db.rawQuery(
+      '''
       SELECT p.*, c.token_printer_id as cat_token_printer
       FROM (
         SELECT * FROM products WHERE price_group_id = ?
@@ -1119,10 +1377,16 @@ CREATE TABLE orders (
          OR p.id = ? 
          OR EXISTS (SELECT 1 FROM bulk_product_units b WHERE b.produnit_prod_id = CAST(p.id AS INTEGER) AND b.produnit_ean_barcode = ?)
       ORDER BY p.sort_order ASC
-    ''', [priceGroupId, priceGroupId, '%$query%', query, query]);
+    ''',
+      [priceGroupId, priceGroupId, '%$query%', query, query],
+    );
   }
 
-  Future<void> insertProductUnits(String prdId, int pgId, List<dynamic> units) async {
+  Future<void> insertProductUnits(
+    String prdId,
+    int pgId,
+    List<dynamic> units,
+  ) async {
     final db = await instance.database;
     final batch = db.batch();
     for (var unit in units) {
@@ -1132,7 +1396,9 @@ CREATE TABLE orders (
         'unit_id': _toInt(unit['unit_id']),
         'unit_name': unit['prd_unit_name'],
         'unit_display': unit['unit_display'],
-        'rate': _toDouble(unit['sur_unit_rate'] ?? unit['sale_rate'] ?? unit['prd_unit_rate']),
+        'rate': _toDouble(
+          unit['sur_unit_rate'] ?? unit['sale_rate'] ?? unit['prd_unit_rate'],
+        ),
         'unit_base_qty': _toDouble(unit['unit_base_qty'], defaultValue: 1.0),
         'exist_addons': jsonEncode(unit['existAddOn'] ?? []),
       }, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -1140,9 +1406,13 @@ CREATE TABLE orders (
     await batch.commit(noResult: true);
   }
 
-  Future<List<Map<String, dynamic>>> getProductUnits(String prdId, int pgId) async {
+  Future<List<Map<String, dynamic>>> getProductUnits(
+    String prdId,
+    int pgId,
+  ) async {
     final db = await instance.database;
-    return await db.rawQuery('''
+    return await db.rawQuery(
+      '''
       SELECT 
         p.id, p.prd_id, p.price_group_id, p.unit_id, p.rate, p.exist_addons,
         COALESCE(u.base_qty, p.unit_base_qty, 1.0) as unit_base_qty,
@@ -1157,7 +1427,9 @@ CREATE TABLE orders (
       FROM product_units p
       LEFT JOIN units u ON p.unit_id = u.id
       WHERE p.prd_id = ? AND p.price_group_id = ?
-    ''', [prdId, pgId]);
+    ''',
+      [prdId, pgId],
+    );
   }
 
   Future<void> insertCommonAddons(List<dynamic> addons) async {
@@ -1234,7 +1506,12 @@ CREATE TABLE orders (
 
   Future<List<Map<String, dynamic>>> getTablesForArea(int areaId) async {
     final db = await instance.database;
-    return await db.query('pos_tables', where: 'area_id = ?', whereArgs: [areaId], orderBy: 'sort_order ASC');
+    return await db.query(
+      'pos_tables',
+      where: 'area_id = ?',
+      whereArgs: [areaId],
+      orderBy: 'sort_order ASC',
+    );
   }
 
   Future<void> insertFavorites(List<Map<String, dynamic>> favorites) async {
@@ -1257,11 +1534,19 @@ CREATE TABLE orders (
     return await db.query('favorites', orderBy: 'sort_order ASC');
   }
 
-  Future<void> insertFavoriteProducts(int favId, int pgId, List<String> prdIds) async {
+  Future<void> insertFavoriteProducts(
+    int favId,
+    int pgId,
+    List<String> prdIds,
+  ) async {
     final db = await instance.database;
     await db.transaction((txn) async {
       // Clear existing records for this favorite and price group to prevent stale data
-      await txn.delete('favorite_products', where: 'favorite_id = ? AND price_group_id = ?', whereArgs: [favId, pgId]);
+      await txn.delete(
+        'favorite_products',
+        where: 'favorite_id = ? AND price_group_id = ?',
+        whereArgs: [favId, pgId],
+      );
 
       final batch = txn.batch();
       for (var prdId in prdIds) {
@@ -1275,9 +1560,13 @@ CREATE TABLE orders (
     });
   }
 
-  Future<List<Map<String, dynamic>>> getFavoriteProducts(int favId, int pgId) async {
+  Future<List<Map<String, dynamic>>> getFavoriteProducts(
+    int favId,
+    int pgId,
+  ) async {
     final db = await instance.database;
-    return await db.rawQuery('''
+    return await db.rawQuery(
+      '''
       SELECT p.*, c.token_printer_id as cat_token_printer
       FROM (
         SELECT * FROM products WHERE price_group_id = ?
@@ -1290,7 +1579,9 @@ CREATE TABLE orders (
       WHERE fp.favorite_id = ?
       GROUP BY p.id
       ORDER BY p.sort_order ASC
-    ''', [pgId, pgId, pgId, favId]);
+    ''',
+      [pgId, pgId, pgId, favId],
+    );
   }
 
   // --- Units ---
@@ -1350,7 +1641,8 @@ CREATE TABLE orders (
       for (final item in rawList) {
         // 2. RESILIENT ID MAPPING
         // We check every possible key name used in ERP systems
-        final dynamic rawId = item['produnit_prod_id'] ??
+        final dynamic rawId =
+            item['produnit_prod_id'] ??
             item['prd_id'] ??
             item['product_id'] ??
             item['prd_unit_prd_id'] ??
@@ -1360,31 +1652,57 @@ CREATE TABLE orders (
 
         if (resolvedProdId == 0) {
           // If this prints, the API key names changed and we are skipping data
-          log("DB_HELPER: Skipping record - No valid Product ID found in: $item");
+          log(
+            "DB_HELPER: Skipping record - No valid Product ID found in: $item",
+          );
           continue;
         }
 
         // 3. RESILIENT FIELD MAPPING
-        String? unitName = item['unit_name']?.toString() ?? item['prd_unit_name']?.toString();
-        String? unitDisplay = item['unit_display']?.toString() ?? item['unit_name']?.toString() ?? item['prd_unit_display']?.toString();
+        String? unitName =
+            item['unit_name']?.toString() ?? item['prd_unit_name']?.toString();
+        String? unitDisplay =
+            item['unit_display']?.toString() ??
+            item['unit_name']?.toString() ??
+            item['prd_unit_display']?.toString();
 
-        batch.insert(
-          'bulk_product_units',
-          {
-            'produnit_id': _toInt(item['produnit_id'] ?? item['id'] ?? item['prd_unit_id']),
-            'produnit_prod_id': resolvedProdId,
-            'produnit_unit_id': _toInt(item['produnit_unit_id'] ?? item['unit_id'] ?? item['prd_unit_unit_id']),
-            'unit_name': unitName,
-            'unit_display': unitDisplay,
-            'rate': _toDouble(item['sur_unit_rate'] ?? item['sale_rate'] ?? item['prd_unit_rate'] ?? item['prd_unit_price']),
-            'unit_base_qty': _toDouble(item['unit_base_qty'] ?? item['prd_unit_base_qty'], defaultValue: 1.0),
-            'produnit_ean_barcode': item['produnit_ean_barcode']?.toString() ?? item['prd_unit_barcode']?.toString() ?? '',
-            'produnit_flag': _toInt(item['produnit_flag'] ?? item['prd_unit_flag'], defaultValue: 1),
-            'exist_addons': jsonEncode(item['existAddOn'] ?? item['exist_addons'] ?? []),
-            'common_addons': jsonEncode(item['cmmnAddon'] ?? item['common_addons'] ?? []),
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        batch.insert('bulk_product_units', {
+          'produnit_id': _toInt(
+            item['produnit_id'] ?? item['id'] ?? item['prd_unit_id'],
+          ),
+          'produnit_prod_id': resolvedProdId,
+          'produnit_unit_id': _toInt(
+            item['produnit_unit_id'] ??
+                item['unit_id'] ??
+                item['prd_unit_unit_id'],
+          ),
+          'unit_name': unitName,
+          'unit_display': unitDisplay,
+          'rate': _toDouble(
+            item['sur_unit_rate'] ??
+                item['sale_rate'] ??
+                item['prd_unit_rate'] ??
+                item['prd_unit_price'],
+          ),
+          'unit_base_qty': _toDouble(
+            item['unit_base_qty'] ?? item['prd_unit_base_qty'],
+            defaultValue: 1.0,
+          ),
+          'produnit_ean_barcode':
+              item['produnit_ean_barcode']?.toString() ??
+              item['prd_unit_barcode']?.toString() ??
+              '',
+          'produnit_flag': _toInt(
+            item['produnit_flag'] ?? item['prd_unit_flag'],
+            defaultValue: 1,
+          ),
+          'exist_addons': jsonEncode(
+            item['existAddOn'] ?? item['exist_addons'] ?? [],
+          ),
+          'common_addons': jsonEncode(
+            item['cmmnAddon'] ?? item['common_addons'] ?? [],
+          ),
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
         validCount++;
       }
 
@@ -1393,7 +1711,9 @@ CREATE TABLE orders (
     });
 
     // 4. FINAL VERIFICATION
-    final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM bulk_product_units'));
+    final count = Sqflite.firstIntValue(
+      await db.rawQuery('SELECT COUNT(*) FROM bulk_product_units'),
+    );
     log("DB_HELPER: DATABASE VERIFIED - Total rows now in table: $count");
   }
 
@@ -1404,7 +1724,8 @@ CREATE TABLE orders (
       batch.insert(
         'product_units',
         unit,
-        conflictAlgorithm: ConflictAlgorithm.ignore, // don't overwrite richer data
+        conflictAlgorithm:
+            ConflictAlgorithm.ignore, // don't overwrite richer data
       );
     }
     await batch.commit(noResult: true);
@@ -1412,7 +1733,8 @@ CREATE TABLE orders (
 
   Future<List<Map<String, dynamic>>> getBulkProductUnits(int prodId) async {
     final db = await instance.database;
-    return await db.rawQuery('''
+    return await db.rawQuery(
+      '''
       SELECT 
         b.produnit_id, b.produnit_prod_id, b.produnit_unit_id, b.produnit_ean_barcode,
         b.produnit_flag, b.exist_addons, b.common_addons, b.rate,
@@ -1428,7 +1750,9 @@ CREATE TABLE orders (
       FROM bulk_product_units b
       LEFT JOIN units u ON b.produnit_unit_id = u.id
       WHERE b.produnit_prod_id = ?
-    ''', [prodId]);
+    ''',
+      [prodId],
+    );
   }
 
   Future<void> clearBulkProductUnits() async {
@@ -1443,37 +1767,51 @@ CREATE TABLE orders (
       for (var order in orders) {
         final serverId = (order['sales_odr_id'] ?? '').toString();
         if (serverId.isEmpty) continue;
-        final existing = await txn.query('orders',
-            columns: ['uuid', 'branch_inv'],
-            where: 'uuid = ? OR server_id = ?',
-            whereArgs: [serverId, serverId],
-            limit: 1);
+        final existing = await txn.query(
+          'orders',
+          columns: ['uuid', 'branch_inv'],
+          where: 'uuid = ? OR server_id = ?',
+          whereArgs: [serverId, serverId],
+          limit: 1,
+        );
 
         final String serverBranch =
-        (order['sales_odr_branch_inv'] ?? order['sales_branch_inv'] ?? order['sales_odr_sales_branch_inv'] ?? '').toString();
+            (order['sales_odr_branch_inv'] ??
+                    order['sales_branch_inv'] ??
+                    order['sales_odr_sales_branch_inv'] ??
+                    '')
+                .toString();
         final String keepBranch = serverBranch.isNotEmpty
             ? serverBranch
-            : (existing.isNotEmpty ? (existing.first['branch_inv']?.toString() ?? '') : '');
+            : (existing.isNotEmpty
+                  ? (existing.first['branch_inv']?.toString() ?? '')
+                  : '');
 
-        await txn.insert(
-          'orders',
-          {
-            'uuid': serverId,
-            'server_id': serverId,
-            'inv_no': (order['sales_odr_inv_no'] ?? '').toString(),
-            'branch_inv': keepBranch,
-            'customer_name': order['ledger_name']?.toString() ?? 'Walk-in Customer',
-            'total_amount': _toDouble(order['sales_odr_total'] ?? order['tot_amount'] ?? order['total_amount']),
-            'total_tax': _toDouble(order['sales_odr_tax'] ?? order['tot_tax'] ?? order['total_tax']),
-            'status': 'paid',
-            'is_synced': 1,
-            'created_at': order['sales_odr_datetime'] ?? order['created_at'] ?? DateTime.now().toIso8601String(),
-            'order_type_id': _toInt(order['sales_odr_order_type']),
-            'table_id': (order['sales_odr_table_id'] ?? '').toString(),
-            'payload': jsonEncode(order), // Store raw response
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        await txn.insert('orders', {
+          'uuid': serverId,
+          'server_id': serverId,
+          'inv_no': (order['sales_odr_inv_no'] ?? '').toString(),
+          'branch_inv': keepBranch,
+          'customer_name':
+              order['ledger_name']?.toString() ?? 'Walk-in Customer',
+          'total_amount': _toDouble(
+            order['sales_odr_total'] ??
+                order['tot_amount'] ??
+                order['total_amount'],
+          ),
+          'total_tax': _toDouble(
+            order['sales_odr_tax'] ?? order['tot_tax'] ?? order['total_tax'],
+          ),
+          'status': 'paid',
+          'is_synced': 1,
+          'created_at':
+              order['sales_odr_datetime'] ??
+              order['created_at'] ??
+              DateTime.now().toIso8601String(),
+          'order_type_id': _toInt(order['sales_odr_order_type']),
+          'table_id': (order['sales_odr_table_id'] ?? '').toString(),
+          'payload': jsonEncode(order), // Store raw response
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
     });
   }
@@ -1488,26 +1826,22 @@ CREATE TABLE orders (
       await db.transaction((txn) async {
         final batch = txn.batch();
         for (final item in chunk) {
-          batch.insert(
-            'stock_unit_rates',
-            {
-              'sur_id':           _toInt(item['sur_id']),
-              'branch_stock_id':  _toInt(item['branch_stock_id']),
-              'sur_prd_id':       _toInt(item['sur_prd_id']),
-              'sur_stock_id':     _toInt(item['sur_stock_id']),
-              'sur_unit_id':      _toInt(item['sur_unit_id']),
-              'sur_batch_id':     _toInt(item['sur_batch_id']),
-              'sur_unit_rate':    _toDouble(item['sur_unit_rate']),
-              'sur_unit_rate2':   _toDouble(item['sur_unit_rate2']),
-              'sur_branch_id':    _toInt(item['sur_branch_id']),
-              'sur_flag':         _toInt(item['sur_flag']),
-              'price_group_id':   _toInt(item['price_group_id']),
-              'server_sync_time': _toInt(item['server_sync_time']),
-              'created_at':       item['created_at']?.toString(),
-              'updated_at':       item['updated_at']?.toString(),
-            },
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
+          batch.insert('stock_unit_rates', {
+            'sur_id': _toInt(item['sur_id']),
+            'branch_stock_id': _toInt(item['branch_stock_id']),
+            'sur_prd_id': _toInt(item['sur_prd_id']),
+            'sur_stock_id': _toInt(item['sur_stock_id']),
+            'sur_unit_id': _toInt(item['sur_unit_id']),
+            'sur_batch_id': _toInt(item['sur_batch_id']),
+            'sur_unit_rate': _toDouble(item['sur_unit_rate']),
+            'sur_unit_rate2': _toDouble(item['sur_unit_rate2']),
+            'sur_branch_id': _toInt(item['sur_branch_id']),
+            'sur_flag': _toInt(item['sur_flag']),
+            'price_group_id': _toInt(item['price_group_id']),
+            'server_sync_time': _toInt(item['server_sync_time']),
+            'created_at': item['created_at']?.toString(),
+            'updated_at': item['updated_at']?.toString(),
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
         }
         await batch.commit(noResult: true);
       });
@@ -1531,7 +1865,11 @@ CREATE TABLE orders (
   //   });
   // }
 
-  Future<Map<String, double>?> getStockUnitRate(int prdId, int unitId, int priceGroupId) async {
+  Future<Map<String, double>?> getStockUnitRate(
+    int prdId,
+    int unitId,
+    int priceGroupId,
+  ) async {
     final db = await instance.database;
     List<Map<String, dynamic>> maps = await db.query(
       'stock_unit_rates',
@@ -1608,6 +1946,7 @@ CREATE TABLE orders (
     }
     return 0;
   }
+
   // --- Offline sequential numbering ---
   Future<int> _getNextOfflineSeq() async {
     final db = await instance.database;
@@ -1622,11 +1961,10 @@ CREATE TABLE orders (
         current = int.tryParse(rows.first['value'].toString()) ?? 0;
       }
       final next = current + 1;
-      await txn.insert(
-        'app_settings',
-        {'key': 'offline_order_seq', 'value': next.toString()},
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      await txn.insert('app_settings', {
+        'key': 'offline_order_seq',
+        'value': next.toString(),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
       return next;
     });
   }
@@ -1657,5 +1995,4 @@ CREATE TABLE orders (
     );
     return seq;
   }
-
 }

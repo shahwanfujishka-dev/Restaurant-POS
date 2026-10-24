@@ -63,12 +63,11 @@ class AuthController extends GetxController {
         Get.dialog(
           AlertDialog(
             title: const Text("Session Expired"),
-            content: const Text("Your session has expired or the app has been deactivated. Please login again."),
+            content: const Text(
+              "Your session has expired or the app has been deactivated. Please login again.",
+            ),
             actions: [
-              TextButton(
-                onPressed: () => Get.back(),
-                child: const Text("OK"),
-              ),
+              TextButton(onPressed: () => Get.back(), child: const Text("OK")),
             ],
           ),
           barrierDismissible: false,
@@ -102,7 +101,6 @@ class AuthController extends GetxController {
     if (companyCode.value.isEmpty) return "No branch selected";
     return "${companyCode.value} - ${storage.read('branch_name')}";
   }
-
 
   void togglePasswordVisibility() {
     isPasswordVisible.value = !isPasswordVisible.value;
@@ -149,10 +147,13 @@ class AuthController extends GetxController {
       }
     }
   }
+
   String AppstateServerUrl = AppState.serverUrl;
 
   Future<void> updateBranchConfig(Map<String, dynamic> config) async {
-    final String url = (config['server_url'] ?? config['servel_url'] ?? '').toString().trim();
+    final String url = (config['server_url'] ?? config['servel_url'] ?? '')
+        .toString()
+        .trim();
     final String code = (config['company_code'] ?? '').toString().trim();
     final String bId = config['branch_id']?.toString() ?? '';
 
@@ -164,7 +165,9 @@ class AuthController extends GetxController {
     // Prevent double-trigger (scanner/onChanged/paste firing twice)
     if (isLoading.value) return;
 
-    debugPrint('CONFIG APPLY: url=$url code=$code bId=$bId\n${StackTrace.current}');
+    debugPrint(
+      'CONFIG APPLY: url=$url code=$code bId=$bId\n${StackTrace.current}',
+    );
 
     isLoading.value = true;
 
@@ -217,14 +220,18 @@ class AuthController extends GetxController {
       // Temporarily point the API at the new URL (needed for the verification call).
       // Rolled back in `finally` if verification fails.
       await storage.write('base_url', url);
-      AppstateServerUrl = url; // remove this line if AppState.serverUrl is just a getter over storage
+      AppstateServerUrl =
+          url; // remove this line if AppState.serverUrl is just a getter over storage
 
-      final response = await _apiService.post('api/get_branch_token', data: {
-        "branch_id": int.parse(bId),
-        "company_code": code,
-        "device_details": jsonEncode([deviceData]),
-        "device_token": deviceToken,
-      });
+      final response = await _apiService.post(
+        'api/get_branch_token',
+        data: {
+          "branch_id": int.parse(bId),
+          "company_code": code,
+          "device_details": jsonEncode([deviceData]),
+          "device_token": deviceToken,
+        },
+      );
 
       if (response.statusCode == 200 && response.data != null) {
         final dynamic responseData = response.data;
@@ -301,8 +308,10 @@ class AuthController extends GetxController {
         } else {
           await storage.write('base_url', previousUrl);
         }
-        AppstateServerUrl = previousAppStateUrl; // remove if it's a getter over storage
-        qrCodeController.clear(); // stops a failed value from being re-triggered
+        AppstateServerUrl =
+            previousAppStateUrl; // remove if it's a getter over storage
+        qrCodeController
+            .clear(); // stops a failed value from being re-triggered
       }
       isLoading.value = false;
     }
@@ -318,7 +327,7 @@ class AuthController extends GetxController {
       showSafeSnackbar("Error", "Please enter username and password");
       return;
     }
-    
+
     isLoading.value = true;
 
     try {
@@ -332,7 +341,6 @@ class AuthController extends GetxController {
         final deviceName = "${androidInfo.manufacturer} ${androidInfo.model}";
 
         systemId = "$id - $deviceName";
-
       } else if (Platform.isIOS) {
         final IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
 
@@ -340,7 +348,6 @@ class AuthController extends GetxController {
         final deviceName = iosInfo.utsname.machine; // or use name if available
 
         systemId = "$id - $deviceName";
-
       } else if (Platform.isMacOS) {
         final MacOsDeviceInfo macInfo = await deviceInfo.macOsInfo;
 
@@ -373,28 +380,20 @@ class AuthController extends GetxController {
         if (data['status'] == 200) {
           debugPrint("✅ LOGIN SUCCESS");
 
-          AppState.updateSession(
-            profile: data['profile'] ?? {},
-          );
+          AppState.updateSession(profile: data['profile'] ?? {});
           debugPrint("Branch Disp: ${AppState.branchDisName}");
           Get.offAllNamed('/sync');
         } else {
           debugPrint("❌ API ERROR: ${data['error']}");
 
-          showSafeSnackbar(
-            "Error",
-            data['error'] ?? "Login failed",
-          );
+          showSafeSnackbar("Error", data['error'] ?? "Login failed");
         }
       }
     } catch (e, stackTrace) {
       debugPrint("❌ LOGIN EXCEPTION: $e");
       debugPrint("📌 STACKTRACE: $stackTrace");
 
-      showSafeSnackbar(
-        "Error",
-        "Login failed",
-      );
+      showSafeSnackbar("Error", "Login failed");
     } finally {
       isLoading.value = false;
     }
