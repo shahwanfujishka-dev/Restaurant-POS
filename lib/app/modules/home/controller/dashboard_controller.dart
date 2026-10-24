@@ -403,7 +403,10 @@ class DashboardController extends GetxController {
               'id': (json['prd_id'] ?? '').toString(),
               'price_group_id': pgId,
               'name': (json['prd_name'] ?? '').toString(),
-              'category_id': (json['prd_cat_id'] ?? '').toString(),
+              'category_id': (json['prd_cat_id']?.toString() ??
+                  (selectedCategoryId.value.isNotEmpty
+                      ? selectedCategoryId.value
+                      : '')),
               'price': (json['sale_rate'] as num? ?? 0.0).toDouble(),
               'prd_tax': (json['prd_tax'] as num? ?? 0.0).toDouble(),
               'image': imgUrl,

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart' hide ScreenType;
-
 import '../../../../../helper/screen_type.dart';
 import '../../../../data/utils/AppState.dart';
 import '../../../../theme/app_theme.dart';
@@ -16,7 +15,6 @@ class SettingsView extends GetView<SettingsController> {
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
-
     return Scaffold(
       backgroundColor: colors.bg,
       appBar: ScreenType.isMobile()
@@ -41,7 +39,6 @@ class SettingsView extends GetView<SettingsController> {
             if (!controller.isLocalMode) {
               return const SizedBox.shrink();
             }
-
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -62,7 +59,6 @@ class SettingsView extends GetView<SettingsController> {
             if (!controller.isLocalMode) {
               return const SizedBox.shrink();
             }
-
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -102,7 +98,6 @@ class SettingsView extends GetView<SettingsController> {
                 controller.isOnlineMode) {
               return const SizedBox.shrink();
             }
-
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -119,7 +114,6 @@ class SettingsView extends GetView<SettingsController> {
               ],
             );
           }),
-
           SizedBox(height: 24.h),
           Text(
             'about_app'.tr,
