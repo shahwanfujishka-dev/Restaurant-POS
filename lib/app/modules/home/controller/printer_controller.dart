@@ -621,12 +621,8 @@ class PrinterController extends GetxController {
   }
 
   // Single place that decides the order type for every print job.
-  // NOTE: still reads the UI-selected type (same behaviour as before).
-  // If you later trust order.sales_odr_order_type in all flows, change
-  // ONLY this method.
   int? _orderTypeId(OrderModel order) {
-    final v = GetStorage().read('selected_order_type_id');
-    return v is int ? v : null;
+    return order.sales_odr_order_type;
   }
 
   String _orderTypeLabel(OrderModel order) {
