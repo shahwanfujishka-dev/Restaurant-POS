@@ -1401,6 +1401,16 @@ class CartController extends GetxController {
               ? Map<String, dynamic>.from(response.data)
               : jsonDecode(response.data);
 
+          try {
+            final message = responseData['message'];
+            final preview = (message is Map ? message['preview'] : null) ?? responseData['preview'] ?? responseData;
+            if (preview is Map) {
+              await _dbHelper.cacheServerOrders([preview]);
+            }
+          } catch (e) {
+            debugPrint("Error caching online order locally: $e");
+          }
+
           debugPrint('========== FULL RESPONSE ==========');
 
           final String fullResponse = const JsonEncoder.withIndent(
@@ -2368,6 +2378,16 @@ class CartController extends GetxController {
           final Map<String, dynamic> realResponse = response.data is Map
               ? Map<String, dynamic>.from(response.data)
               : jsonDecode(response.data);
+
+          try {
+            final message = realResponse['message'];
+            final preview = (message is Map ? message['preview'] : null) ?? realResponse['preview'] ?? realResponse;
+            if (preview is Map) {
+              await _dbHelper.cacheServerOrders([preview]);
+            }
+          } catch (e) {
+            debugPrint("Error caching online updated order locally: $e");
+          }
 
           if (Get.isRegistered<OrdersController>()) {
             final ordersController = Get.find<OrdersController>();

@@ -11,6 +11,7 @@ import '../../modules/home/controller/table_controller.dart';
 import '../../modules/order_type/controller/order_type_controller.dart';
 import '../../modules/home/controller/home_controller.dart';
 import '../models/order_type.dart';
+import '../Device_Roles/device_roles.dart';
 import '../services/database_helper.dart';
 import '../services/sync_service.dart';
 
@@ -38,6 +39,11 @@ class AppState {
   static int get cmpTaxType => _storage.read('cmp_tax_type') ?? 1;
   static String get upiId => _storage.read('as_upi_id') ?? '';
   static bool get isUpiEnabled => (_storage.read('as_upi_enable') ?? 0) == 1;
+
+  static String get appLanguage => _storage.read('app_language') ?? 'en';
+  static Future<void> setAppLanguage(String lang) async {
+    await _storage.write('app_language', lang);
+  }
 
   static OrderType get orderType {
     final int? id = _storage.read('selected_order_type_id');
@@ -182,40 +188,42 @@ class AppState {
   }
 
   static Future<void> logout() async {
-    final pending = await DatabaseHelper.instance.getPendingSyncTotal();
-    if (pending > 0) {
-      await Get.dialog(
-        AlertDialog(
-          title: const Text('Cannot log out'),
-          content: Text(
-            '$pending order/payment(s) are not synced yet. '
-            'Logging out now would lose them. Sync first, then log out.',
-          ),
-          actions: [
-            TextButton(onPressed: () => Get.back(), child: const Text('OK')),
-            TextButton(
-              onPressed: () async {
-                Get.back();
-                try {
-                  await Get.find<SyncService>().syncPendingOrders();
-                } catch (_) {}
-                final left = await DatabaseHelper.instance
-                    .getPendingSyncTotal();
-                if (left == 0) {
-                  await logout();
-                } else {
-                  Get.snackbar(
-                    'Sync incomplete',
-                    '$left item(s) still pending. Check the connection and try again.',
-                  );
-                }
-              },
-              child: const Text('Sync now'),
+    if (DeviceConfig.isServer) {
+      final pending = await DatabaseHelper.instance.getPendingSyncTotal();
+      if (pending > 0) {
+        await Get.dialog(
+          AlertDialog(
+            title: const Text('Cannot log out'),
+            content: Text(
+              '$pending order/payment(s) are not synced yet. '
+              'Logging out now would lose them. Sync first, then log out.',
             ),
-          ],
-        ),
-      );
-      return;
+            actions: [
+              TextButton(onPressed: () => Get.back(), child: const Text('OK')),
+              TextButton(
+                onPressed: () async {
+                  Get.back();
+                  try {
+                    await Get.find<SyncService>().syncPendingOrders();
+                  } catch (_) {}
+                  final left = await DatabaseHelper.instance
+                      .getPendingSyncTotal();
+                  if (left == 0) {
+                    await logout();
+                  } else {
+                    Get.snackbar(
+                      'Sync incomplete',
+                      '$left item(s) still pending. Check the connection and try again.',
+                    );
+                  }
+                },
+                child: const Text('Sync now'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
     }
 
     await clearAllData();

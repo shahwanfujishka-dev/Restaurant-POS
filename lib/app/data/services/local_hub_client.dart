@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../Device_Roles/device_roles.dart';
+import '../utils/AppState.dart';
 
 class LocalHubClient {
   static final LocalHubClient instance = LocalHubClient._internal();
@@ -77,6 +78,48 @@ class LocalHubClient {
     }
   }
 
+  Future<http.Response> _sendAuthenticatedRequest(
+    Future<http.Response> Function(Map<String, String> headers) requestFn, {
+    required String hostIp,
+    int port = 8080,
+  }) async {
+    try {
+      final response = await requestFn(_authenticatedHeaders());
+      if (response.statusCode == 401) {
+        debugPrint(
+            '[LocalHubClient] Received 401 Unauthorized. Attempting auto re-registration...');
+        await _autoReRegister(hostIp: hostIp, port: port);
+        return await requestFn(_authenticatedHeaders());
+      }
+      return response;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<void> _autoReRegister(
+      {required String hostIp, int port = 8080}) async {
+    try {
+      String devId = DeviceConfig.deviceId;
+      if (devId.isEmpty) {
+        devId = DateTime.now().millisecondsSinceEpoch.toString();
+        await DeviceConfig.setDeviceId(devId);
+      }
+      await registerDevice(
+        hostIp: hostIp,
+        port: port,
+        deviceName: '${DeviceConfig.isDesktop ? "Desktop" : "Mobile"} Client',
+        role: 'client',
+        deviceId: devId,
+        userId: AppState.userId.isEmpty ? null : AppState.userId,
+        userName: AppState.username.isEmpty ? null : AppState.username,
+      );
+    } catch (e) {
+      debugPrint('[LocalHubClient] Auto re-registration failed: $e');
+      rethrow;
+    }
+  }
+
   Future<Map<String, dynamic>> createOrder({
     required Map<String, dynamic> order,
     required String hostIp,
@@ -84,12 +127,14 @@ class LocalHubClient {
   }) async {
     final url = Uri.parse('http://$hostIp:$port/orders/create');
     try {
-      final response = await http
-          .post(url, headers: _authenticatedHeaders(), body: jsonEncode(order))
-          .timeout(const Duration(seconds: 15));
+      final response = await _sendAuthenticatedRequest(
+        (headers) => http
+            .post(url, headers: headers, body: jsonEncode(order))
+            .timeout(const Duration(seconds: 15)),
+        hostIp: hostIp,
+        port: port,
+      );
 
-      if (response.statusCode == 401)
-        throw Exception('Hub authentication failed.');
       if (response.statusCode != 200)
         throw Exception('Hub returned HTTP ${response.statusCode}');
 
@@ -111,12 +156,14 @@ class LocalHubClient {
   }) async {
     final url = Uri.parse('http://$hostIp:$port/orders/update');
     try {
-      final response = await http
-          .post(url, headers: _authenticatedHeaders(), body: jsonEncode(order))
-          .timeout(const Duration(seconds: 15));
+      final response = await _sendAuthenticatedRequest(
+        (headers) => http
+            .post(url, headers: headers, body: jsonEncode(order))
+            .timeout(const Duration(seconds: 15)),
+        hostIp: hostIp,
+        port: port,
+      );
 
-      if (response.statusCode == 401)
-        throw Exception('Hub authentication failed.');
       if (response.statusCode != 200)
         throw Exception('Hub returned HTTP ${response.statusCode}');
       final data = jsonDecode(response.body);
@@ -136,9 +183,13 @@ class LocalHubClient {
   }) async {
     final url = Uri.parse('http://$hostIp:$port/orders/list');
     try {
-      final response = await http
-          .get(url, headers: _authenticatedHeaders())
-          .timeout(const Duration(seconds: 10));
+      final response = await _sendAuthenticatedRequest(
+        (headers) => http
+            .get(url, headers: headers)
+            .timeout(const Duration(seconds: 10)),
+        hostIp: hostIp,
+        port: port,
+      );
       if (response.statusCode != 200)
         throw Exception('Hub returned ${response.statusCode}');
       return jsonDecode(response.body);
@@ -155,9 +206,13 @@ class LocalHubClient {
   }) async {
     final url = Uri.parse('http://$hostIp:$port/orders/sold?date=$date');
     try {
-      final response = await http
-          .get(url, headers: _authenticatedHeaders())
-          .timeout(const Duration(seconds: 10));
+      final response = await _sendAuthenticatedRequest(
+        (headers) => http
+            .get(url, headers: headers)
+            .timeout(const Duration(seconds: 10)),
+        hostIp: hostIp,
+        port: port,
+      );
       if (response.statusCode != 200)
         throw Exception('Hub returned ${response.statusCode}');
       return jsonDecode(response.body);
@@ -174,9 +229,13 @@ class LocalHubClient {
   }) async {
     final url = Uri.parse('http://$hostIp:$port/orders/details?id=$orderId');
     try {
-      final response = await http
-          .get(url, headers: _authenticatedHeaders())
-          .timeout(const Duration(seconds: 10));
+      final response = await _sendAuthenticatedRequest(
+        (headers) => http
+            .get(url, headers: headers)
+            .timeout(const Duration(seconds: 10)),
+        hostIp: hostIp,
+        port: port,
+      );
       if (response.statusCode != 200)
         throw Exception('Hub returned ${response.statusCode}');
       return jsonDecode(response.body);
@@ -194,9 +253,13 @@ class LocalHubClient {
   }) async {
     final url = Uri.parse('http://$hostIp:$port/master/tables');
     try {
-      final response = await http
-          .get(url, headers: _authenticatedHeaders())
-          .timeout(const Duration(seconds: 10));
+      final response = await _sendAuthenticatedRequest(
+        (headers) => http
+            .get(url, headers: headers)
+            .timeout(const Duration(seconds: 10)),
+        hostIp: hostIp,
+        port: port,
+      );
       if (response.statusCode != 200)
         throw Exception('Hub returned ${response.statusCode}');
       return jsonDecode(response.body);
@@ -212,9 +275,13 @@ class LocalHubClient {
   }) async {
     final url = Uri.parse('http://$hostIp:$port/master/categories');
     try {
-      final response = await http
-          .get(url, headers: _authenticatedHeaders())
-          .timeout(const Duration(seconds: 10));
+      final response = await _sendAuthenticatedRequest(
+        (headers) => http
+            .get(url, headers: headers)
+            .timeout(const Duration(seconds: 10)),
+        hostIp: hostIp,
+        port: port,
+      );
       if (response.statusCode != 200)
         throw Exception('Hub returned ${response.statusCode}');
       return jsonDecode(response.body);
@@ -230,9 +297,13 @@ class LocalHubClient {
   }) async {
     final url = Uri.parse('http://$hostIp:$port/master/captains');
     try {
-      final response = await http
-          .get(url, headers: _authenticatedHeaders())
-          .timeout(const Duration(seconds: 10));
+      final response = await _sendAuthenticatedRequest(
+        (headers) => http
+            .get(url, headers: headers)
+            .timeout(const Duration(seconds: 10)),
+        hostIp: hostIp,
+        port: port,
+      );
       if (response.statusCode != 200)
         throw Exception('Hub returned ${response.statusCode}');
       return jsonDecode(response.body);
@@ -248,9 +319,13 @@ class LocalHubClient {
   }) async {
     final url = Uri.parse('http://$hostIp:$port/printers/assignments');
     try {
-      final response = await http
-          .get(url, headers: _authenticatedHeaders())
-          .timeout(const Duration(seconds: 10));
+      final response = await _sendAuthenticatedRequest(
+        (headers) => http
+            .get(url, headers: headers)
+            .timeout(const Duration(seconds: 10)),
+        hostIp: hostIp,
+        port: port,
+      );
       if (response.statusCode != 200)
         throw Exception('Hub returned ${response.statusCode}');
       return jsonDecode(response.body);
@@ -271,11 +346,16 @@ class LocalHubClient {
         : 'price_group_id=$priceGroupId';
     final url = Uri.parse('http://$hostIp:$port/master/products?$query');
     try {
-      final response = await http
-          .get(url, headers: _authenticatedHeaders())
-          .timeout(const Duration(seconds: 10));
-      if (response.statusCode != 200)
+      final response = await _sendAuthenticatedRequest(
+        (headers) => http
+            .get(url, headers: headers)
+            .timeout(const Duration(seconds: 10)),
+        hostIp: hostIp,
+        port: port,
+      );
+      if (response.statusCode != 200) {
         throw Exception('Hub returned ${response.statusCode}');
+      }
       return jsonDecode(response.body);
     } catch (e) {
       debugPrint('LOCAL HUB FETCH MASTER PRODUCTS ERROR: $e');
@@ -291,4 +371,5 @@ class LocalHubClient {
       'Authorization': 'Bearer $token',
     };
   }
+
 }

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart' hide ScreenType;
 import 'package:restaurant_pos/helper/screen_type.dart';
-
+import '../../../../../data/utils/AppState.dart';
 import '../../../../../theme/app_theme.dart';
 import '../../../../../theme/app_typography.dart';
 
@@ -144,7 +144,7 @@ class CashierWidgets {
                           color: colors.subtext,
                           fontWeight: FontWeight.w600,
                           letterSpacing: 0.5,
-                          fontSize: AppTypography.sizeCategory,
+                          // fontSize: AppTypography.sizeCategory,
                         ),
                       ),
                     ],
@@ -311,7 +311,7 @@ class CashierWidgets {
               label,
               style: AppTypography.cardInfo.copyWith(
                 color: colors.subtext,
-                fontSize: AppTypography.sizeCategory,
+                // fontSize: AppTypography.sizeCategory,
               ),
             ),
           ),
@@ -323,7 +323,7 @@ class CashierWidgets {
               keyboardType: Keyboard,
               style: AppTypography.cardSubtitle.copyWith(
                 color: colors.text,
-                fontSize: AppTypography.sizeCategory,
+                // fontSize: AppTypography.sizeCategory,
               ),
               decoration: InputDecoration(
                 isDense: true,
@@ -332,7 +332,7 @@ class CashierWidgets {
                 hintText: isReadOnly ? "cash_customer".tr : "enter_label".trParams({'label': label}),
                 hintStyle: AppTypography.cardInfo.copyWith(
                   color: colors.subtext.withOpacity(0.5),
-                  fontSize: AppTypography.sizeCategory,
+                  // fontSize: AppTypography.sizeCategory,
                 ),
               ),
             ),
@@ -359,11 +359,11 @@ class CashierWidgets {
           style: isTotal
               ? AppTypography.cardTitle.copyWith(
                   color: colors.text,
-                  fontSize: AppTypography.sizeCategory,
+                  // fontSize: AppTypography.sizeCategory,
                 )
               : AppTypography.cardSubtitle.copyWith(
                   color: colors.subtext,
-                  fontSize: AppTypography.sizeCategory,
+                  // fontSize: AppTypography.sizeCategory,
                 ),
         ),
         Text(
@@ -371,15 +371,106 @@ class CashierWidgets {
           style: isTotal
               ? AppTypography.headline2.copyWith(
                   color: AppTheme.primaryGreen,
-                  fontSize: AppTypography.sizeCategory,
+                  // fontSize: AppTypography.sizeCategory,
                 )
               : AppTypography.cardSubtitle.copyWith(
                   color: colors.text,
                   fontWeight: FontWeight.w600,
-                  fontSize: AppTypography.sizeCategory,
+                  // fontSize: AppTypography.sizeCategory,
                 ),
         ),
       ],
+    );
+  }
+
+  static Widget grandTotalCard(
+      double total,
+      dynamic colors,
+      ) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 20,
+        vertical: 18,
+      ),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryGreen,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primaryGreen.withValues(alpha: 0.20),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // Receipt icon
+          Container(
+            width: AppTypography.sizeTable,
+            height: AppTypography.sizeTable,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              Icons.receipt_long_rounded,
+              color: Colors.white,
+              size: AppTypography.sizeText,
+            ),
+          ),
+
+          const SizedBox(width: 16),
+
+          // Total labels
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'GRAND TOTAL',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                const Text(
+                  'Amount to Pay',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(width: 12),
+
+          // Total amount
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                total.toStringAsFixed(2),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: AppTypography.sizeText,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -397,7 +488,7 @@ class CashierWidgets {
           "discount".tr,
           style: AppTypography.cardSubtitle.copyWith(
             color: colors.subtext,
-            fontSize: AppTypography.sizeCategory,
+            // fontSize: AppTypography.sizeCategory,
           ),
         ),
         SizedBox(width: ScreenType.isMobile() ? 8.w : 120.w),
@@ -419,7 +510,7 @@ class CashierWidgets {
               style: AppTypography.cardSubtitle.copyWith(
                 color: colors.text,
                 fontWeight: FontWeight.bold,
-                fontSize: AppTypography.sizeCategory,
+                // fontSize: AppTypography.sizeCategory,
               ),
               decoration: InputDecoration(
                 hintText: "0.00",
@@ -462,7 +553,7 @@ class CashierWidgets {
           "round_off".tr,
           style: AppTypography.cardSubtitle.copyWith(
             color: colors.subtext,
-            fontSize: AppTypography.sizeCategory,
+            // fontSize: AppTypography.sizeCategory,
           ),
         ),
         SizedBox(width: 8.w),
@@ -489,7 +580,7 @@ class CashierWidgets {
                     style: AppTypography.cardSubtitle.copyWith(
                       color: colors.text,
                       fontWeight: FontWeight.bold,
-                      fontSize: AppTypography.sizeCategory,
+                      // fontSize: AppTypography.sizeCategory,
                     ),
                     decoration: InputDecoration(
                       hintText: "0.00",
@@ -579,7 +670,7 @@ class CashierWidgets {
                   style: AppTypography.cardSubtitle.copyWith(
                     fontWeight: FontWeight.bold,
                     color: colors.text,
-                    fontSize: AppTypography.sizeCategory,
+                    // fontSize: AppTypography.sizeCategory,
                   ),
                 ),
                 SizedBox(
@@ -595,7 +686,7 @@ class CashierWidgets {
                     style: AppTypography.cardSubtitle.copyWith(
                       color: sufficient ? AppTheme.primaryGreen : Colors.red,
                       fontWeight: FontWeight.bold,
-                      fontSize: AppTypography.sizeCategory,
+                      // fontSize: AppTypography.sizeCategory,
                     ),
                     decoration: const InputDecoration(
                       isDense: true,
@@ -618,7 +709,7 @@ class CashierWidgets {
                     style: AppTypography.cardSubtitle.copyWith(
                       fontWeight: FontWeight.bold,
                       color: AppTheme.primaryGreen,
-                      fontSize: AppTypography.sizeCategory,
+                      // fontSize: AppTypography.sizeCategory,
                     ),
                   ),
                   Text(
@@ -626,7 +717,7 @@ class CashierWidgets {
                     style: AppTypography.cardSubtitle.copyWith(
                       fontWeight: FontWeight.bold,
                       color: AppTheme.primaryGreen,
-                      fontSize: AppTypography.sizeCategory,
+                      // fontSize: AppTypography.sizeCategory,
                     ),
                   ),
                 ],
@@ -703,7 +794,7 @@ class CashierWidgets {
           style: AppTypography.cardSubtitle.copyWith(
             color: colors.subtext,
             fontWeight: FontWeight.w500,
-            fontSize: AppTypography.sizeCategory,
+            // fontSize: AppTypography.sizeCategory,
           ),
         ),
         SizedBox(height: 6.h),
@@ -737,7 +828,7 @@ class CashierWidgets {
                         style: AppTypography.cardSubtitle.copyWith(
                           color: colors.text,
                           fontWeight: FontWeight.w500,
-                          fontSize: AppTypography.sizeCategory,
+                          // fontSize: AppTypography.sizeCategory,
                         ),
                       ),
                     ),
@@ -771,7 +862,7 @@ class CashierWidgets {
             style: AppTypography.cardSubtitle.copyWith(
               color: readOnly ? colors.subtext : colors.text,
               fontWeight: FontWeight.w600,
-              fontSize: AppTypography.sizeCategory,
+              // fontSize: AppTypography.sizeCategory,
             ),
           ),
         ),
@@ -790,7 +881,7 @@ class CashierWidgets {
               style: AppTypography.cardSubtitle.copyWith(
                 color: readOnly ? colors.subtext : highlightColor,
                 fontWeight: FontWeight.bold,
-                fontSize: AppTypography.sizeCategory,
+                // fontSize: AppTypography.sizeCategory,
               ),
               decoration: InputDecoration(
                 hintText: "0.00",
@@ -866,7 +957,7 @@ class CashierWidgets {
               style: AppTypography.cardSubtitle.copyWith(
                 color: isValid ? AppTheme.primaryGreen : Colors.orange.shade800,
                 fontWeight: FontWeight.w600,
-                fontSize: AppTypography.sizeCategory,
+                // fontSize: AppTypography.sizeCategory,
               ),
             ),
             Text(
@@ -876,7 +967,7 @@ class CashierWidgets {
               style: AppTypography.cardSubtitle.copyWith(
                 color: isValid ? AppTheme.primaryGreen : Colors.orange.shade800,
                 fontWeight: FontWeight.bold,
-                fontSize: AppTypography.sizeCategory,
+                // fontSize: AppTypography.sizeCategory,
               ),
             ),
           ],
@@ -896,15 +987,33 @@ class CashierWidgets {
     TextEditingController ctrl,
     Function(String) onChg,
     dynamic colors,
+    double vatAmount,
   ) {
     return Padding(
       padding: EdgeInsets.only(bottom: 8.h),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            '${'person'.tr} ${index + 1}',
-            style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${'person'.tr} ${index + 1}',
+                style: AppTypography.cardSubtitle.copyWith(
+                  color: colors.text,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              SizedBox(height: 2.h),
+              Text(
+                AppState.cmpTaxType == 1
+                    ? 'VAT: ${vatAmount.toStringAsFixed(2)}'
+                    : 'CGST: ${(vatAmount / 2).toStringAsFixed(2)} | SGST: ${(vatAmount / 2).toStringAsFixed(2)}',
+                style: AppTypography.cardInfo.copyWith(
+                  color: colors.subtext,
+                ),
+              ),
+            ],
           ),
           SizedBox(
             width: 120.w,
@@ -915,6 +1024,7 @@ class CashierWidgets {
                 decimal: true,
               ),
               onChanged: onChg,
+              readOnly: true,
               textAlign: TextAlign.right,
               style: AppTypography.cardSubtitle.copyWith(
                 color: AppTheme.primaryGreen,
@@ -955,6 +1065,7 @@ class CashierWidgets {
   static Widget splitSummaryRow(
     double currentTotal,
     double diff,
+    double currentVatTotal,
     dynamic colors,
   ) {
     final bool balanced = diff.abs() < 0.01;
@@ -988,6 +1099,68 @@ class CashierWidgets {
               ),
             ],
           ),
+          SizedBox(height: 4.h),
+          if (AppState.cmpTaxType == 1) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "VAT Total",
+                  style: AppTypography.cardInfo.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.subtext,
+                  ),
+                ),
+                Text(
+                  currentVatTotal.toStringAsFixed(2),
+                  style: AppTypography.cardInfo.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.subtext,
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "CGST Total",
+                  style: AppTypography.cardInfo.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.subtext,
+                  ),
+                ),
+                Text(
+                  (currentVatTotal / 2).toStringAsFixed(2),
+                  style: AppTypography.cardInfo.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.subtext,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 4.h),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "SGST Total",
+                  style: AppTypography.cardInfo.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.subtext,
+                  ),
+                ),
+                Text(
+                  (currentVatTotal / 2).toStringAsFixed(2),
+                  style: AppTypography.cardInfo.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.subtext,
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (!balanced) ...[
             SizedBox(height: 4.h),
             Row(

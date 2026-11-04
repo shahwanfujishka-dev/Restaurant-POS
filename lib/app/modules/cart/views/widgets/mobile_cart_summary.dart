@@ -1,29 +1,69 @@
 import 'dart:convert';
 import 'dart:developer';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
 
+import '../../../../../helper/network_helper.dart';
 import '../../../../../helper/snackbar_helper.dart';
 import '../../../../data/Device_Roles/device_roles.dart';
 import '../../../../data/models/order_model.dart';
+import '../../../../data/services/local_hub_client.dart';
 import '../../../../data/utils/AppState.dart';
 import '../../../../routes/app_pages.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/app_typography.dart';
 import '../../../../widgets/reusable_button.dart';
 import '../../../home/controller/dashboard_controller.dart';
-import '../../../home/controller/home_controller.dart';
 import '../../../home/controller/order_controller.dart';
 import '../../../home/controller/printer_controller.dart';
+import '../../../home/controller/table_controller.dart';
 import '../../controller/cart_controller.dart';
 
 class MobileCartSummary extends StatelessWidget {
   final CartController controller;
 
   MobileCartSummary({super.key, required this.controller});
+
+  bool get _isLocalClient =>
+      DeviceConfig.operationMode == OperationMode.local &&
+      DeviceConfig.role == DeviceRole.client;
+
+  Future<bool> _validateClientReady() async {
+    if (!_isLocalClient) return true; // host / online: nothing to check
+
+    final ip = DeviceConfig.hostIp;
+    if (ip == null || ip.trim().isEmpty) {
+      showSafeSnackbar(
+        'main_cashier_not_set'.tr,
+        'main_cashier_ip_hint'.tr,
+      );
+      return false;
+    }
+
+    if (!DeviceConfig.hasAuthToken) {
+      showSafeSnackbar(
+        'device_not_registered'.tr,
+        'connect_to_hub_msg'.tr,
+      );
+      return false;
+    }
+
+    try {
+      await LocalHubClient.instance
+          .testConnection(hostIp: ip, port: DeviceConfig.hostPort)
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // Warn but allow: placeOrder saves locally and SyncService retries later
+      showSafeSnackbar(
+        'hub_unreachable'.tr,
+        'offline_save_msg'.tr,
+      );
+    }
+    return true;
+  }
+
   Future<bool> _validatePrinterReady() async {
     final printerController = Get.find<PrinterController>();
 
@@ -83,9 +123,14 @@ class MobileCartSummary extends StatelessWidget {
       return;
     }
 
+    if (DeviceConfig.isOnline && !await NetworkHelper.hasInternetConnection()) {
+      showSafeSnackbar('no_internet'.tr, 'check_network_msg'.tr);
+      return;
+    }
+
     try {
       controller.isProcessing.value = true;
-      if (validateClient) return;
+      if (validateClient && !await _validateClientReady()) return;
       if (validatePrinter && !await _validatePrinterReady()) return;
       final responseData = controller.isEditing
           ? await controller.updateOrder(
@@ -105,7 +150,12 @@ class MobileCartSummary extends StatelessWidget {
             );
 
       if (responseData == null) {
-        showSafeSnackbar("Error", "Failed to process order. Please try again.");
+        if (DeviceConfig.isOnline &&
+            !await NetworkHelper.hasInternetConnection()) {
+          showSafeSnackbar('no_internet'.tr, 'check_network_msg'.tr);
+        } else {
+          showSafeSnackbar("Error", "Failed to process order. Please try again.");
+        }
         return;
       }
 
@@ -152,7 +202,16 @@ class MobileCartSummary extends StatelessWidget {
 
       // If there's an error, show message and stop processing without navigation
       if (hasError) {
-        showSafeSnackbar("Error", errorMessage);
+        if (errorMessage.toLowerCase().contains('seat') || errorMessage.toLowerCase().contains('available')) {
+          try {
+            if (Get.isRegistered<TablesController>()) {
+              await Get.find<TablesController>().fetchTables(silent: true);
+            }
+          } catch (_) {}
+          showSafeSnackbar("Table Seat Notice", errorMessage);
+        } else {
+          showSafeSnackbar("Error", errorMessage);
+        }
         return;
       }
 
@@ -214,7 +273,7 @@ class MobileCartSummary extends StatelessWidget {
     }
   }
 
-  void _navigateToCashier() {
+  void _navigateToCashier() async {
     if (controller.cartItems.isEmpty || controller.isProcessing.value) return;
 
     if (AppState.orderType.id == 0 && !controller.hasSelectedTable) {
@@ -231,6 +290,11 @@ class MobileCartSummary extends StatelessWidget {
         "Empty Order",
         "Please add at least one item before proceeding to receipt.",
       );
+      return;
+    }
+
+    if (DeviceConfig.isOnline && !await NetworkHelper.hasInternetConnection()) {
+      showSafeSnackbar('no_internet'.tr, 'check_network_msg'.tr);
       return;
     }
 
@@ -458,11 +522,21 @@ class MobileCartSummary extends StatelessWidget {
                           child: PrimaryButton(
                             isLoading: controller.isProcessing.value,
                             height: 48.h,
-                            onPressed: () => _handlePlaceOrUpdateOrder(
-                              isDraft: true,
-                              validateClient: true, // cart_summary.dart only
-                              validatePrinter: true,
-                            ),
+                            onPressed: () async {
+                              if (DeviceConfig.isOnline &&
+                                  !await NetworkHelper.hasInternetConnection()) {
+                                showSafeSnackbar(
+                                  'no_internet'.tr,
+                                  'check_network_msg'.tr,
+                                );
+                                return;
+                              }
+                              _handlePlaceOrUpdateOrder(
+                                isDraft: true,
+                                validateClient: true,
+                                validatePrinter: true,
+                              );
+                            },
                             color: colors.isDark
                                 ? Colors.orange.shade900
                                 : Colors.orange.shade700,
@@ -476,11 +550,19 @@ class MobileCartSummary extends StatelessWidget {
                           child: PrimaryButton(
                             isLoading: controller.isProcessing.value,
                             onPressed: () async {
+                              if (DeviceConfig.isOnline &&
+                                  !await NetworkHelper.hasInternetConnection()) {
+                                showSafeSnackbar(
+                                  'no_internet'.tr,
+                                  'check_network_msg'.tr,
+                                );
+                                return;
+                              }
                               final ready = await _validatePrinterReady();
                               if (!ready) return;
                               _handlePlaceOrUpdateOrder(
                                 isDraft: false,
-                                validateClient: true, // cart_summary.dart only
+                                validateClient: true,
                                 validatePrinter: true,
                               );
                             },
@@ -499,12 +581,20 @@ class MobileCartSummary extends StatelessWidget {
                             isLoading: controller.isProcessing.value,
                             height: 48.h,
                             onPressed: () async {
+                              if (DeviceConfig.isOnline &&
+                                  !await NetworkHelper.hasInternetConnection()) {
+                                showSafeSnackbar(
+                                  'no_internet'.tr,
+                                  'check_network_msg'.tr,
+                                );
+                                return;
+                              }
                               final ready = await _validatePrinterReady();
                               if (!ready) return;
                               _handlePlaceOrUpdateOrder(
                                 isDraft: false,
                                 shouldPrintReceipt: true,
-                                validateClient: true, // cart_summary.dart only
+                                validateClient: true,
                                 validatePrinter: true,
                               );
                             },
@@ -518,11 +608,19 @@ class MobileCartSummary extends StatelessWidget {
                           child: PrimaryButton(
                             isLoading: controller.isProcessing.value,
                             height: 48.h,
-                            onPressed: () {
+                            onPressed: () async {
                               if (controller.selectedCaptainId.value == null) {
                                 showSafeSnackbar(
                                   "Captain Required",
                                   "Please select a captain before placing the order.",
+                                );
+                                return;
+                              }
+                              if (DeviceConfig.isOnline &&
+                                  !await NetworkHelper.hasInternetConnection()) {
+                                showSafeSnackbar(
+                                  'no_internet'.tr,
+                                  'check_network_msg'.tr,
                                 );
                                 return;
                               }

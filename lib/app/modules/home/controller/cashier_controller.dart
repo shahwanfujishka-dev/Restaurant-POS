@@ -3,8 +3,10 @@ import 'dart:developer';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart' hide ScreenType;
+import 'package:restaurant_pos/app/data/Device_Roles/device_roles.dart';
 import 'package:restaurant_pos/app/modules/home/controller/printer_controller.dart';
 import 'package:restaurant_pos/app/routes/app_pages.dart';
+import 'package:restaurant_pos/helper/network_helper.dart';
 import 'package:restaurant_pos/helper/screen_type.dart';
 import 'package:restaurant_pos/helper/snackbar_helper.dart';
 import '../../../data/models/order_model.dart';
@@ -381,11 +383,30 @@ class CashierController extends GetxController {
   double get currentSplitTotal => splitAmounts.fold(0, (sum, val) => sum + val);
   double get splitDifference => totalToPay - currentSplitTotal;
 
+  double getSplitVat(int index) {
+    if (index < 0 || index >= splitAmounts.length) return 0.0;
+    final amt = splitAmounts[index];
+    if (totalToPay <= 0) return 0.0;
+    return (tax * (amt / totalToPay));
+  }
+
+  double get currentSplitVatTotal {
+    double totalVat = 0;
+    for (int i = 0; i < splitAmounts.length; i++) {
+      totalVat += getSplitVat(i);
+    }
+    return totalVat;
+  }
+
   Future<void> handleCompliment() async {
     await settleOrder(isComp: true);
   }
 
   Future<void> settleOrder({bool isComp = false}) async {
+    if (DeviceConfig.isOnline && !await NetworkHelper.hasInternetConnection()) {
+      showSafeSnackbar('no_internet'.tr, 'check_network_msg'.tr);
+      return;
+    }
     if (!isComp &&
         paymentMethod.value == 'Cash' &&
         receivedAmount.value < totalToPay) {
@@ -626,7 +647,12 @@ class CashierController extends GetxController {
       } else if (result != null && result['no_change'] == true) {
         showSafeSnackbar('no_change'.tr, 'no_change_msg'.tr);
       } else {
-        showSafeSnackbar('error'.tr, 'unexpected_error'.tr);
+        if (DeviceConfig.isOnline &&
+            !await NetworkHelper.hasInternetConnection()) {
+          showSafeSnackbar('no_internet'.tr, 'check_network_msg'.tr);
+        } else {
+          showSafeSnackbar('error'.tr, 'unexpected_error'.tr);
+        }
       }
     } catch (e) {
       log("Settle Error: $e");

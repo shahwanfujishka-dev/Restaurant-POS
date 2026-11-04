@@ -45,7 +45,9 @@ dependencies:
   esc_pos_utils_plus: ^2.0.0
   esc_pos_printer_plus: ^0.1.1
   sqflite: ^2.3.0
-  sqflite_common_ffi: ^2.3.0
+  sqflite_common_ffi: ^2.4.0
+  sqlite3: ^3.3.4
+  flutter_secure_storage: ^10.3.4
   path: ^1.8.3
   shelf: ^1.4.1
   shelf_router: ^1.1.4
@@ -66,16 +68,22 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_lints: ^6.0.0
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^6.0.0
+
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
+
+hooks:
+  user_defines:
+    sqlite3:
+      source: sqlcipher
 
 # The following section is specific to Flutter packages.
 flutter:

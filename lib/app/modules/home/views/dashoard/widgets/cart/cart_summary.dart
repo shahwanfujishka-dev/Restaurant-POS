@@ -2,6 +2,7 @@ import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart' hide ScreenType;
+import '../../../../../../../helper/network_helper.dart';
 import '../../../../../../../helper/snackbar_helper.dart';
 import '../../../../../../data/Device_Roles/device_roles.dart';
 import '../../../../../../data/models/order_model.dart';
@@ -14,6 +15,7 @@ import '../../../../../cart/controller/cart_controller.dart';
 import '../../../../controller/dashboard_controller.dart';
 import '../../../../controller/order_controller.dart';
 import '../../../../controller/printer_controller.dart';
+import '../../../../controller/table_controller.dart';
 import '../../../../../../data/utils/AppState.dart';
 import '../../../../../../../helper/screen_type.dart';
 
@@ -127,6 +129,11 @@ class CartSummary extends StatelessWidget {
       return;
     }
 
+    if (DeviceConfig.isOnline && !await NetworkHelper.hasInternetConnection()) {
+      showSafeSnackbar('no_internet'.tr, 'check_network_msg'.tr);
+      return;
+    }
+
     try {
       controller.isProcessing.value = true;
 
@@ -147,7 +154,12 @@ class CartSummary extends StatelessWidget {
             );
 
       if (responseData == null) {
-        showSafeSnackbar('error'.tr, 'unexpected_error'.tr);
+        if (DeviceConfig.isOnline &&
+            !await NetworkHelper.hasInternetConnection()) {
+          showSafeSnackbar('no_internet'.tr, 'check_network_msg'.tr);
+        } else {
+          showSafeSnackbar('error'.tr, 'unexpected_error'.tr);
+        }
         return;
       }
 
@@ -180,7 +192,16 @@ class CartSummary extends StatelessWidget {
       }
 
       if (hasError) {
-        showSafeSnackbar('error'.tr, errorMessage);
+        if (errorMessage.toLowerCase().contains('seat') || errorMessage.toLowerCase().contains('available')) {
+          try {
+            if (Get.isRegistered<TablesController>()) {
+              await Get.find<TablesController>().fetchTables(silent: true);
+            }
+          } catch (_) {}
+          showSafeSnackbar("Table Seat Notice", errorMessage);
+        } else {
+          showSafeSnackbar('error'.tr, errorMessage);
+        }
         return;
       }
 
@@ -251,7 +272,7 @@ class CartSummary extends StatelessWidget {
     }
   }
 
-  void _navigateToCashier() {
+  void _navigateToCashier() async {
     if (controller.cartItems.isEmpty || controller.isProcessing.value) return;
 
     if (AppState.orderType.id == 0 && !controller.hasSelectedTable) {
@@ -271,6 +292,11 @@ class CartSummary extends StatelessWidget {
         'empty_order'.tr,
         'empty_order_msg'.tr,
       );
+      return;
+    }
+
+    if (DeviceConfig.isOnline && !await NetworkHelper.hasInternetConnection()) {
+      showSafeSnackbar('no_internet'.tr, 'check_network_msg'.tr);
       return;
     }
 
@@ -463,7 +489,17 @@ class CartSummary extends StatelessWidget {
                     child: PrimaryButton(
                       isLoading: controller.isProcessing.value,
                       height: 48.h,
-                      onPressed: () => _handlePlaceOrUpdateOrder(isDraft: true),
+                      onPressed: () async {
+                        if (DeviceConfig.isOnline &&
+                            !await NetworkHelper.hasInternetConnection()) {
+                          showSafeSnackbar(
+                            'no_internet'.tr,
+                            'check_network_msg'.tr,
+                          );
+                          return;
+                        }
+                        _handlePlaceOrUpdateOrder(isDraft: true);
+                      },
                       color: colors.isDark
                           ? Colors.orange.shade900
                           : Colors.orange.shade700,
@@ -476,6 +512,14 @@ class CartSummary extends StatelessWidget {
                     child: PrimaryButton(
                       isLoading: controller.isProcessing.value,
                       onPressed: () async {
+                        if (DeviceConfig.isOnline &&
+                            !await NetworkHelper.hasInternetConnection()) {
+                          showSafeSnackbar(
+                            'no_internet'.tr,
+                            'check_network_msg'.tr,
+                          );
+                          return;
+                        }
                         if (!await _validateClientReady()) return;
                         final ready = await _validatePrinterReady();
                         if (!ready) return;
@@ -496,6 +540,14 @@ class CartSummary extends StatelessWidget {
                       isLoading: controller.isProcessing.value,
                       height: 48.h,
                       onPressed: () async {
+                        if (DeviceConfig.isOnline &&
+                            !await NetworkHelper.hasInternetConnection()) {
+                          showSafeSnackbar(
+                            'no_internet'.tr,
+                            'check_network_msg'.tr,
+                          );
+                          return;
+                        }
                         final ready = await _validatePrinterReady();
                         if (!ready) return;
                         _handlePlaceOrUpdateOrder(
@@ -512,11 +564,19 @@ class CartSummary extends StatelessWidget {
                     child: PrimaryButton(
                       isLoading: controller.isProcessing.value,
                       height: 48.h,
-                      onPressed: () {
+                      onPressed: () async {
                         if (controller.selectedCaptainId.value == null) {
                           showSafeSnackbar(
                             'captain_required'.tr,
                             'captain_required_msg'.tr,
+                          );
+                          return;
+                        }
+                        if (DeviceConfig.isOnline &&
+                            !await NetworkHelper.hasInternetConnection()) {
+                          showSafeSnackbar(
+                            'no_internet'.tr,
+                            'check_network_msg'.tr,
                           );
                           return;
                         }

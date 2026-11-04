@@ -25,8 +25,10 @@ class HomeView extends GetView<HomeController> {
   void _toggleLanguage() {
     if (Get.locale?.languageCode == 'ar') {
       Get.updateLocale(const Locale('en', 'US'));
+      AppState.setAppLanguage('en');
     } else {
       Get.updateLocale(const Locale('ar', 'AR'));
+      AppState.setAppLanguage('ar');
     }
   }
 

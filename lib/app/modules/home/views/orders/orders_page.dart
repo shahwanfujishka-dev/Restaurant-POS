@@ -382,48 +382,62 @@ void _showOrderDetailsDialog(
                   ),
                   Row(
                     children: [
-                      if (currentOrder.sales_odr_pos_status == 1 ||
-                          currentOrder.sales_odr_pos_status == 2 ||
-                          currentOrder.status.value == OrderStatus.paid)
-                        IconButton(
-                          onPressed: () {
-                            final printerController =
-                                Get.find<PrinterController>();
-                            if (currentOrder.status.value == OrderStatus.paid) {
-                              printerController.printReceipt(
-                                currentOrder,
-                                currentOrder.totalAmount,
-                                0, // change
-                                roundOff: currentOrder.roundOff,
-                                discount: currentOrder.discount,
-                              );
-                            } else {
-                              printerController.printKOT(currentOrder);
-                            }
-                          },
-                          icon: const Icon(Icons.print, color: Colors.blue),
-                          tooltip: 'print_kot'.tr,
-                        ),
-                      if ((currentOrder.sales_odr_pos_status == 1 ||
-                              currentOrder.sales_odr_pos_status == 2) &&
-                          currentOrder.status.value != OrderStatus.paid)
-                        IconButton(
-                          onPressed: () {
-                            final printerController =
-                                Get.find<PrinterController>();
-                            printerController.printReceipt(
-                              currentOrder,
-                              0,
-                              0,
-                              isBill: true,
-                            );
-                          },
-                          icon: const Icon(
-                            Icons.receipt_long,
-                            color: Colors.orange,
+                      if (controller.loadingOrderDetailsIds.contains(currentOrder.id) ||
+                          (currentOrder.invNo.isNotEmpty &&
+                              controller.loadingOrderDetailsIds.contains(currentOrder.invNo)))
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 8.w),
+                          child: SizedBox(
+                            width: 20.w,
+                            height: 20.h,
+                            child: const CircularProgressIndicator(strokeWidth: 2),
                           ),
-                          tooltip: 'print_bill'.tr,
-                        ),
+                        )
+                      else ...[
+                        if (currentOrder.sales_odr_pos_status == 1 ||
+                            currentOrder.sales_odr_pos_status == 2 ||
+                            currentOrder.status.value == OrderStatus.paid)
+                          Obx(() {
+                            final bool isPrinting =
+                                controller.printingOrderIds.contains(currentOrder.id) ||
+                                (currentOrder.invNo.isNotEmpty &&
+                                    controller.printingOrderIds.contains(currentOrder.invNo));
+                            return IconButton(
+                              onPressed: isPrinting ? null : () => controller.handlePrint(currentOrder),
+                              icon: isPrinting
+                                  ? SizedBox(
+                                      width: 16.w,
+                                      height: 16.h,
+                                      child: const CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.print, color: Colors.blue),
+                              tooltip: 'print_kot'.tr,
+                            );
+                          }),
+                        if ((currentOrder.sales_odr_pos_status == 1 ||
+                                currentOrder.sales_odr_pos_status == 2) &&
+                            currentOrder.status.value != OrderStatus.paid)
+                          Obx(() {
+                            final bool isPrinting =
+                                controller.printingOrderIds.contains(currentOrder.id) ||
+                                (currentOrder.invNo.isNotEmpty &&
+                                    controller.printingOrderIds.contains(currentOrder.invNo));
+                            return IconButton(
+                              onPressed: isPrinting ? null : () => controller.handlePrint(currentOrder, isBill: true),
+                              icon: isPrinting
+                                  ? SizedBox(
+                                      width: 16.w,
+                                      height: 16.h,
+                                      child: const CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(
+                                      Icons.receipt_long,
+                                      color: Colors.orange,
+                                    ),
+                              tooltip: 'print_bill'.tr,
+                            );
+                          }),
+                      ],
                       if (currentOrder.status.value != OrderStatus.paid)
                         IconButton(
                           onPressed: () {
@@ -465,10 +479,32 @@ void _showOrderDetailsDialog(
                     ),
                   ],
                 ),
-              if (currentOrder.items.isEmpty)
+              if (controller.loadingOrderDetailsIds.contains(currentOrder.id) ||
+                  (currentOrder.invNo.isNotEmpty &&
+                      controller.loadingOrderDetailsIds.contains(
+                        currentOrder.invNo,
+                      )))
                 Padding(
                   padding: EdgeInsets.all(20.w),
                   child: const Center(child: CircularProgressIndicator()),
+                )
+              else if (currentOrder.items.isEmpty)
+                Padding(
+                  padding: EdgeInsets.all(20.w),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.cloud_off_rounded, size: 32, color: colors.subtext),
+                      SizedBox(height: 8.h),
+                      Text(
+                        'Item details require internet or online mode connection.',
+                        textAlign: TextAlign.center,
+                        style: AppTypography.cardSubtitle.copyWith(
+                          color: colors.subtext,
+                        ),
+                      ),
+                    ],
+                  ),
                 )
               else
                 ConstrainedBox(
@@ -1281,48 +1317,62 @@ class _OrderDetailsContent extends StatelessWidget {
                 ),
                 Row(
                   children: [
-                    if (currentOrder.sales_odr_pos_status == 1 ||
-                        currentOrder.sales_odr_pos_status == 2 ||
-                        currentOrder.status.value == OrderStatus.paid)
-                      IconButton(
-                        onPressed: () {
-                          final printerController =
-                              Get.find<PrinterController>();
-                          if (currentOrder.status.value == OrderStatus.paid) {
-                            printerController.printReceipt(
-                              currentOrder,
-                              currentOrder.totalAmount,
-                              0, // change
-                              roundOff: currentOrder.roundOff,
-                              discount: currentOrder.discount,
-                            );
-                          } else {
-                            printerController.printKOT(currentOrder);
-                          }
-                        },
-                        icon: const Icon(Icons.print, color: Colors.blue),
-                        tooltip: 'print_kot'.tr,
-                      ),
-                    if (currentOrder.sales_odr_pos_status == 1 ||
-                        currentOrder.sales_odr_pos_status == 2 &&
-                            currentOrder.status.value != OrderStatus.paid)
-                      IconButton(
-                        onPressed: () {
-                          final printerController =
-                              Get.find<PrinterController>();
-                          printerController.printReceipt(
-                            currentOrder,
-                            0,
-                            0,
-                            isBill: true,
-                          );
-                        },
-                        icon: const Icon(
-                          Icons.receipt_long,
-                          color: Colors.orange,
+                    if (controller.loadingOrderDetailsIds.contains(currentOrder.id) ||
+                        (currentOrder.invNo.isNotEmpty &&
+                            controller.loadingOrderDetailsIds.contains(currentOrder.invNo)))
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8.w),
+                        child: SizedBox(
+                          width: 20.w,
+                          height: 20.h,
+                          child: const CircularProgressIndicator(strokeWidth: 2),
                         ),
-                        tooltip: 'print_bill'.tr,
-                      ),
+                      )
+                    else ...[
+                      if (currentOrder.sales_odr_pos_status == 1 ||
+                          currentOrder.sales_odr_pos_status == 2 ||
+                          currentOrder.status.value == OrderStatus.paid)
+                        Obx(() {
+                          final bool isPrinting =
+                              controller.printingOrderIds.contains(currentOrder.id) ||
+                              (currentOrder.invNo.isNotEmpty &&
+                                  controller.printingOrderIds.contains(currentOrder.invNo));
+                          return IconButton(
+                            onPressed: isPrinting ? null : () => controller.handlePrint(currentOrder),
+                            icon: isPrinting
+                                ? SizedBox(
+                                    width: 16.w,
+                                    height: 16.h,
+                                    child: const CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.print, color: Colors.blue),
+                            tooltip: 'print_kot'.tr,
+                          );
+                        }),
+                      if (currentOrder.sales_odr_pos_status == 1 ||
+                          currentOrder.sales_odr_pos_status == 2 &&
+                              currentOrder.status.value != OrderStatus.paid)
+                        Obx(() {
+                          final bool isPrinting =
+                              controller.printingOrderIds.contains(currentOrder.id) ||
+                              (currentOrder.invNo.isNotEmpty &&
+                                  controller.printingOrderIds.contains(currentOrder.invNo));
+                          return IconButton(
+                            onPressed: isPrinting ? null : () => controller.handlePrint(currentOrder, isBill: true),
+                            icon: isPrinting
+                                ? SizedBox(
+                                    width: 16.w,
+                                    height: 16.h,
+                                    child: const CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(
+                                    Icons.receipt_long,
+                                    color: Colors.orange,
+                                  ),
+                            tooltip: 'print_bill'.tr,
+                          );
+                        }),
+                    ],
                     if (currentOrder.status.value != OrderStatus.paid &&
                         currentOrder.status.value != OrderStatus.cancelled)
                       IconButton(
@@ -1374,10 +1424,32 @@ class _OrderDetailsContent extends StatelessWidget {
                   ),
                 ],
               ),
-            if (currentOrder.items.isEmpty)
+            if (controller.loadingOrderDetailsIds.contains(currentOrder.id) ||
+                (currentOrder.invNo.isNotEmpty &&
+                    controller.loadingOrderDetailsIds.contains(
+                      currentOrder.invNo,
+                    )))
               Padding(
                 padding: EdgeInsets.all(20.w),
                 child: const Center(child: CircularProgressIndicator()),
+              )
+            else if (currentOrder.items.isEmpty)
+              Padding(
+                padding: EdgeInsets.all(20.w),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.cloud_off_rounded, size: 32, color: colors.subtext),
+                    SizedBox(height: 8.h),
+                    Text(
+                      'Item details require internet or online mode connection.',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.cardSubtitle.copyWith(
+                        color: colors.subtext,
+                      ),
+                    ),
+                  ],
+                ),
               )
             else
               ConstrainedBox(
