@@ -123,7 +123,7 @@ class SettingsView extends GetView<SettingsController> {
             ),
           ),
           SizedBox(height: 12.h),
-          _buildInfoTile(context, Icons.info_outline, 'version'.tr, "1.2.0"),
+          _buildInfoTile(context, Icons.info_outline, 'version'.tr, "1.2.4"),
           _buildInfoTile(
             context,
             Icons.business_outlined,
@@ -153,7 +153,7 @@ class SettingsView extends GetView<SettingsController> {
         borderRadius: BorderRadius.circular(12.r),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(colors.isDark ? 0.2 : 0.05),
+            color: Colors.black.withValues(alpha: colors.isDark ? 0.2 : 0.05),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -166,7 +166,7 @@ class SettingsView extends GetView<SettingsController> {
               onTap: () => controller.changeOperationMode(false),
               leading: CircleAvatar(
                 backgroundColor: !controller.isLocalMode
-                    ? AppTheme.primaryGreen.withOpacity(0.1)
+                    ? AppTheme.primaryGreen.withValues(alpha:0.1)
                     : colors.textField,
                 child: Icon(
                   Icons.cloud_outlined,

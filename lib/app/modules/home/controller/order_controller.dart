@@ -134,7 +134,10 @@ class OrdersController extends GetxController {
                 final orderType =
                 (processing['sales_odr_order_type'] as num? ?? 0).toInt();
                 int posStatus =
-                (processing['sales_odr_pos_status'] as num? ?? 0).toInt();
+                    (processing['sales_odr_pos_status'] as num? ??
+                            processing['res_status'] as num? ??
+                            0)
+                        .toInt();
 
                 OrderStatus status;
                 if (posStatus == 1) {
@@ -182,7 +185,8 @@ class OrdersController extends GetxController {
                     totalAmount:
                     (processing['sales_odr_total'] ??
                         processing['tot_amount'] ??
-                        processing['total_amount'] as num? ??
+                        processing['total_amount'] ??
+                        processing['sq_total'] as num? ??
                         0.0)
                         .toDouble(),
                     areaId: area.id,
@@ -268,8 +272,11 @@ class OrdersController extends GetxController {
             fetchedOrders = data.map((json) {
               final orderType = (json['sales_odr_order_type'] as num? ?? 0)
                   .toInt();
-              int posStatus = (json['sales_odr_pos_status'] as num? ?? 0)
-                  .toInt();
+              int posStatus =
+                  (json['sales_odr_pos_status'] as num? ??
+                          json['res_status'] as num? ??
+                          0)
+                      .toInt();
 
               OrderStatus status;
               if (posStatus == 1) {
@@ -339,7 +346,9 @@ class OrdersController extends GetxController {
                 totalAmount:
                 (json['sales_odr_total'] ??
                     json['tot_amount'] ??
-                    json['total_amount'] as num? ??
+                    json['total_amount'] ??
+                    json['sq_total'] as num? ??
+                    processingOrder?.totalAmount ??
                     0.0)
                     .toDouble(),
                 areaId: processingOrder?.areaId,
@@ -773,12 +782,17 @@ class OrdersController extends GetxController {
     int? offlineSeq = json['offline_seq'] != null
         ? (json['offline_seq'] as num).toInt()
         : null;
+    int? payloadPosStatus;
     try {
       final payloadStr = json['payload'] as String?;
       if (payloadStr != null && payloadStr.isNotEmpty) {
         final dynamic decoded = jsonDecode(payloadStr);
         if (decoded is Map<String, dynamic>) {
           final Map<String, dynamic> payload = decoded;
+          payloadPosStatus =
+              (payload['sales_odr_pos_status'] as num? ??
+                      payload['res_status'] as num?)
+                  ?.toInt();
           final resolvedBranchInv = _firstNonEmptyValue([
             payload['sales_odr_sales_branch_inv'],
             payload['sales_odr_branch_inv'],
@@ -803,6 +817,7 @@ class OrdersController extends GetxController {
               (payload['tot_amount'] ??
                   payload['sales_odr_total'] ??
                   payload['total_amount'] ??
+                  payload['sq_total'] ??
                   totalAmount)
                   .toDouble();
           totalTax =
@@ -1103,8 +1118,12 @@ class OrdersController extends GetxController {
     if (statusStr == 'cancelled') status = OrderStatus.cancelled;
     if (statusStr == 'billed') status = OrderStatus.billed;
 
-    int posStatusFromDb = (json['sales_odr_pos_status'] as num? ?? 0).toInt();
+    final int? posStatusFromDb =
+        (json['sales_odr_pos_status'] as num? ?? payloadPosStatus)?.toInt();
+    if (posStatusFromDb == 0) status = OrderStatus.draft;
     if (posStatusFromDb == 2) status = OrderStatus.billed;
+    if (posStatusFromDb == 3) status = OrderStatus.paid;
+    if (posStatusFromDb == 4) status = OrderStatus.cancelled;
 
     return OrderModel(
       id: orderId,
@@ -1747,8 +1766,12 @@ class OrdersController extends GetxController {
 
     final int orderType = (preview['sales_odr_order_type'] as num? ?? 0)
         .toInt();
-    final int posStatus = (preview['sales_odr_pos_status'] as num? ?? 0)
-        .toInt();
+    final int posStatus =
+        (preview['sales_odr_pos_status'] as num? ??
+                preview['res_status'] as num? ??
+                responseJson['res_status'] as num? ??
+                0)
+            .toInt();
     final String cartTableFallback = fallbackTableName.isNotEmpty
         ? fallbackTableName
         : cartController.selectedTableName.value;
@@ -1812,7 +1835,8 @@ class OrdersController extends GetxController {
       totalAmount:
           (preview['tot_amount'] ??
                   preview['sales_odr_total'] ??
-                  preview['total_amount'] as num? ??
+                  preview['total_amount'] ??
+                  preview['sq_total'] as num? ??
                   0.0)
               .toDouble(),
       totalTax:

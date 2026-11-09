@@ -1,3 +1,5 @@
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart'hide ScreenType;
@@ -86,6 +88,28 @@ class TablesPage extends GetView<TablesController> {
             Expanded(
               child: Obx(() {
                 final tables = controller.selectedArea.value?.tables ?? [];
+                if (tables.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.table_restaurant_rounded,
+                          size: AppTypography.iconLarge,
+                          color: colors.subtext,
+                        ),
+                        SizedBox(height: 12.h),
+                        Text(
+                          'no_tables_found'.tr,
+                          style: AppTypography.cardTitle.copyWith(
+                            color: colors.subtext,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
                 return GridView.builder(
                   padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 24.h),
                   physics: const BouncingScrollPhysics(),
@@ -144,9 +168,17 @@ class _AreaHeader extends GetView<TablesController> {
         children: [
           SizedBox(
             height: 52.h,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
+            child: ScrollConfiguration(
+              behavior: ScrollConfiguration.of(context).copyWith(
+                dragDevices: {
+                  PointerDeviceKind.touch,
+                  PointerDeviceKind.mouse,
+                  PointerDeviceKind.trackpad,
+                },
+              ),
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+              padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 10.h),
               itemCount: controller.areas.length,
               itemBuilder: (context, index) {
                 final area = controller.areas[index];
@@ -173,14 +205,10 @@ class _AreaHeader extends GetView<TablesController> {
                           ),
                         ),
                         alignment: Alignment.center,
-                        child: Text(
-                          area.name.tr,
-                          style: AppTypography.cardSubtitle.copyWith(
-                            color: isSelected ? Colors.white : colors.subtext,
-                            fontWeight: isSelected
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                          ),
+                        child: _AreaNameDisplay(
+                          name: area.name.tr,
+                          isSelected: isSelected,
+                          textColor: isSelected ? Colors.white : colors.subtext,
                         ),
                       ),
                     );
@@ -189,7 +217,7 @@ class _AreaHeader extends GetView<TablesController> {
               },
             ),
           ),
-
+          ),
           // ── Stats summary row ──
           Obx(() {
             final tables = controller.selectedArea.value?.tables ?? [];
@@ -232,6 +260,124 @@ class _AreaHeader extends GetView<TablesController> {
             );
           }),
         ],
+      ),
+    );
+  }
+}
+
+class _AreaNameDisplay extends StatefulWidget {
+  const _AreaNameDisplay({
+    required this.name,
+    required this.isSelected,
+    required this.textColor,
+  });
+
+  final String name;
+  final bool isSelected;
+  final Color textColor;
+
+  @override
+  State<_AreaNameDisplay> createState() => _AreaNameDisplayState();
+}
+
+class _AreaNameDisplayState extends State<_AreaNameDisplay> {
+  final ScrollController _scrollController = ScrollController();
+  bool _isActive = true;
+
+  bool get _isLongName => widget.name.length > 25;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollName());
+  }
+
+  @override
+  void didUpdateWidget(covariant _AreaNameDisplay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.name != widget.name) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_isActive && _scrollController.hasClients) {
+          _scrollController.jumpTo(0);
+        }
+      });
+    }
+  }
+
+  Future<void> _scrollName() async {
+    while (_isActive) {
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
+      if (!_isActive || !_isLongName || !_scrollController.hasClients) {
+        continue;
+      }
+
+      final maxExtent = _scrollController.position.maxScrollExtent;
+      if (maxExtent <= 0) continue;
+
+      await _scrollController.animateTo(
+        maxExtent,
+        duration: Duration(
+          milliseconds: (maxExtent * 90).round().clamp(1500, 10000).toInt(),
+        ),
+        curve: Curves.linear,
+      );
+      if (!_isActive || !_scrollController.hasClients) continue;
+
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
+      if (_isActive && _scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _isActive = false;
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textStyle = AppTypography.cardSubtitle.copyWith(
+      color: _isLongName ? AppTheme.primaryGreen : widget.textColor,
+      fontWeight: widget.isSelected ? FontWeight.w700 : FontWeight.w500,
+      fontFamily: _isLongName ? 'monospace' : null,
+      letterSpacing: _isLongName ? 0.8 : null,
+    );
+
+    if (!_isLongName) {
+      return Text(widget.name, style: textStyle);
+    }
+
+    return Container(
+      width: 90.w,
+      padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 3.h),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.88),
+        borderRadius: BorderRadius.circular(4.r),
+        border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.55)),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primaryGreen.withOpacity(0.12),
+            blurRadius: 5,
+          ),
+        ],
+      ),
+      child: IgnorePointer(
+        child: ClipRect(
+          child: SingleChildScrollView(
+            controller: _scrollController,
+            scrollDirection: Axis.horizontal,
+            physics: const NeverScrollableScrollPhysics(),
+            child: Text(
+              widget.name,
+              maxLines: 1,
+              softWrap: false,
+              style: textStyle,
+            ),
+          ),
+        ),
       ),
     );
   }

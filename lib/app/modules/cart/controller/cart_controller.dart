@@ -1126,6 +1126,45 @@ class CartController extends GetxController {
   }
 
   String? _pendingOrderUuid;
+
+  Map<String, dynamic> _attachOrderRequestFallbacks(
+    Map<String, dynamic> response,
+    Map<String, dynamic> request,
+  ) {
+    final dynamic message = response['message'];
+    final bool previewInMessage =
+        message is Map && message['preview'] is Map;
+    final bool previewAtRoot = response['preview'] is Map;
+    final dynamic rawPreview = previewInMessage
+        ? message['preview']
+        : previewAtRoot
+        ? response['preview']
+        : response;
+    final preview = Map<String, dynamic>.from(rawPreview as Map);
+    final rawTable = request['res_table'];
+    final table = rawTable is Map ? rawTable : const <String, dynamic>{};
+
+    preview['sales_odr_pos_status'] ??= request['res_status'];
+    preview['sales_odr_total'] ??= request['sq_total'];
+    preview['sales_odr_tax'] ??= request['sq_tax'];
+    preview['sales_odr_order_type'] ??= request['pos_odr_type'];
+    preview['sales_odr_no_seats'] ??= request['no_seats'];
+    preview['sales_odr_table_id'] ??= table['rt_id'];
+    preview['sales_odr_table_name'] ??=
+        request['table_name'] ?? table['rt_name'];
+    preview['sales_odr_date'] ??= request['saleqt_date'];
+
+    if (previewInMessage) {
+      response['message'] = {
+        ...Map<String, dynamic>.from(message as Map),
+        'preview': preview,
+      };
+    } else {
+      response['preview'] = preview;
+    }
+    return response;
+  }
+
   Future<Map<String, dynamic>?> placeOrder({
     bool isDraft = false,
     int? payType,
@@ -1397,13 +1436,20 @@ class CartController extends GetxController {
           debugPrint('Order UUID : $orderUuid');
           debugPrint('Status Code: ${response.statusCode}');
 
-          final Map<String, dynamic> responseData = response.data is Map
-              ? Map<String, dynamic>.from(response.data)
-              : jsonDecode(response.data);
+          final Map<String, dynamic> responseData =
+              _attachOrderRequestFallbacks(
+                response.data is Map
+                    ? Map<String, dynamic>.from(response.data)
+                    : jsonDecode(response.data),
+                body,
+              );
 
           try {
             final message = responseData['message'];
-            final preview = (message is Map ? message['preview'] : null) ?? responseData['preview'] ?? responseData;
+            final preview =
+                (message is Map ? message['preview'] : null) ??
+                responseData['preview'] ??
+                responseData;
             if (preview is Map) {
               await _dbHelper.cacheServerOrders([preview]);
             }
@@ -2375,13 +2421,20 @@ class CartController extends GetxController {
         if (response.statusCode == 200) {
           debugPrint("✅ Order updated online: ${editingOrderId.value}");
 
-          final Map<String, dynamic> realResponse = response.data is Map
-              ? Map<String, dynamic>.from(response.data)
-              : jsonDecode(response.data);
+          final Map<String, dynamic> realResponse =
+              _attachOrderRequestFallbacks(
+                response.data is Map
+                    ? Map<String, dynamic>.from(response.data)
+                    : jsonDecode(response.data),
+                body,
+              );
 
           try {
             final message = realResponse['message'];
-            final preview = (message is Map ? message['preview'] : null) ?? realResponse['preview'] ?? realResponse;
+            final preview =
+                (message is Map ? message['preview'] : null) ??
+                realResponse['preview'] ??
+                realResponse;
             if (preview is Map) {
               await _dbHelper.cacheServerOrders([preview]);
             }

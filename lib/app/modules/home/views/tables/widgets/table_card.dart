@@ -80,9 +80,15 @@ class TableCard extends StatelessWidget {
         final occupied = controller.getOccupiedCountForTable(table);
         final status = table.getStatus(occupied);
         final accent = _accentColor(status);
+        final displayedOccupied = table.availableSeatCount <= 0
+            ? table.chairCount
+            : occupied.clamp(0, table.chairCount).toInt();
         final fillPct = table.chairCount > 0
-            ? occupied / table.chairCount
+            ? displayedOccupied / table.chairCount
             : 0.0;
+        final displayedChairCount = table.availableSeatCount > 0
+            ? table.availableSeatCount
+            : table.chairCount;
 
         return AnimatedScale(
           scale: scale.value,
@@ -143,13 +149,14 @@ class TableCard extends StatelessWidget {
                               children: [
                                 Text(
                                   table.name,
-                                  style: AppTypography.cardTitle.copyWith(
+                                  style: AppTypography.cardSubtitle.copyWith(
                                     color: colors.text,
+                                    fontWeight: FontWeight.bold
                                   ),
                                 ),
                                 SizedBox(height: 2.h),
                                 Text(
-                                  '${table.chairCount} chairs',
+                                  '$displayedChairCount chairs',
                                   style: AppTypography.cardSubtitle.copyWith(
                                     color: colors.subtext,
                                   ),
@@ -205,7 +212,7 @@ class TableCard extends StatelessWidget {
                                   child: Text(
                                     _statusLabel(
                                       status,
-                                      occupied,
+                                      displayedOccupied,
                                       table.chairCount,
                                     ),
                                     style: AppTypography.cardInfo.copyWith(

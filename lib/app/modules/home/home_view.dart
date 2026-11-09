@@ -169,14 +169,8 @@ class HomeView extends GetView<HomeController> {
                         );
                       }).toList(),
                       SizedBox(width: 4.w),
-                      Text(
-                        AppState.username.toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 4.sp,
-                          fontWeight: FontWeight.w600,
-                          color: colors.text,
-                        ),
-                      ),
+                      _buildUsernameDisplay(context, colors),
+
                       SizedBox(width: 2.w),
                       _buildThemeToggle(context),
                       _buildLanguageToggle(context),
@@ -314,6 +308,29 @@ class HomeView extends GetView<HomeController> {
         ),
       );
     });
+  }
+
+  Widget _buildUsernameDisplay(BuildContext context, AppColors colors) {
+    final username = AppState.username.toUpperCase();
+    final style = TextStyle(
+      fontSize: 4.sp,
+      fontWeight: FontWeight.w600,
+      color: colors.text,
+    );
+
+    if (username.length <= 18) {
+      return Text(username, style: style);
+    }
+
+    return _DigitalUsername(
+      username: username,
+      style: style.copyWith(
+        color: AppTheme.primaryGreen,
+        fontFamily: 'monospace',
+        letterSpacing: 0.8,
+      ),
+      width: AppTypography.sizeArea,
+    );
   }
 
   Widget _buildStatusBadge(BuildContext context) {
@@ -506,6 +523,95 @@ class HomeView extends GetView<HomeController> {
           fontSize: 3.5.sp,
         ),
         onPressed: _toggleLanguage,
+      ),
+    );
+  }
+}
+
+class _DigitalUsername extends StatefulWidget {
+  const _DigitalUsername({
+    required this.username,
+    required this.style,
+    required this.width,
+  });
+
+  final String username;
+  final TextStyle style;
+  final double width;
+
+  @override
+  State<_DigitalUsername> createState() => _DigitalUsernameState();
+}
+
+class _DigitalUsernameState extends State<_DigitalUsername> {
+  final ScrollController _scrollController = ScrollController();
+  bool _isActive = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollUsername());
+  }
+
+  Future<void> _scrollUsername() async {
+    while (_isActive) {
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      if (!_isActive || !_scrollController.hasClients) continue;
+
+      final maxExtent = _scrollController.position.maxScrollExtent;
+      if (maxExtent <= 0) continue;
+
+      await _scrollController.animateTo(
+        maxExtent,
+        duration: Duration(
+          milliseconds: (maxExtent * 35).round().clamp(500, 4000).toInt(),
+        ),
+        curve: Curves.linear,
+      );
+      if (!_isActive || !_scrollController.hasClients) continue;
+
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (_isActive && _scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _isActive = false;
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: widget.width,
+      padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 3.h),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.88),
+        borderRadius: BorderRadius.circular(4.r),
+        border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.55)),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primaryGreen.withOpacity(0.12),
+            blurRadius: 5,
+          ),
+        ],
+      ),
+      child: ClipRect(
+        child: SingleChildScrollView(
+          controller: _scrollController,
+          scrollDirection: Axis.horizontal,
+          physics: const NeverScrollableScrollPhysics(),
+          child: Text(
+            widget.username,
+            maxLines: 1,
+            softWrap: false,
+            style: widget.style,
+          ),
+        ),
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:sqflite/sqflite.dart' as mobile_sqflite;
@@ -46,6 +47,15 @@ void main() async {
   debugPrint(
     'STORAGE: ${GetStorage().getKeys()} -> ${GetStorage().getValues()}',
   );
+  final secureStorage = Platform.isMacOS
+      ? const FlutterSecureStorage(
+          mOptions: MacOsOptions(usesDataProtectionKeychain: false),
+        )
+      : const FlutterSecureStorage();
+  final databaseKey = await secureStorage.read(
+    key: 'pos_app_database_key_v1',
+  );
+  debugPrint('Database encryption key available: ${databaseKey != null}');
   final themeController = Get.put(ThemeController(), permanent: true);
 
   final storage = GetStorage();

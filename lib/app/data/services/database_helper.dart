@@ -59,7 +59,7 @@ class DatabaseHelper {
     final database = await databaseFactoryFfi.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 23, // schema version is independent of the encryption format
+        version: 24, // schema version is independent of the encryption format
         onConfigure: (db) => _configureEncryptedDatabase(db, key),
         onCreate: _createDB,
         onUpgrade: _onUpgrade,
@@ -506,6 +506,16 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE orders ADD COLUMN updated_at TEXT');
       } catch (e) {}
     }
+    if (oldVersion < 24) {
+      try {
+        await db.execute(
+          'ALTER TABLE pos_tables ADD COLUMN available_seat_count INTEGER DEFAULT 0',
+        );
+        await db.execute(
+          'UPDATE pos_tables SET available_seat_count = chair_count WHERE available_seat_count = 0',
+        );
+      } catch (e) {}
+    }
   }
 
   Future _createDB(Database db, int version) async {
@@ -583,6 +593,7 @@ class DatabaseHelper {
         area_id INTEGER,
         name TEXT,
         chair_count INTEGER,
+        available_seat_count INTEGER DEFAULT 0,
         processing_table TEXT,
         sort_order INTEGER
       )
@@ -1094,12 +1105,21 @@ CREATE TABLE orders (
                 .toString();
 
         int posStatus =
-            (json['sales_odr_pos_status'] as num? ?? (isSold ? 3 : 1)).toInt();
+            (json['sales_odr_pos_status'] as num? ??
+                    json['res_status'] as num? ??
+                    (isSold ? 3 : 1))
+                .toInt();
         String status = 'pending';
         if (posStatus == 0) status = 'draft';
         if (posStatus == 2) status = 'billed';
         if (posStatus == 3) status = 'paid';
         if (posStatus == 4) status = 'cancelled';
+
+        final rawTotal =
+            json['sales_odr_total'] ??
+            json['tot_amount'] ??
+            json['total_amount'] ??
+            json['sq_total'];
 
         final values = {
           'server_id': serverId,
@@ -1111,11 +1131,7 @@ CREATE TABLE orders (
               json['sales_odr_table_name']?.toString() ??
               json['ledger_name']?.toString() ??
               'N/A',
-          'total_amount': _toDouble(
-            json['sales_odr_total'] ??
-                json['tot_amount'] ??
-                json['total_amount'],
-          ),
+          if (rawTotal != null) 'total_amount': _toDouble(rawTotal),
           'total_tax': _toDouble(
             json['sales_odr_tax'] ?? json['tot_tax'] ?? json['total_tax'],
           ),
@@ -1663,6 +1679,11 @@ CREATE TABLE orders (
   Future<void> insertAreas(List<Map<String, dynamic>> areas) async {
     final db = await instance.database;
     await db.transaction((txn) async {
+      // This API provides a complete snapshot. Remove stale areas/tables before
+      // inserting it so deleted or deactivated tables disappear without a full sync.
+      await txn.delete('pos_tables');
+      await txn.delete('areas');
+
       final batch = txn.batch();
       for (int i = 0; i < areas.length; i++) {
         final area = areas[i];
@@ -1672,20 +1693,29 @@ CREATE TABLE orders (
           'is_default': _toInt(area['ra_is_default']),
           'price_group_id': _toInt(area['ra_prcgrp_id']),
           'sort_order': i,
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        });
 
         if (area['pos_tables'] != null) {
           final List tables = area['pos_tables'];
           for (int j = 0; j < tables.length; j++) {
             final table = tables[j];
+            final seatCapacity = _toInt(
+              table['rt_seat_count'] ?? table['rt_avl_seat'],
+            );
+            final availableSeats = _toInt(
+              table['rt_avl_seat'] ?? seatCapacity,
+            );
+            if (seatCapacity <= 0 || availableSeats <= 0) continue;
+
             batch.insert('pos_tables', {
               'id': _toInt(table['rt_id']),
               'area_id': _toInt(area['ra_id']),
               'name': table['rt_name'],
-              'chair_count': _toInt(table['rt_seat_count']),
+              'chair_count': seatCapacity,
+              'available_seat_count': availableSeats,
               'processing_table': jsonEncode(table['processing_table']),
               'sort_order': j,
-            }, conflictAlgorithm: ConflictAlgorithm.replace);
+            });
           }
         }
       }
@@ -1702,7 +1732,7 @@ CREATE TABLE orders (
     final db = await instance.database;
     return await db.query(
       'pos_tables',
-      where: 'area_id = ?',
+      where: 'area_id = ? AND available_seat_count > 0',
       whereArgs: [areaId],
       orderBy: 'sort_order ASC',
     );
