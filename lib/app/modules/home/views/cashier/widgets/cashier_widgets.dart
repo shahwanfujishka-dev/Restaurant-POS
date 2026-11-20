@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart' hide ScreenType;
 import 'package:restaurant_pos/helper/screen_type.dart';
@@ -541,73 +542,96 @@ class CashierWidgets {
   // MINIMAL ROUND OFF INPUT
   // ─────────────────────────────────────────────
   static Widget minimalRoundOffInput(
-    TextEditingController roundOffController,
-    Function(String) onChanged,
-    VoidCallback onIncrement,
-    VoidCallback onDecrement,
-    dynamic colors,
-  ) {
+      TextEditingController roundOffController,
+      Function(String) onChanged,
+      RxBool isNegative,
+      Function(bool) onSignChanged,
+      dynamic colors,
+      ) {
     return Row(
       children: [
         Text(
           "round_off".tr,
-          style: AppTypography.cardSubtitle.copyWith(
-            color: colors.subtext,
-            // fontSize: AppTypography.sizeCategory,
+          style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+        ),
+        SizedBox(width: 8.w),
+        Obx(
+              () => Row(
+            children: [
+              _signBtn(Icons.remove, isNegative.value, Colors.red,
+                      () => onSignChanged(true), colors),
+              SizedBox(width: 4.w),
+              _signBtn(Icons.add, !isNegative.value, AppTheme.primaryGreen,
+                      () => onSignChanged(false), colors),
+            ],
           ),
         ),
         SizedBox(width: 8.w),
         Expanded(
-          child: Row(
-            children: [
-              roundOffBtn(Icons.remove, onDecrement, colors),
-              Expanded(
-                child: SizedBox(
-                  height: 32.h,
-                  child: TextField(
-                    controller: roundOffController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                      signed: true,
-                    ),
-                    onChanged: onChanged,
-                    onTap: () {
-                      if (roundOffController.text == "0.00") {
-                        roundOffController.clear();
-                      }
-                    },
-                    textAlign: TextAlign.center,
-                    style: AppTypography.cardSubtitle.copyWith(
-                      color: colors.text,
-                      fontWeight: FontWeight.bold,
-                      // fontSize: AppTypography.sizeCategory,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: "0.00",
-                      contentPadding: EdgeInsets.symmetric(horizontal: 4.w),
-                      filled: true,
-                      fillColor: colors.bg,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6.r),
-                        borderSide: BorderSide(color: colors.border),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6.r),
-                        borderSide: BorderSide(color: colors.border),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6.r),
-                        borderSide: BorderSide(color: AppTheme.primaryGreen),
-                      ),
-                    ),
-                  ),
+          child: SizedBox(
+            height: 32.h,
+            child: TextField(
+              controller: roundOffController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+              ],
+              onChanged: onChanged,
+              textAlign: TextAlign.right,
+              style: AppTypography.cardSubtitle.copyWith(
+                color: colors.text,
+                fontWeight: FontWeight.bold,
+              ),
+              decoration: InputDecoration(
+                hintText: "0.00",
+                contentPadding: EdgeInsets.symmetric(horizontal: 8.w),
+                filled: true,
+                fillColor: colors.bg,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6.r),
+                  borderSide: BorderSide(color: colors.border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6.r),
+                  borderSide: BorderSide(color: colors.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6.r),
+                  borderSide: BorderSide(color: AppTheme.primaryGreen),
                 ),
               ),
-              roundOffBtn(Icons.add, onIncrement, colors),
-            ],
+            ),
           ),
         ),
       ],
+    );
+  }
+
+  static Widget _signBtn(
+      IconData icon,
+      bool selected,
+      Color activeColor,
+      VoidCallback onTap,
+      dynamic colors,
+      ) {
+    final size = ScreenType.isMobile() ? 28.h : 32.h;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        height: size,
+        width: size,
+        decoration: BoxDecoration(
+          color: selected ? activeColor : colors.card,
+          borderRadius: BorderRadius.circular(6.r),
+          border: Border.all(color: selected ? activeColor : colors.border),
+        ),
+        child: Icon(
+          icon,
+          size: AppTypography.sizeCategory,
+          color: selected ? Colors.white : colors.text,
+        ),
+      ),
     );
   }
 

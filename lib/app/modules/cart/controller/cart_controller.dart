@@ -26,7 +26,7 @@ class CartItem {
   final int? addonuntId;
   final int? originalUnitId;
   final double? originalBaseQty;
-  final FoodItemModel product;
+  FoodItemModel product;
   ProductUnit unit;
   List<AddonModel> selectedAddons;
   List<AddonModel>? originalAddons;
@@ -292,11 +292,45 @@ class CartController extends GetxController {
     selectedTableId.value = tableId;
     selectedTableName.value = tableName;
     selectedChairCount.value = chairCount;
-    selectedAreaId.value = areaId;
-    selectedAreaName.value = areaName;
-    selectedPriceGroupId.value = priceGroupId;
+
+    int resolvedAreaId = areaId;
+    String resolvedAreaName = areaName;
+    int resolvedPriceGroupId = priceGroupId;
+
+    if ((resolvedAreaName.isEmpty || resolvedAreaId == 0) &&
+        Get.isRegistered<TablesController>()) {
+      final tablesCtrl = Get.find<TablesController>();
+      AreaModel? area;
+      if (resolvedAreaId > 0) {
+        area = tablesCtrl.areas.firstWhereOrNull((a) => a.id == resolvedAreaId);
+      }
+      if (area == null && tableId.isNotEmpty) {
+        final tId = int.tryParse(tableId) ?? 0;
+        if (tId > 0) {
+          area = tablesCtrl.areas.firstWhereOrNull(
+            (a) => a.tables.any((t) => t.id == tId),
+          );
+        }
+      }
+      if (area != null) {
+        resolvedAreaName = area.name;
+        resolvedAreaId = area.id;
+        if (resolvedPriceGroupId == 0) {
+          resolvedPriceGroupId = area.priceGroupID;
+        }
+      }
+    }
+
+    final int previousPriceGroupId = selectedPriceGroupId.value;
+    selectedAreaId.value = resolvedAreaId;
+    selectedAreaName.value = resolvedAreaName;
+    selectedPriceGroupId.value = resolvedPriceGroupId;
     _clearDashboardSearch();
     print(selectedPriceGroupId);
+
+    if (previousPriceGroupId != resolvedPriceGroupId && cartItems.isNotEmpty) {
+      recalculateCartRatesForPriceGroup(resolvedPriceGroupId);
+    }
   }
 
   void clearTable() {
@@ -315,6 +349,18 @@ class CartController extends GetxController {
       debugPrint("Error refreshing tables: $e");
     }
     _clearDashboardSearch();
+  }
+
+  void handleOrderTypeChange(OrderType newType) {
+    if (newType != OrderType.dineIn) {
+      if (selectedTableId.isNotEmpty || selectedPriceGroupId.value != 0) {
+        final int oldPriceGroupId = selectedPriceGroupId.value;
+        clearTable();
+        if (oldPriceGroupId != 0 && cartItems.isNotEmpty) {
+          recalculateCartRatesForPriceGroup(0);
+        }
+      }
+    }
   }
 
   Map<String, dynamic> _buildProcessingTable(OrderModel order) {
@@ -344,6 +390,15 @@ class CartController extends GetxController {
     wasDraft.value = order.sales_odr_pos_status == 0;
     originalItems.assignAll(order.items);
     editingOrderFullData = _buildProcessingTable(order);
+
+    assert(() {
+      final live = order.items.where((i) => !i.isRemoved);
+      final keys = live.map((i) => '${i.product.id}_${i.unit.unitId}_${i.notes}');
+      if (keys.toSet().length != keys.length) {
+        log('⚠️ Duplicate live rows in order ${order.invNo}: check flags filtering');
+      }
+      return true;
+    }());
 
     // Store original metadata
     originalTableId.value = order.tableId;
@@ -496,17 +551,12 @@ class CartController extends GetxController {
     String note = '',
   }) {
     if (blockIfProcessing()) return;
-    final existingDeletedIndex = cartItems.indexWhere((item) {
-      bool sameProduct = item.product.id == product.id;
-      bool sameUnit = item.unit.unitId == unit.unitId;
-      bool sameAddons = _areAddonsEqual(item.selectedAddons, addons);
-      bool sameNote = item.note.value == note;
-      return sameProduct &&
-          sameUnit &&
-          sameAddons &&
-          sameNote &&
-          item.isDeleted.value;
-    });
+    // 1) match deleted row WITHOUT comparing addons/note
+    final existingDeletedIndex = cartItems.indexWhere((item) =>
+    item.isDeleted.value &&
+        item.subId != null &&
+        item.product.id == product.id &&
+        item.unit.unitId == unit.unitId);
 
     if (existingDeletedIndex != -1) {
       final existingItem = cartItems[existingDeletedIndex];
@@ -514,37 +564,31 @@ class CartController extends GetxController {
       existingItem.quantity.value = 1;
       existingItem.priceAtAdd.value = unit.rate;
       existingItem.unit = unit;
-      existingItem.note.value = note; // ← new
+      existingItem.note.value = note;
 
-      existingItem.selectedAddons.clear();
-      for (var a in addons) {
-        existingItem.selectedAddons.add(
-          AddonModel(
-            id: a.id,
-            prdId: a.prdId,
-            prdaddon_flags: a.prdaddon_flags,
-            name: a.name,
-            price: a.price,
-            unitDisplay: a.unitDisplay,
-            unitId: a.unitId,
-            taxCatId: a.taxCatId,
-            taxPer: a.taxPer,
-            unitBaseQty: a.unitBaseQty,
-            initialQty: a.quantity.value,
-            freeQty: a.freeQty,
-          ),
-        );
-      }
+      existingItem.selectedAddons
+        ..clear()
+        ..addAll(addons.map((a) => AddonModel(
+          id: a.id,
+          prdId: a.prdId,
+          prdaddon_flags: a.prdaddon_flags,
+          name: a.name,
+          price: a.price,
+          unitDisplay: a.unitDisplay,
+          unitId: a.unitId,
+          taxCatId: a.taxCatId,
+          taxPer: a.taxPer,
+          unitBaseQty: a.unitBaseQty,
+          initialQty: a.quantity.value,
+          freeQty: a.freeQty,
+        )));
 
-      existingItem.originalAddons = existingItem.selectedAddons
-          .map((a) => a.copyWith())
-          .toList();
+      // ❌ REMOVE this: it wipes the original subIds
+      // existingItem.originalAddons = existingItem.selectedAddons.map((a) => a.copyWith()).toList();
 
       cartItems.refresh();
-      showSafeSnackbar(
-        "Added to Cart",
-        "${product.name} (${unit.unitDisplay}) added back successfully",
-      );
+      showSafeSnackbar("Added to Cart",
+          "${product.name} (${unit.unitDisplay}) added back successfully");
       return;
     }
 
@@ -608,6 +652,62 @@ class CartController extends GetxController {
       if (sorted1[i].quantity.value != sorted2[i].quantity.value) return false;
     }
     return true;
+  }
+
+  Future<void> recalculateCartRatesForPriceGroup(int newPriceGroupId) async {
+    for (final item in cartItems.toList()) {
+      if (item.isDeleted.value) continue;
+      final int productId = int.tryParse(item.product.id) ?? 0;
+      if (productId == 0) continue;
+
+      try {
+        final productMap = await _dbHelper.getProductById(
+          item.product.id,
+          priceGroupId: newPriceGroupId,
+        );
+        if (productMap != null) {
+          item.product = FoodItemModel.fromJson(productMap);
+        }
+
+        final Map<String, double>? rateMap = await _dbHelper.getStockUnitRate(
+          productId,
+          item.unit.unitId,
+          newPriceGroupId,
+        );
+
+        double customRate = 0.0;
+        if (rateMap != null) {
+          customRate = rateMap['sur_unit_rate'] ?? 0.0;
+          if (customRate <= 0) {
+            customRate = rateMap['sur_unit_rate2'] ?? 0.0;
+          }
+        }
+
+        if (customRate <= 0) {
+          final rows = await _dbHelper.getBulkProductUnits(productId);
+          final row = rows.firstWhereOrNull(
+            (r) => (r['produnit_unit_id'] as num?)?.toInt() == item.unit.unitId,
+          );
+          if (row != null) {
+            final cat = ProductUnit.fromJson(Map<String, dynamic>.from(row));
+            customRate = cat.rate > 0
+                ? cat.rate
+                : item.product.price * cat.unitBaseQty;
+            item.unit = cat.copyWith(rate: customRate);
+          } else {
+            customRate = item.product.price * item.unit.unitBaseQty;
+            item.unit = item.unit.copyWith(rate: customRate);
+          }
+        } else {
+          item.unit = item.unit.copyWith(rate: customRate);
+        }
+
+        item.priceAtAdd.value = item.unit.rate;
+      } catch (e) {
+        debugPrint("Error recalculating rate for ${item.product.name}: $e");
+      }
+    }
+    cartItems.refresh();
   }
 
   Future<void> _rehydrateUnits() async {
@@ -832,6 +932,26 @@ class CartController extends GetxController {
     }
     return currentUnitId;
   }
+
+
+  /// true = blocked (shows a message). Call before posting an order.
+  bool blockIfUnprintable() {
+    final texts = <String>[];
+    for (final i in cartItems.where((i) => !i.isDeleted.value)) {
+      texts.add(i.product.name);
+      texts.add(i.note.value);
+      texts.addAll(i.selectedAddons.map((a) => a.name));
+    }
+    final bad = Get.find<PrinterController>().firstUnprintableText(texts);
+    if (bad == null) return false;
+    showSafeSnackbar(
+      "Unsupported characters",
+      "The printer can't print \"${bad.trim()}\". Use English or Arabic text (item name or note) and try again.",
+    );
+    return true;
+  }
+
+
 
   Future<bool> _isNeverSynced(String id) async {
     // Hub device: its own DB is the source of truth

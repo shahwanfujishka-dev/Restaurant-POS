@@ -193,7 +193,7 @@ class _AreaHeader extends GetView<TablesController> {
                       onTap: () => controller.selectArea(area),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
-                        padding: EdgeInsets.symmetric(horizontal: 16.w),
+                        padding: EdgeInsets.symmetric(horizontal: AppTypography.smallText),
                         decoration: BoxDecoration(
                           color: isSelected ? AppTheme.primaryGreen : colors.bg,
                           borderRadius: BorderRadius.circular(50.r),
@@ -340,7 +340,11 @@ class _AreaNameDisplayState extends State<_AreaNameDisplay> {
   @override
   Widget build(BuildContext context) {
     final textStyle = AppTypography.cardSubtitle.copyWith(
-      color: _isLongName ? AppTheme.primaryGreen : widget.textColor,
+      color: widget.isSelected
+          ? Colors.white
+          : _isLongName
+          ? AppTheme.subTextColor
+          : widget.textColor,
       fontWeight: widget.isSelected ? FontWeight.w700 : FontWeight.w500,
       fontFamily: _isLongName ? 'monospace' : null,
       letterSpacing: _isLongName ? 0.8 : null,
@@ -351,19 +355,21 @@ class _AreaNameDisplayState extends State<_AreaNameDisplay> {
     }
 
     return Container(
-      width: 90.w,
-      padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 3.h),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.88),
-        borderRadius: BorderRadius.circular(4.r),
-        border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.55)),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primaryGreen.withOpacity(0.12),
-            blurRadius: 5,
-          ),
-        ],
+      constraints: BoxConstraints(
+        maxWidth: 90.w,
       ),
+      padding: EdgeInsets.symmetric(horizontal: 2.w, vertical: 2.h),
+      // decoration: BoxDecoration(
+      //   // color: Colors.black.withOpacity(0.88),
+      //   borderRadius: BorderRadius.circular(4.r),
+      //   border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.55)),
+      //   boxShadow: [
+      //     BoxShadow(
+      //       color: AppTheme.primaryGreen.withOpacity(0.12),
+      //       blurRadius: 5,
+      //     ),
+      //   ],
+      // ),
       child: IgnorePointer(
         child: ClipRect(
           child: SingleChildScrollView(

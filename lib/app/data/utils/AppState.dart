@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_navigation/src/extension_navigation.dart';
@@ -8,8 +9,11 @@ import '../../modules/home/controller/dashboard_controller.dart';
 import '../../modules/home/controller/order_controller.dart';
 import '../../modules/home/controller/printer_controller.dart';
 import '../../modules/home/controller/table_controller.dart';
+import '../../modules/home/controller/cashier_controller.dart';
+import '../../modules/home/controller/settings_controller.dart';
 import '../../modules/order_type/controller/order_type_controller.dart';
 import '../../modules/home/controller/home_controller.dart';
+import '../../modules/auth/controllers/auth_controller.dart';
 import '../models/order_type.dart';
 import '../Device_Roles/device_roles.dart';
 import '../services/database_helper.dart';
@@ -30,6 +34,10 @@ class AppState {
   static String get cmptoken => _storage.read('cmptoken') ?? '';
   static String get username => _storage.read('usr_name') ?? '';
   static String get userId => _storage.read('usr_id')?.toString() ?? '';
+  static String get lastSyncedUserId =>
+      _storage.read('last_synced_user_id')?.toString() ?? '';
+  static set lastSyncedUserId(String val) =>
+      _storage.write('last_synced_user_id', val);
   static String get serverUrl => _storage.read('base_url') ?? '';
   static String get ledgerId => _storage.read('ledger_id')?.toString() ?? '0';
   static String get cashLedgerId =>
@@ -76,73 +84,33 @@ class AppState {
     _storage.write('usr_bank_ledger_id', profile['usr_bank_ledger_id']);
   }
 
-  static bool _isSeqKey(String k) =>
-      k.startsWith('local_inv_seq_') ||
-      k.startsWith('local_so_seq_') ||
-      k == 'offline_order_seq';
-
-  static const _deviceKeys = [
-    'host_ip',
-    'host_port',
-    'device_id',
-    'operation_mode',
-    'hub_auth_token',
-    'order_visibility_my_only',
-    'device_role_override',
-  ];
-
   static Future<void> clearAllData() async {
-    final baseUrl = _storage.read('base_url');
-    final companyCode = _storage.read('company_code');
-    final branchId = _storage.read('branch_id');
-    final branchToken = _storage.read('branch_token');
-    final mobileAppToken = _storage.read('mobileapptoken');
-    final branchName = _storage.read('branch_name');
-    final branchDisName = _storage.read('branch_display_name');
-    final branchAddress = _storage.read('branch_address');
-    final branchPhone = _storage.read('branch_phone');
-    final branchMob = _storage.read('branch_mob');
-    final branchTin = _storage.read('branch_tin');
-    final taxType = _storage.read('cmp_tax_type');
+    // Preserve only the theme mode setting across app data clearing / logout
+    final isDarkMode = _storage.read('is_dark_mode');
 
-    // Backup device configuration keys
-    final Map<String, dynamic> deviceBackup = {};
-    for (final key in _deviceKeys) {
-      if (_storage.hasData(key)) {
-        deviceBackup[key] = _storage.read(key);
-      }
-    }
-
-    final seqBackup = <String, dynamic>{
-      for (final k in _storage.getKeys())
-        if (k is String && _isSeqKey(k)) k: _storage.read(k),
-    };
-
+    // Erase all GetStorage data
     await _storage.erase();
 
-    if (baseUrl != null) _storage.write('base_url', baseUrl);
-    if (companyCode != null) _storage.write('company_code', companyCode);
-    if (branchId != null) _storage.write('branch_id', branchId);
-    if (branchToken != null) _storage.write('branch_token', branchToken);
-    if (mobileAppToken != null) {
-      _storage.write('mobileapptoken', mobileAppToken);
+    // Restore theme mode if it was set
+    if (isDarkMode != null) {
+      _storage.write('is_dark_mode', isDarkMode);
     }
-    if (branchName != null) _storage.write('branch_name', branchName);
-    if (branchDisName != null) {
-      _storage.write('branch_display_name', branchDisName);
-    }
-    if (branchAddress != null) _storage.write('branch_address', branchAddress);
-    if (branchPhone != null) _storage.write('branch_phone', branchPhone);
-    if (branchMob != null) _storage.write('branch_mob', branchMob);
-    if (branchTin != null) _storage.write('branch_tin', branchTin);
-    if (taxType != null) _storage.write('cmp_tax_type', taxType);
 
-    // Restore device configuration
-    deviceBackup.forEach((k, v) => _storage.write(k, v));
+    // Explicitly reset operation mode back to online on logout
+    await DeviceConfig.setOperationMode(OperationMode.online);
 
-    seqBackup.forEach((k, v) => _storage.write(k, v));
     orderType = OrderType.dineIn;
 
+    // Clear cached network images and in-memory image cache
+    try {
+      await DefaultCacheManager().emptyCache();
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
+    } catch (e) {
+      debugPrint("Error clearing image cache: $e");
+    }
+
+    // Clear SQLite database tables (cached products, orders, customers, etc.)
     try {
       final db = await DatabaseHelper.instance.database;
       var tableNames = (await db.query(
@@ -157,9 +125,10 @@ class AppState {
         }
       }
     } catch (e) {
-      print("Error clearing database: $e");
+      debugPrint("Error clearing database: $e");
     }
 
+    // Clear GetX controllers
     try {
       if (Get.isRegistered<CartController>()) {
         Get.delete<CartController>(force: true);
@@ -182,8 +151,17 @@ class AppState {
       if (Get.isRegistered<HomeController>()) {
         Get.delete<HomeController>(force: true);
       }
+      if (Get.isRegistered<SettingsController>()) {
+        Get.delete<SettingsController>(force: true);
+      }
+      if (Get.isRegistered<CashierController>()) {
+        Get.delete<CashierController>(force: true);
+      }
+      if (Get.isRegistered<AuthController>()) {
+        Get.delete<AuthController>(force: true);
+      }
     } catch (e) {
-      print("Error deleting controllers: $e");
+      debugPrint("Error deleting controllers: $e");
     }
   }
 

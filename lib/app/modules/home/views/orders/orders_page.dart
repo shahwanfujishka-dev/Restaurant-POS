@@ -4,6 +4,8 @@ import 'package:get/get.dart' hide ScreenType;
 import 'package:intl/intl.dart';
 import 'package:restaurant_pos/app/data/utils/AppState.dart';
 import 'package:restaurant_pos/app/modules/home/views/orders/widgets/AnimatedTabBar.dart';
+import 'package:restaurant_pos/app/modules/home/views/tables/widgets/table_shimmer.dart';
+import 'package:shimmer/shimmer.dart';
 import '../../../../../helper/KeepAliveWrapper.dart';
 import '../../../../../helper/screen_type.dart';
 import '../../../../data/models/order_model.dart';
@@ -315,11 +317,8 @@ void _showOrderDetailsDialog(
       backgroundColor: colors.card,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
       child: Obx(() {
-        final currentOrder =
-            controller.orders.firstWhereOrNull((o) => o.id == order.id) ??
-            controller.soldOrders.firstWhereOrNull((o) => o.id == order.id) ??
-            order;
-
+        final currentOrder = controller.resolveOrder(order);
+        final detailsState = controller.detailsState(order);
         final String displayIdentifier =
             currentOrder.status.value == OrderStatus.paid
             ? _getOrderTypeName(currentOrder.sales_odr_order_type)
@@ -386,11 +385,20 @@ void _showOrderDetailsDialog(
                           (currentOrder.invNo.isNotEmpty &&
                               controller.loadingOrderDetailsIds.contains(currentOrder.invNo)))
                         Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 8.w),
-                          child: SizedBox(
-                            width: 20.w,
-                            height: 20.h,
-                            child: const CircularProgressIndicator(strokeWidth: 2),
+                          padding: EdgeInsets.symmetric(horizontal: 1.w),
+                          child: Shimmer.fromColors(
+                            baseColor: Colors.grey.shade300,
+                            highlightColor: Colors.grey.shade100,
+                            child: SizedBox(
+                              width: 20.w,
+                              height: 20.h,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(4.r),
+                                ),
+                              ),
+                            ),
                           ),
                         )
                       else ...[
@@ -405,11 +413,7 @@ void _showOrderDetailsDialog(
                             return IconButton(
                               onPressed: isPrinting ? null : () => controller.handlePrint(currentOrder),
                               icon: isPrinting
-                                  ? SizedBox(
-                                      width: 16.w,
-                                      height: 16.h,
-                                      child: const CircularProgressIndicator(strokeWidth: 2),
-                                    )
+                                  ? printShimmer(size: AppTypography.sizeText)
                                   : const Icon(Icons.print, color: Colors.blue),
                               tooltip: 'print_kot'.tr,
                             );
@@ -425,15 +429,11 @@ void _showOrderDetailsDialog(
                             return IconButton(
                               onPressed: isPrinting ? null : () => controller.handlePrint(currentOrder, isBill: true),
                               icon: isPrinting
-                                  ? SizedBox(
-                                      width: 16.w,
-                                      height: 16.h,
-                                      child: const CircularProgressIndicator(strokeWidth: 2),
-                                    )
+                                  ? printShimmer(size: AppTypography.sizeText)
                                   : const Icon(
-                                      Icons.receipt_long,
-                                      color: Colors.orange,
-                                    ),
+                                Icons.receipt_long,
+                                color: Colors.orange,
+                              ),
                               tooltip: 'print_bill'.tr,
                             );
                           }),
@@ -479,16 +479,12 @@ void _showOrderDetailsDialog(
                     ),
                   ],
                 ),
-              if (controller.loadingOrderDetailsIds.contains(currentOrder.id) ||
-                  (currentOrder.invNo.isNotEmpty &&
-                      controller.loadingOrderDetailsIds.contains(
-                        currentOrder.invNo,
-                      )))
+              if (detailsState == OrderDetailsState.loading)
                 Padding(
                   padding: EdgeInsets.all(20.w),
                   child: const Center(child: CircularProgressIndicator()),
                 )
-              else if (currentOrder.items.isEmpty)
+              else if (detailsState == OrderDetailsState.failed)
                 Padding(
                   padding: EdgeInsets.all(20.w),
                   child: Column(
@@ -497,18 +493,23 @@ void _showOrderDetailsDialog(
                       Icon(Icons.cloud_off_rounded, size: 32, color: colors.subtext),
                       SizedBox(height: 8.h),
                       Text(
-                        'Item details require internet or online mode connection.',
+                        "Couldn't load item details.",
                         textAlign: TextAlign.center,
-                        style: AppTypography.cardSubtitle.copyWith(
-                          color: colors.subtext,
-                        ),
+                        style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => controller.fetchOrderDetails(currentOrder),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Retry'),
                       ),
                     ],
                   ),
                 )
               else
                 ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: 0.4.sh),
+                  constraints: BoxConstraints(
+                    maxHeight:  0.4.sh,
+                  ),
                   child: ListView.separated(
                     shrinkWrap: true,
                     itemCount: currentOrder.items.length,
@@ -1253,10 +1254,8 @@ class _OrderDetailsContent extends StatelessWidget {
       padding: EdgeInsets.all(isMobile ? 24.w : 20.w),
       child: Obx(() {
         final controller = Get.find<OrdersController>();
-        final currentOrder =
-            controller.orders.firstWhereOrNull((o) => o.id == order.id) ??
-            controller.soldOrders.firstWhereOrNull((o) => o.id == order.id) ??
-            order;
+        final currentOrder = controller.resolveOrder(order);
+        final detailsState = controller.detailsState(order);
 
         final String displayIdentifier =
             currentOrder.status.value == OrderStatus.paid
@@ -1322,10 +1321,19 @@ class _OrderDetailsContent extends StatelessWidget {
                             controller.loadingOrderDetailsIds.contains(currentOrder.invNo)))
                       Padding(
                         padding: EdgeInsets.symmetric(horizontal: 8.w),
-                        child: SizedBox(
-                          width: 20.w,
-                          height: 20.h,
-                          child: const CircularProgressIndicator(strokeWidth: 2),
+                        child: Shimmer.fromColors(
+                          baseColor: Colors.grey.shade300,
+                          highlightColor: Colors.grey.shade100,
+                          child: SizedBox(
+                            width: 20.w,
+                            height: 20.h,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(4.r),
+                              ),
+                            ),
+                          ),
                         ),
                       )
                     else ...[
@@ -1340,11 +1348,7 @@ class _OrderDetailsContent extends StatelessWidget {
                           return IconButton(
                             onPressed: isPrinting ? null : () => controller.handlePrint(currentOrder),
                             icon: isPrinting
-                                ? SizedBox(
-                                    width: 16.w,
-                                    height: 16.h,
-                                    child: const CircularProgressIndicator(strokeWidth: 2),
-                                  )
+                                ? printShimmer(size: AppTypography.sizeText)
                                 : const Icon(Icons.print, color: Colors.blue),
                             tooltip: 'print_kot'.tr,
                           );
@@ -1360,15 +1364,11 @@ class _OrderDetailsContent extends StatelessWidget {
                           return IconButton(
                             onPressed: isPrinting ? null : () => controller.handlePrint(currentOrder, isBill: true),
                             icon: isPrinting
-                                ? SizedBox(
-                                    width: 16.w,
-                                    height: 16.h,
-                                    child: const CircularProgressIndicator(strokeWidth: 2),
-                                  )
+                                ? printShimmer(size: AppTypography.sizeText)
                                 : const Icon(
-                                    Icons.receipt_long,
-                                    color: Colors.orange,
-                                  ),
+                              Icons.receipt_long,
+                              color: Colors.orange,
+                            ),
                             tooltip: 'print_bill'.tr,
                           );
                         }),
@@ -1424,16 +1424,12 @@ class _OrderDetailsContent extends StatelessWidget {
                   ),
                 ],
               ),
-            if (controller.loadingOrderDetailsIds.contains(currentOrder.id) ||
-                (currentOrder.invNo.isNotEmpty &&
-                    controller.loadingOrderDetailsIds.contains(
-                      currentOrder.invNo,
-                    )))
+            if (detailsState == OrderDetailsState.loading)
               Padding(
                 padding: EdgeInsets.all(20.w),
                 child: const Center(child: CircularProgressIndicator()),
               )
-            else if (currentOrder.items.isEmpty)
+            else if (detailsState == OrderDetailsState.failed)
               Padding(
                 padding: EdgeInsets.all(20.w),
                 child: Column(
@@ -1442,11 +1438,14 @@ class _OrderDetailsContent extends StatelessWidget {
                     Icon(Icons.cloud_off_rounded, size: 32, color: colors.subtext),
                     SizedBox(height: 8.h),
                     Text(
-                      'Item details require internet or online mode connection.',
+                      "Couldn't load item details.",
                       textAlign: TextAlign.center,
-                      style: AppTypography.cardSubtitle.copyWith(
-                        color: colors.subtext,
-                      ),
+                      style: AppTypography.cardSubtitle.copyWith(color: colors.subtext),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => controller.fetchOrderDetails(currentOrder),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
                     ),
                   ],
                 ),
@@ -1615,6 +1614,21 @@ class _OrderDetailsContent extends StatelessWidget {
       }),
     );
   }
+}
+
+Widget printShimmer({double size = 20}) {
+  return Shimmer.fromColors(
+    baseColor: Colors.grey.shade300,
+    highlightColor: Colors.grey.shade100,
+    child: Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(4.r),
+      ),
+    ),
+  );
 }
 
 String _getOrderTypeName(int type) {

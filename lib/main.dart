@@ -80,7 +80,13 @@ void main() async {
 
         if (response.statusCode == 200 && response.data['status'] == 200) {
           log("Main: Session active. App State UPI: ${AppState.upiId}");
-          initialRoute = Routes.HOME;
+          if (AppState.lastSyncedUserId.isNotEmpty &&
+              AppState.lastSyncedUserId != AppState.userId) {
+            log("Main: Synced user (${AppState.lastSyncedUserId}) differs from current user (${AppState.userId}). Routing to Sync.");
+            initialRoute = Routes.SYNC;
+          } else {
+            initialRoute = Routes.HOME;
+          }
         } else {
           log(
             "Main: Session check failed (${response.data['status']}), clearing data.",
@@ -99,7 +105,13 @@ void main() async {
           log(
             "Main: Network error during session check, allowing offline access.",
           );
-          initialRoute = Routes.HOME;
+          if (AppState.lastSyncedUserId.isNotEmpty &&
+              AppState.lastSyncedUserId != AppState.userId) {
+            log("Main: Synced user (${AppState.lastSyncedUserId}) differs from current user (${AppState.userId}). Routing to Sync.");
+            initialRoute = Routes.SYNC;
+          } else {
+            initialRoute = Routes.HOME;
+          }
         }
       }
     }

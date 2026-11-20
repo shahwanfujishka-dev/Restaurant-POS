@@ -206,7 +206,8 @@ class PrinterController extends GetxController {
     r'[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]',
   );
   bool _hasArabic(String s) => _arabicRe.hasMatch(s);
-
+  /// Anything the ESC/POS code page can't encode safely.
+  bool _needsRaster(String s) => s.runes.any((r) => r > 0x7F);
   /// Rendered Arabic strips, so the same product name is drawn only once.
   final Map<String, List<int>> _stripCache = {};
 
@@ -261,6 +262,22 @@ class PrinterController extends GetxController {
     } catch (e) {
       debugPrint("Error getting WiFi name: $e");
     }
+  }
+
+  bool _isPrintableChar(int r) =>
+      r <= 0xFF || // ASCII + Latin-1 (native ESC/POS path)
+          (r >= 0x0600 && r <= 0x06FF) || // Arabic (raster path)
+          (r >= 0x0750 && r <= 0x077F) ||
+          (r >= 0xFB50 && r <= 0xFDFF) ||
+          (r >= 0xFE70 && r <= 0xFEFF) ||
+          r == 0x200E || r == 0x200F; // LRM / RLM
+
+  /// Returns the first text that contains a character the printer can't print.
+  String? firstUnprintableText(Iterable<String> texts) {
+    for (final t in texts) {
+      if (t.runes.any((r) => !_isPrintableChar(r))) return t;
+    }
+    return null;
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -346,7 +363,7 @@ class PrinterController extends GetxController {
     bool clearOnSuccess = false,
   }) {
     if (ok) {
-      if (clearOnSuccess) _dropKind(orderId, kind);
+      if (clearOnSuccess) clearPrintIssues(orderId);
       return;
     }
     final target = name.isNotEmpty ? name : address;
@@ -480,11 +497,20 @@ class PrinterController extends GetxController {
     address = _btAlias[address] ?? address;
     final name = _nameForAddress(address);
     try {
+      // ✅ FAST PATH: If already connected to this exact address and recently used, skip handshake entirely!
+      if (_btConnectedAddress == address && _btLastUsed != null && DateTime.now().difference(_btLastUsed!) < const Duration(minutes: 3)) {
+        final connected = await PrintBluetoothThermal.connectionStatus;
+        if (connected) {
+          debugPrint("⚡ [BT FAST PATH] Already connected to $address (skipping handshake)");
+          return true;
+        }
+      }
+
       final connected = await PrintBluetoothThermal.connectionStatus;
       if (connected && _btConnectedAddress == address) return true;
-      if (connected) {
+      if (connected && _btConnectedAddress != address) {
         await PrintBluetoothThermal.disconnect;
-        await Future.delayed(const Duration(milliseconds: 400));
+        await Future.delayed(const Duration(milliseconds: 200));
       }
       _btConnectedAddress = null;
 
@@ -512,7 +538,7 @@ class PrinterController extends GetxController {
             _btError =
             "Printer not found nearby. Switch it on, keep it close, "
                 "and make sure no other device is connected to it.";
-            await Future.delayed(const Duration(seconds: 1));
+            await Future.delayed(const Duration(milliseconds: 500));
             continue;
           }
           if (found != address) {
@@ -526,11 +552,12 @@ class PrinterController extends GetxController {
         );
         if (ok) {
           _btConnectedAddress = address;
+          _btLastUsed = DateTime.now();
           return true;
         }
         _btError = "Connect failed for ${name ?? address}";
         await PrintBluetoothThermal.disconnect; // clear stale native state
-        await Future.delayed(const Duration(milliseconds: 1200));
+        await Future.delayed(const Duration(milliseconds: 600));
       }
       return false;
     } catch (e) {
@@ -548,7 +575,9 @@ class PrinterController extends GetxController {
     _btChain = completer.future.then((_) {}, onError: (_) {});
     prev.then((_) async {
       try {
-        completer.complete(await action());
+        completer.complete(
+          await action().timeout(const Duration(seconds: 30)),
+        );
       } catch (e, s) {
         completer.completeError(e, s);
       }
@@ -647,16 +676,36 @@ class PrinterController extends GetxController {
     return "$branch ${seq.toString().padLeft(3, '0')}";
   }
 
-  Map<String, double> _splitTaxShare(OrderModel order, double splitAmount) {
-    final double orderCgst = order.totalCgst > 0
-        ? order.totalCgst
-        : (order.totalTax / 2);
-    final double orderSgst = order.totalSgst > 0
-        ? order.totalSgst
-        : (order.totalTax / 2);
-    final double denom = order.finalTotal > 0 ? order.finalTotal : 1;
-    final double ratio = (splitAmount / denom).clamp(0, 1);
-    return {"cgst": orderCgst * ratio, "sgst": orderSgst * ratio};
+  double _orderTaxTotal(OrderModel order, int vatType) {
+    if (vatType == 1) return 0.0;
+    if (order.totalTax > 0) return order.totalTax;
+
+    double tax = 0;
+    for (final item in order.items.where((i) => !i.isRemoved)) {
+      final baseQty = item.unit.unitBaseQty.toDouble();
+      final price = order.isUnsynced
+          ? item.priceAtOrder.toDouble()
+          : item.product.price * (baseQty > 1.0 ? baseQty : 1.0);
+      tax += (price * item.quantity * item.product.taxPer) / 100;
+    }
+    return tax;
+  }
+
+  Map<String, double> _splitTaxShare(
+      OrderModel order,
+      double splitAmount,
+      double splitsTotal,
+      int vatType,
+      ) {
+    final totalTax = _orderTaxTotal(order, vatType);
+    final cgst = order.totalCgst > 0 ? order.totalCgst : totalTax / 2;
+    final sgst = order.totalSgst > 0 ? order.totalSgst : totalTax / 2;
+    final ratio = splitsTotal > 0 ? (splitAmount / splitsTotal).clamp(0.0, 1.0) : 0.0;
+    return {
+      "vat": totalTax * ratio,
+      "cgst": cgst * ratio,
+      "sgst": sgst * ratio,
+    };
   }
 
   String _tokenLabel(OrderModel order, String fallback) {
@@ -1239,6 +1288,77 @@ class PrinterController extends GetxController {
     );
   }
 
+  DateTime? _btLastUsed;
+  static const _btIdle = Duration(minutes: 5); // reconnect if unused this long
+  static const _btChunk = 512;
+
+  Future<void> _btHardReset() async {
+    try { await PrintBluetoothThermal.disconnect; } catch (_) {}
+    _btConnectedAddress = null;
+    await Future.delayed(const Duration(milliseconds: 500));
+  }
+
+  Future<bool> _btWrite(List<int> bytes) async {
+    try {
+      for (var i = 0; i < bytes.length; i += _btChunk) {
+        final end = (i + _btChunk < bytes.length) ? i + _btChunk : bytes.length;
+        final chunk = bytes.sublist(i, end);
+
+        // First chunk: characteristic discovery may still be running
+        final tries = i == 0 ? 8 : 1;
+        var ok = false;
+        for (var t = 0; t < tries && !ok; t++) {
+          ok = await PrintBluetoothThermal.writeBytes(chunk);
+          if (!ok) await Future.delayed(const Duration(milliseconds: 400));
+        }
+        if (!ok) return false;
+        await Future.delayed(const Duration(milliseconds: 20));
+      }
+      await Future.delayed(const Duration(milliseconds: 300));
+      return true;
+    } catch (e) {
+      debugPrint("BT write error: $e");
+      return false;
+    }
+  }
+
+  Future<({bool ok, String error})> _btSend(
+      String address, List<int> bytes, String tag,
+      ) async {
+    final total = Stopwatch()..start();
+    String err = '';
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final stale = _btLastUsed == null || DateTime.now().difference(_btLastUsed!) > _btIdle;
+      if (attempt > 0) await _btHardReset(); // don't trust old socket
+
+      final c = Stopwatch()..start();
+      final connected = await ensureBluetoothConnected(address);
+      debugPrint("⏱ [$tag] connect ${c.elapsedMilliseconds}ms "
+          "(attempt ${attempt + 1}, stale=$stale)");
+      if (!Platform.isAndroid) {
+        await Future.delayed(const Duration(milliseconds: 1000)); // let service discovery finish
+      }
+      if (!connected) {
+        err = _btError.isNotEmpty ? _btError : "Could not connect to the printer.";
+        debugPrint("❌ [PRINT FAILURE] [$tag] Connect failed: $err");
+        continue;
+      }
+
+      final w = Stopwatch()..start();
+      final ok = await _btWrite(bytes);
+      debugPrint("⏱ [$tag] write ${w.elapsedMilliseconds}ms for ${bytes.length}B");
+      if (ok) {
+        _btLastUsed = DateTime.now();
+        debugPrint("✅ [PRINT SUCCESS] [$tag] TOTAL ${total.elapsedMilliseconds}ms (${bytes.length} bytes)");
+        return (ok: true, error: '');
+      }
+      err = "Connected, but the printer did not accept the data or write timed out.";
+      debugPrint("❌ [PRINT FAILURE] [$tag] $err");
+    }
+    _btConnectedAddress = null;
+    return (ok: false, error: err);
+  }
+
   // ──────────────────────────────────────────────────────────────────────
   // Transport (one path for wifi / windows / bluetooth)
   // ──────────────────────────────────────────────────────────────────────
@@ -1263,36 +1383,32 @@ class PrinterController extends GetxController {
     try {
       debugPrint("🖨️ [$tag] ${bytes.length} bytes → $type:$address");
 
-      if (type == 'wifi') return await _sendWifi(address, bytes);
+      if (type == 'wifi') {
+        final res = await _sendWifi(address, bytes);
+        if (res.ok) {
+          debugPrint("✅ [PRINT SUCCESS] [$tag] WiFi print successful");
+        } else {
+          debugPrint("❌ [PRINT FAILURE] [$tag] WiFi print failed: ${res.error}");
+        }
+        return res;
+      }
 
       if (type == 'windows') {
         await WindowsPrinter.printRawData(
           printerName: address,
           data: Uint8List.fromList(bytes),
         );
+        debugPrint("✅ [PRINT SUCCESS] [$tag] Windows print successful");
         return (ok: true, error: '');
       }
 
       // Bluetooth (default)
-      return await _withBtLock<({bool ok, String error})>(() async {
-        if (!await ensureBluetoothConnected(address)) {
-          return (
-          ok: false,
-          error: _btError.isNotEmpty
-              ? _btError
-              : "Could not connect to the printer.",
-          );
-        }
-        final ok = await PrintBluetoothThermal.writeBytes(bytes);
-        return (
-        ok: ok,
-        error: ok
-            ? ''
-            : "Connected, but the printer did not accept the data.",
-        );
-      });
-    } catch (e) {
-      debugPrint("❌ [$tag] send error: $e");
+      final btRes = await _withBtLock<({bool ok, String error})>(
+            () => _btSend(address, bytes, tag),
+      );
+      return btRes;
+    } catch (e, s) {
+      debugPrint("❌ [PRINT EXCEPTION] [$tag] send error: $e\n$s");
       return (ok: false, error: "$e");
     }
   }
@@ -1597,70 +1713,68 @@ class PrinterController extends GetxController {
         double? roundOff,
         bool? isSale,
       }) async {
-    debugPrint("--- START ${isBill ? 'BILL' : 'RECEIPT'} PRINTING ---");
+    try {
+      final assignment = _receiptAssignment();
+      final address = assignment?.printerAddress.value ?? "";
+      if (assignment == null || address.isEmpty) {
+        showSafeSnackbar("Receipt not printed", "No receipt printer assigned.");
+        return false;
+      }
+      final type = assignment.printerType.value.isEmpty
+          ? 'bluetooth'
+          : assignment.printerType.value;
+      final profile = await _getProfile();
 
-    final assignment = _receiptAssignment();
-    final address = assignment?.printerAddress.value ?? "";
-    if (assignment == null || address.isEmpty) {
-      debugPrint("No printer assigned for receipt.");
+      final bool reserveNumber = isBill &&
+          DeviceConfig.isLocal &&
+          DeviceConfig.role == DeviceRole.server &&
+          order.status.value != OrderStatus.paid;
+
+      String invoiceLabel;
+      try {
+        invoiceLabel = reserveNumber
+            ? await LocalHubOrderService.instance.reserveInvoiceNumber(order.id)
+            : await _resolveInvoiceLabel(order);
+      } catch (e) {
+        log("reserveInvoiceNumber failed: $e");
+        invoiceLabel = await _resolveInvoiceLabel(order);
+      }
+
+      final bytes = await _buildReceiptBytes(
+        order,
+        profile,
+        invoiceLabel: invoiceLabel,
+        isBill: isBill,
+        isSale: isSale ?? (order.status.value == OrderStatus.paid),
+        customerName: customerName ?? order.customerName ?? order.tableName,
+        paymentMethod: paymentMethod,
+        discount: discount ?? order.discount,
+        roundOff: roundOff ?? order.roundOff,
+      );
+
+      final r = await _sendBytesDetailed(
+        type: type,
+        address: address,
+        bytes: bytes,
+        tag: isBill ? 'BILL' : 'RECEIPT',
+      );
+      _trackJob(
+        orderId: order.id,
+        kind: 'RECEIPT',
+        ok: r.ok,
+        type: type,
+        address: address,
+        name: assignment.printerName.value,
+        bytes: bytes,
+        clearOnSuccess: true,
+      );
+      if (!r.ok) showSafeSnackbar("Receipt not printed", r.error);
+      return r.ok;
+    } catch (e, s) {
+      log("printReceipt crashed: $e\n$s");
+      showSafeSnackbar("Receipt not printed", "$e");
       return false;
     }
-    final type = assignment.printerType.value.isEmpty
-        ? 'bluetooth'
-        : assignment.printerType.value;
-
-    final String finalCustomerName =
-        customerName ?? order.customerName ?? order.tableName;
-    final double finalDiscount = discount ?? order.discount;
-    final double finalRoundOff = roundOff ?? order.roundOff;
-
-    final profile = await _getProfile();
-
-    // Decide the label ONCE so we never burn an offline sequence number and
-    // then overwrite it with a reserved one.
-    final bool reserveNumber =
-        isBill &&
-            DeviceConfig.isLocal &&
-            DeviceConfig.role == DeviceRole.server &&
-            order.status.value != OrderStatus.paid;
-    // NOTE: make sure reserveInvoiceNumber is idempotent per order,
-    // otherwise every bill reprint consumes a new number.
-    final String invoiceLabel = reserveNumber
-        ? await LocalHubOrderService.instance.reserveInvoiceNumber(order.id)
-        : await _resolveInvoiceLabel(order);
-
-    final bool resolvedIsSale =
-        isSale ?? (order.status.value == OrderStatus.paid);
-
-    final bytes = await _buildReceiptBytes(
-      order,
-      profile,
-      invoiceLabel: invoiceLabel,
-      isBill: isBill,
-      isSale: resolvedIsSale,
-      customerName: finalCustomerName,
-      paymentMethod: paymentMethod,
-      discount: finalDiscount,
-      roundOff: finalRoundOff,
-    );
-
-    final ok = await _sendBytes(
-      type: type,
-      address: address,
-      bytes: bytes,
-      tag: isBill ? 'BILL' : 'RECEIPT',
-    );
-    _trackJob(
-      orderId: order.id,
-      kind: 'RECEIPT',
-      ok: ok,
-      type: type,
-      address: address,
-      name: assignment.printerName.value,
-      bytes: bytes,
-      clearOnSuccess: true,
-    );
-    return ok;
   }
 
   Future<List<int>> _buildReceiptBytes(
@@ -1674,8 +1788,9 @@ class PrinterController extends GetxController {
         double discount = 0,
         double roundOff = 0,
       }) async {
-    final dashboardController = Get.find<DashboardController>();
-    final int vatType = dashboardController.vatType.value;
+    final int vatType = Get.isRegistered<DashboardController>()
+        ? Get.find<DashboardController>().vatType.value
+        : 0;
     final bool isVatDisabled = vatType == 1;
     final bool isCompliment = paymentMethod?.toLowerCase() == 'compliment';
 
@@ -1705,12 +1820,12 @@ class PrinterController extends GetxController {
     b += await _kv(
       g,
       "Date:",
-      DateFormat('dd/MM/yyyy').format(order.createdAt),
+      DateFormat('dd/MM/yyyy').format(order.orderTime),
     );
     b += await _kv(
       g,
       "Time:",
-      DateFormat('HH:mm:ss').format(order.createdAt),
+      DateFormat('HH:mm:ss').format(order.orderTime),
     );
     if (_isDineIn(order)) b += await _kv(g, "Table:", order.tableName);
 
@@ -1769,6 +1884,7 @@ class PrinterController extends GetxController {
       ]);
 
       for (var addon in item.selectedAddons) {
+        if (addon.quantity.value <= 0) continue;
         final double addonTotal = addon.price * addon.quantity.value;
         calculatedSubTotal += addonTotal;
 
@@ -1872,7 +1988,8 @@ class PrinterController extends GetxController {
         String? paymentMethod,
       }) async {
     debugPrint("--- START SPLIT RECEIPT PRINTING ($totalSplits splits) ---");
-
+    final double splitsTotal = splits.fold<double>(
+        0, (s, e) => s + (e['ps_split_amnt'] as num).toDouble());
     final assignment = _receiptAssignment();
     final address = assignment?.printerAddress.value ?? "";
     if (assignment == null || address.isEmpty) {
@@ -1899,6 +2016,7 @@ class PrinterController extends GetxController {
         splitAmount,
         profile,
         invoiceLabel: invoiceLabel,
+        splitsTotal: splitsTotal,          // NEW
         customerName: customerName,
         paymentMethod: paymentMethod,
       );
@@ -1923,6 +2041,9 @@ class PrinterController extends GetxController {
 
       await Future.delayed(const Duration(milliseconds: 500));
     }
+    if (allOk) {
+      clearPrintIssues(order.id);
+    }
     return allOk;
   }
 
@@ -1932,11 +2053,14 @@ class PrinterController extends GetxController {
       double splitAmount,
       CapabilityProfile profile, {
         required String invoiceLabel,
+        required double splitsTotal,       // NEW
         String? customerName,
         String? paymentMethod,
       }) async {
-    final dashboardController = Get.find<DashboardController>();
-    final bool isVatDisabled = dashboardController.vatType.value == 1;
+    final int vatType = Get.isRegistered<DashboardController>()
+        ? Get.find<DashboardController>().vatType.value
+        : 0;
+    final bool isVatDisabled = vatType == 1;
     final bool isCompliment = paymentMethod?.toLowerCase() == 'compliment';
 
     final g = Generator(_paperSize, profile);
@@ -1971,12 +2095,12 @@ class PrinterController extends GetxController {
     b += await _kv(
       g,
       "Date:",
-      DateFormat('dd/MM/yyyy').format(order.createdAt),
+      DateFormat('dd/MM/yyyy').format(order.orderTime),
     );
     b += await _kv(
       g,
       "Time:",
-      DateFormat('HH:mm:ss').format(order.createdAt),
+      DateFormat('HH:mm:ss').format(order.orderTime),
     );
     b += g.text(_hr);
 
@@ -1991,12 +2115,14 @@ class PrinterController extends GetxController {
 
     b += g.text(_hr);
 
-    if (AppState.cmpTaxType != 1) {
-      if (!isVatDisabled) {
-        final taxShare = _splitTaxShare(order, splitAmount);
-        b += await _kv(g, "CGST", taxShare["cgst"]!.toStringAsFixed(2), kw: 6);
-        b += await _kv(g, "SGST", taxShare["sgst"]!.toStringAsFixed(2), kw: 6);
-      }
+    final taxShare = _splitTaxShare(order, splitAmount, splitsTotal, vatType);
+
+    if (AppState.cmpTaxType == 1) {
+      b += await _kv(g, "VAT", taxShare["vat"]!.toStringAsFixed(2), kw: 6);
+      b += g.text(_hr);
+    } else if (!isVatDisabled) {
+      b += await _kv(g, "CGST", taxShare["cgst"]!.toStringAsFixed(2), kw: 6);
+      b += await _kv(g, "SGST", taxShare["sgst"]!.toStringAsFixed(2), kw: 6);
       b += g.text(_hr);
     }
 
@@ -2079,7 +2205,7 @@ class PrinterController extends GetxController {
     return map;
   }
 
-  Future<void> printKOT(OrderModel order, {List<OrderItem>? oldItems}) async {
+  Future<bool> printKOT(OrderModel order, {List<OrderItem>? oldItems}) async {
     debugPrint("--- START KOT PRINTING ---");
 
     final List<OrderItem> itemsToPrint = [];
@@ -2134,7 +2260,7 @@ class PrinterController extends GetxController {
 
     if (itemsToPrint.isEmpty) {
       debugPrint("No new items or changes to print.");
-      return;
+      return true;
     }
 
     // Duplicate-call guard (map is a class field so it actually persists)
@@ -2148,27 +2274,27 @@ class PrinterController extends GetxController {
     final last = _lastKotPrint[sig];
     if (last != null && now.difference(last) < const Duration(seconds: 3)) {
       debugPrint("⚠️ Duplicate KOT call suppressed: $sig");
-      return;
+      return true;
     }
     _lastKotPrint[sig] = now;
 
     debugPrint("📋 Total items to print: ${itemsToPrint.length}");
-    await _distributeToPrinters(
+    return await _distributeToPrinters(
       order,
       itemsToPrint,
       status: isUpdate ? "Modified" : "Original",
     );
   }
 
-  Future<void> printCancelledOrder(OrderModel order) async {
+  Future<bool> printCancelledOrder(OrderModel order) async {
     debugPrint("--- PRINTING CANCELLED ORDER ---");
     final cancelledItems = order.items
         .map((i) => _copyItem(i, isRemoved: true))
         .toList();
-    await _distributeToPrinters(order, cancelledItems, status: "CANCELLED");
+    return await _distributeToPrinters(order, cancelledItems, status: "CANCELLED");
   }
 
-  Future<void> _distributeToPrinters(
+  Future<bool> _distributeToPrinters(
       OrderModel order,
       List<OrderItem> items, {
         required String status,
@@ -2251,9 +2377,9 @@ class PrinterController extends GetxController {
       );
     }
 
-    // A full, successful manual reprint clears old KOT marks.
+    // A full, successful manual reprint clears old KOT marks and any other print issues.
     if (unrouted.isEmpty && failedPrinters.isEmpty && status == "Original") {
-      _dropKind(order.id, 'KOT');
+      clearPrintIssues(order.id);
     }
 
     if (unrouted.isNotEmpty || failedPrinters.isNotEmpty) {
@@ -2274,7 +2400,10 @@ class PrinterController extends GetxController {
           "Failed to print on: ${failedPrinters.join(', ')}",
       ].join('\n');
       showSafeSnackbar("KOT not fully printed", msg);
+      return false;
     }
+
+    return true;
   }
 
   Future<List<int>> _buildKotBytes(
@@ -2307,7 +2436,12 @@ class PrinterController extends GetxController {
     // ORDER INFO
     b += await _kv(g, "Order No:", invoiceLabel, kw: 6);
     b += await _kv(g, "Order type:", _orderTypeLabel(order), kw: 6);
-
+    b += await _kv(
+      g,
+      "Order Time:",
+      DateFormat('hh:mm a').format(order.orderTime),
+      kw: 6,
+    );
     if (order.captainName != null && order.captainName!.isNotEmpty) {
       b += await _kv(g, "Captain:", order.captainName!, kw: 6);
     }
@@ -2367,6 +2501,7 @@ class PrinterController extends GetxController {
           b += await _line(g, "   NOTE: ${item.notes}", "", bold: removed);
         }
         for (final addon in item.selectedAddons) {
+          if (addon.quantity.value <= 0) continue;
           b += await _line(
             g,
             "  ${removed ? '-' : '+'} ${addon.name}",
@@ -2421,6 +2556,7 @@ class PrinterController extends GetxController {
       buffer.writeln("$itemName  -> ${item.quantity} ${item.unit.unitDisplay}");
       if (item.notes.isNotEmpty) buffer.writeln("   NOTE: ${item.notes}");
       for (var addon in item.selectedAddons) {
+        if (addon.quantity.value <= 0) continue;
         buffer.writeln(
           "   + ${addon.name} -> ${addon.quantity.value} ${addon.unitDisplay}",
         );

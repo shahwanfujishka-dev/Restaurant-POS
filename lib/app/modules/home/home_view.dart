@@ -590,7 +590,7 @@ class _DigitalUsernameState extends State<_DigitalUsername> {
       width: widget.width,
       padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 3.h),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.88),
+        // color: Colors.black.withOpacity(0.88),
         borderRadius: BorderRadius.circular(4.r),
         border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.55)),
         boxShadow: [

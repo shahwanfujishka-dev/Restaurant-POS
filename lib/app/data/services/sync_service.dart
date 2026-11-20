@@ -881,6 +881,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       }
 
       log("SyncService: Master data sync complete.");
+      AppState.lastSyncedUserId = AppState.userId;
 
       // Refresh CartController if it's active so it picks up the new captains/ledgers
       if (Get.isRegistered<CartController>()) {

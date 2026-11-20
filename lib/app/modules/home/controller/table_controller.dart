@@ -101,7 +101,7 @@ class TablesController extends GetxController with WidgetsBindingObserver {
 
   final areas = <AreaModel>[].obs;
   final selectedArea = Rxn<AreaModel>();
-  final isLoading = false.obs;
+  final isLoading = true.obs;
 
   final selectedChairCount = 0.obs;
 
@@ -110,6 +110,8 @@ class TablesController extends GetxController with WidgetsBindingObserver {
   // Track which orders have a pending local update to avoid double counting with Hub/Cloud data
   final pendingUpdateIds = <String>{}.obs;
 
+  bool _pollingActive = false;
+
   Timer? _pollingTimer;
 
   @override
@@ -117,8 +119,14 @@ class TablesController extends GetxController with WidgetsBindingObserver {
     super.onInit();
     WidgetsBinding.instance.addObserver(this);
     fetchTables();
-    _startPolling();
+    // Start polling only if the Tables page is already open (index 1).
+    // Otherwise HomeController will turn it on when the user navigates there.
+    if (Get.isRegistered<HomeController>() &&
+        Get.find<HomeController>().selectedIndex.value == 1) {
+      setPollingActive(true);
+    }
   }
+
 
   @override
   void onClose() {
@@ -126,11 +134,23 @@ class TablesController extends GetxController with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     super.onClose();
   }
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    // Only refresh on resume if the user is actually on the Tables page
+    if (state == AppLifecycleState.resumed && _pollingActive) {
       fetchTables(silent: true);
+    }
+  }
+
+  /// Called by HomeController when the Tables page becomes visible / hidden.
+  void setPollingActive(bool active) {
+    if (_pollingActive == active) return;
+    _pollingActive = active;
+    if (active) {
+      _startPolling();
+    } else {
+      _pollingTimer?.cancel();
+      _pollingTimer = null;
     }
   }
 
@@ -155,9 +175,10 @@ class TablesController extends GetxController with WidgetsBindingObserver {
   Future<void> fetchTables({bool silent = false}) async {
     try {
       if (!silent) {
+        if (areas.isEmpty) isLoading.value = true;
         await _updateLocalOccupancy();
         await _loadFromLocalDB();
-        if (areas.isEmpty) isLoading.value = true;
+        if (areas.isNotEmpty) isLoading.value = false;
       }
 
       List<dynamic> dataList = [];
@@ -215,7 +236,7 @@ class TablesController extends GetxController with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('Error fetching tables: $e');
     } finally {
-      isLoading.value = false;
+      if (!silent) isLoading.value = false;
     }
   }
 
@@ -293,15 +314,8 @@ class TablesController extends GetxController with WidgetsBindingObserver {
       return;
     }
 
-    // Preserve the current area when it still exists in the refreshed snapshot.
     final previousAreaId = selectedArea.value?.id;
-    selectedArea.value = areas.firstWhere(
-      (area) => area.id == previousAreaId,
-      orElse: () => areas.firstWhere(
-        (area) => area.isDefault == 1,
-        orElse: () => areas.first,
-      ),
-    );
+    selectedArea.value = areas.firstWhereOrNull((area) => area.id == previousAreaId) ?? areas.first;
   }
 
   void selectArea(AreaModel area) {

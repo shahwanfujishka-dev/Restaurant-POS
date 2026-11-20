@@ -209,16 +209,17 @@ class MainContent extends GetView<DashboardController> {
                                 ),
                               ),
                             if (isDineIn) ...[
-                              Text(
-                                "(${cartController.selectedAreaName.value})",
-                                style: AppTypography.cardSubtitle.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: isEditing
-                                      ? Colors.blue
-                                      : AppTheme.primaryGreen,
-                                  fontSize: 10.sp,
+                              if (cartController.selectedAreaName.value.trim().isNotEmpty)
+                                Text(
+                                  "(${cartController.selectedAreaName.value})",
+                                  style: AppTypography.cardSubtitle.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: isEditing
+                                        ? Colors.blue
+                                        : AppTheme.primaryGreen,
+                                    fontSize: 10.sp,
+                                  ),
                                 ),
-                              ),
                               Text(
                                 ' - ${cartController.selectedTableName.value}',
                                 style: AppTypography.cardSubtitle.copyWith(

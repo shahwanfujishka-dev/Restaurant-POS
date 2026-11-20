@@ -1199,7 +1199,7 @@ CREATE TABLE orders (
     }
   }
 
-  Future<void> updateOrderStatusByUuid(
+  Future<int> updateOrderStatusByUuid(
     String uuid,
     String status, {
     int? isSynced,
@@ -1220,7 +1220,6 @@ CREATE TABLE orders (
     if (payload != null) values['payload'] = payload;
     if (total != null) values['total_amount'] = total;
     if (tax != null) values['total_tax'] = tax;
-
     int count = await db.update(
       'orders',
       values,
@@ -1235,6 +1234,7 @@ CREATE TABLE orders (
         whereArgs: [uuid],
       );
     }
+    return count;
   }
 
   Future<void> saveOrderOffline(
@@ -1565,6 +1565,34 @@ CREATE TABLE orders (
     query += " ORDER BY p.sort_order ASC";
 
     return await db.rawQuery(query, args);
+  }
+
+  Future<Map<String, dynamic>?> getProductById(
+    String productId, {
+    int priceGroupId = 0,
+  }) async {
+    final db = await instance.database;
+    final query = '''
+      SELECT p.*, c.token_printer_id as cat_token_printer
+      FROM (
+        SELECT * FROM products WHERE id = ? AND price_group_id = ?
+        UNION ALL
+        SELECT * FROM products p1 WHERE id = ? AND price_group_id = 0 
+        AND NOT EXISTS (SELECT 1 FROM products p2 WHERE p2.id = p1.id AND p2.price_group_id = ?)
+      ) p
+      LEFT JOIN categories c ON p.category_id = c.id
+      LIMIT 1
+    ''';
+    final rows = await db.rawQuery(query, [
+      productId,
+      priceGroupId,
+      productId,
+      priceGroupId,
+    ]);
+    if (rows.isNotEmpty) {
+      return rows.first;
+    }
+    return null;
   }
 
   Future<List<Map<String, dynamic>>> searchProducts(

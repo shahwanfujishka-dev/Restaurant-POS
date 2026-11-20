@@ -237,8 +237,8 @@ class CashierView extends GetView<CashierController> {
                     CashierWidgets.minimalRoundOffInput(
                       controller.roundOffController,
                       controller.updateRoundOffAmount,
-                      controller.incrementRoundOff,
-                      controller.decrementRoundOff,
+                      controller.roundOffIsNegative,
+                      controller.setRoundOffSign,
                       colors,
                     ),
                     Padding(

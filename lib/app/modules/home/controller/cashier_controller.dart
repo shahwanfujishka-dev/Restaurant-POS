@@ -51,6 +51,7 @@ class CashierController extends GetxController {
   final discountAmount = 0.0.obs;
   final TextEditingController discountController = TextEditingController();
   final roundOffAmount = 0.0.obs;
+  final roundOffIsNegative = false.obs; // false = "+" (default)
   final TextEditingController roundOffController = TextEditingController();
   final isSplit = false.obs;
   final TextEditingController splitCountController = TextEditingController();
@@ -306,8 +307,9 @@ class CashierController extends GetxController {
   }
 
   void updateRoundOffAmount(String value) {
-    double val = double.tryParse(value) ?? 0.0;
-    double netAmount = order.totalAmount - discountAmount.value;
+    final double mag = (double.tryParse(value) ?? 0.0).abs();
+    final double val = roundOffIsNegative.value ? -mag : mag;
+    final double netAmount = order.totalAmount - discountAmount.value;
 
     if (val.abs() > netAmount) {
       roundOffAmount.value = 0.0;
@@ -323,14 +325,9 @@ class CashierController extends GetxController {
     if (isSplit.value) _generateSplitAmounts(splitCount.value);
   }
 
-  void incrementRoundOff() {
-    double currentVal = double.tryParse(roundOffController.text) ?? 0.0;
-    updateRoundOffAmount(currentVal.abs().toString());
-  }
-
-  void decrementRoundOff() {
-    double currentVal = double.tryParse(roundOffController.text) ?? 0.0;
-    updateRoundOffAmount((-currentVal.abs()).toString());
+  void setRoundOffSign(bool negative) {
+    roundOffIsNegative.value = negative;
+    updateRoundOffAmount(roundOffController.text); // re-apply with new sign
   }
 
   void _recalculatePaymentAmounts() {
@@ -403,10 +400,8 @@ class CashierController extends GetxController {
   }
 
   Future<void> settleOrder({bool isComp = false}) async {
-    if (DeviceConfig.isOnline && !await NetworkHelper.hasInternetConnection()) {
-      showSafeSnackbar('no_internet'.tr, 'check_network_msg'.tr);
-      return;
-    }
+    if (isProcessing.value) return;
+    if (Get.find<CartController>().blockIfUnprintable()) return;
     if (!isComp &&
         paymentMethod.value == 'Cash' &&
         receivedAmount.value < totalToPay) {
@@ -477,9 +472,16 @@ class CashierController extends GetxController {
         }
       }
     }
+
+    isProcessing.value = true;
     Map<String, dynamic>? result;
     try {
-      isProcessing.value = true;
+      if (DeviceConfig.isOnline && !await NetworkHelper.hasInternetConnection()) {
+        showSafeSnackbar('no_internet'.tr, 'check_network_msg'.tr);
+        isProcessing.value = false;
+        return;
+      }
+
       if (customerMobileController.text.isNotEmpty &&
           customerNameController.text.isNotEmpty &&
           customerNameController.text != 'cash_customer'.tr) {
@@ -613,18 +615,19 @@ class CashierController extends GetxController {
             preview?['sales_odr_id']?.toString() ??
             result['id']?.toString();
         final String? newLocalUuid = result['_local_uuid']?.toString();
-        await _dbHelper.deleteOrder(order.id);
-        if (newLocalUuid != null && newLocalUuid.isNotEmpty) {
-          await _dbHelper.deleteOrder(newLocalUuid);
+// AFTER
+        await _printReceipt(result: result, isComp: isComp); // print first
+        try {
+          await _dbHelper.deleteOrder(order.id);
+          if (newLocalUuid != null && newLocalUuid.isNotEmpty) {
+            await _dbHelper.deleteOrder(newLocalUuid);
+          }
+          if (serverId != null && serverId.isNotEmpty) {
+            await _dbHelper.updateOrderStatusByServerId(serverId, 'paid', isSynced: 1);
+          }
+        } catch (e) {
+          log("Post-settle DB cleanup failed: $e");
         }
-        if (serverId != null && serverId.isNotEmpty) {
-          await _dbHelper.updateOrderStatusByServerId(
-            serverId,
-            'paid',
-            isSynced: 1,
-          );
-        }
-        await _printReceipt(result: result, isComp: isComp);
         cartController.stopEditing();
         Get.find<OrdersController>().fetchOrdersSafely();
         Get.offAllNamed(
@@ -672,67 +675,23 @@ class CashierController extends GetxController {
     Map<String, dynamic>? result,
     int? payType,
   }) async {
+    final cartController = Get.find<CartController>();
+    final String orderIdForDb =
+        localUuid ??
+            (cartController.isEditing
+                ? cartController.editingOrderId.value
+                : order.id);
+
     try {
-      int cashId = selectedCashLedgerId.value != 0
-          ? selectedCashLedgerId.value
-          : (int.tryParse(AppState.cashLedgerId) ?? 0);
-      int bankId = selectedBankLedgerId.value != 0
-          ? selectedBankLedgerId.value
-          : (int.tryParse(AppState.bankLedgerId) ?? 0);
-      final cartController = Get.find<CartController>();
-      final String orderIdForDb =
-          localUuid ??
-          (cartController.isEditing
-              ? cartController.editingOrderId.value
-              : order.id);
       log("Saving payment locally for Order ID: $orderIdForDb");
+
       final double finalDiscount = isComp
           ? order.totalAmount
           : discountAmount.value;
       final double finalRoundOff = isComp ? 0 : roundOffAmount.value;
       final double finalTotal = isComp ? 0 : totalToPay;
-      await _dbHelper.insertPayment({
-        "order_uuid": orderIdForDb,
-        "amount": finalTotal,
-        "method": isComp
-            ? "compliment"
-            : (isSplit.value ? "split" : paymentMethod.value.toLowerCase()),
-        "is_synced": 0,
-        "created_at": DateTime.now().toIso8601String(),
-        "cash_ledger_id": cashId,
-        "bank_ledger_id": bankId,
-        "discount_amount": finalDiscount,
-      });
-      final db = await _dbHelper.database;
-      final orderRows = await db.query(
-        'orders',
-        where: 'uuid = ? OR server_id = ?',
-        whereArgs: [orderIdForDb, orderIdForDb],
-        limit: 1,
-      );
-      String? updatedPayload;
-      if (orderRows.isNotEmpty) {
-        final String? existingPayloadStr =
-            orderRows.first['payload'] as String?;
-        if (existingPayloadStr != null) {
-          final Map<String, dynamic> p = jsonDecode(existingPayloadStr);
-          p['tot_disc'] = finalDiscount;
-          p['sales_odr_roundoff'] = finalRoundOff;
-          p['tot_amount'] = finalTotal;
-          p['sales_odr_total'] = finalTotal;
-          p['res_status'] = 3; // ✅ SET TO PAID
-          p['sale_pay_type'] = payType ?? (isComp ? 2 : 0); // ✅ SET PAY TYPE
-          updatedPayload = jsonEncode(p);
-        }
-      }
-      await _dbHelper.updateOrderStatusByUuid(
-        orderIdForDb,
-        'paid',
-        isSynced: 0, // ✅ FORCE RE-SYNC
-        payload: updatedPayload,
-        total: finalTotal,
-      );
 
+      // 1. Build the split message BEFORE printing (the printer reads it)
       if (isSplit.value && result != null) {
         result['message'] = {
           'pos_split_count': splitCount.value,
@@ -745,7 +704,78 @@ class CashierController extends GetxController {
           'preview': result['preview'],
         };
       }
-      await _printReceipt(result: result, isComp: isComp);
+
+      // 2. PRINT FIRST. Must run before stopEditing(), because
+      //    parseOrderResponse falls back to cart table/area values.
+      try {
+        await _printReceipt(result: result, isComp: isComp);
+      } catch (e) {
+        log("Local settle: receipt print failed: $e");
+        showSafeSnackbar('Receipt not printed', '$e');
+      }
+
+      // 3. DB bookkeeping, isolated so a DB error can't block navigation
+      try {
+        final int cashId = selectedCashLedgerId.value != 0
+            ? selectedCashLedgerId.value
+            : (int.tryParse(AppState.cashLedgerId) ?? 0);
+        final int bankId = selectedBankLedgerId.value != 0
+            ? selectedBankLedgerId.value
+            : (int.tryParse(AppState.bankLedgerId) ?? 0);
+
+        await _dbHelper.insertPayment({
+          "order_uuid": orderIdForDb,
+          "amount": finalTotal,
+          "method": isComp
+              ? "compliment"
+              : (isSplit.value ? "split" : paymentMethod.value.toLowerCase()),
+          "is_synced": 0,
+          "created_at": DateTime.now().toIso8601String(),
+          "cash_ledger_id": cashId,
+          "bank_ledger_id": bankId,
+          "discount_amount": finalDiscount,
+        });
+
+        final db = await _dbHelper.database;
+        final orderRows = await db.query(
+          'orders',
+          where: 'uuid = ? OR server_id = ?',
+          whereArgs: [orderIdForDb, orderIdForDb],
+          limit: 1,
+        );
+
+        String? updatedPayload;
+        if (orderRows.isNotEmpty) {
+          final String? existingPayloadStr =
+          orderRows.first['payload'] as String?;
+          if (existingPayloadStr != null && existingPayloadStr.isNotEmpty) {
+            try {
+              final Map<String, dynamic> p = jsonDecode(existingPayloadStr);
+              p['tot_disc'] = finalDiscount;
+              p['sales_odr_roundoff'] = finalRoundOff;
+              p['tot_amount'] = finalTotal;
+              p['sales_odr_total'] = finalTotal;
+              p['res_status'] = 3; // paid
+              p['sale_pay_type'] = payType ?? (isComp ? 2 : 0);
+              updatedPayload = jsonEncode(p);
+            } catch (e) {
+              log("Local settle: payload decode failed: $e");
+            }
+          }
+        }
+
+        await _dbHelper.updateOrderStatusByUuid(
+          orderIdForDb,
+          'paid',
+          isSynced: 0, // force re-sync
+          payload: updatedPayload,
+          total: finalTotal,
+        );
+      } catch (e) {
+        log("Local payment DB save failed: $e");
+      }
+
+      // 4. Cleanup + navigate
       cartController.stopEditing();
       if (Get.isRegistered<OrdersController>()) {
         final ordersController = Get.find<OrdersController>();
@@ -826,30 +856,50 @@ class CashierController extends GetxController {
           splitCountResult,
         );
       } else {
-        final double printDiscount = isComp
-            ? (orderToPrint.totalAmount != 0
-                  ? orderToPrint.totalAmount
-                  : order.totalAmount)
-            : (result != null && result['offline'] != true)
-            ? orderToPrint.discount
-            : discountAmount.value;
-        final double printRoundOff = isComp ? 0 : roundOffAmount.value;
-        final OrderModel orderForPrint = isComp
-            ? orderToPrint.copyWith(totalAmount: 0)
-            : orderToPrint;
-        await Get.find<PrinterController>().printReceipt(
-          orderForPrint,
-          isComp ? 0 : receivedAmount.value,
-          isComp ? 0 : changeAmount,
-          customerName: customerNameController.text,
-          paymentMethod: isComp ? "compliment".tr : paymentMethod.value.tr,
-          discount: printDiscount,
-          roundOff: printRoundOff,
-          isSale: true,
-        );
+        final printerCtrl = Get.find<PrinterController>();
+        bool printSuccess = true;
+        if (posSplit != null && posSplit.isNotEmpty && splitCountResult != null) {
+          await printerCtrl.printSplitReceipts(
+            orderToPrint,
+            posSplit.map((e) => e as Map<String, dynamic>).toList(),
+            splitCountResult,
+          );
+        } else {
+          final double printDiscount = isComp
+              ? (orderToPrint.totalAmount != 0
+                    ? orderToPrint.totalAmount
+                    : order.totalAmount)
+              : (result != null && result['offline'] != true)
+              ? orderToPrint.discount
+              : discountAmount.value;
+          final double printRoundOff = isComp ? 0 : roundOffAmount.value;
+          final OrderModel orderForPrint = isComp
+              ? orderToPrint.copyWith(totalAmount: 0)
+              : orderToPrint;
+          printSuccess = await printerCtrl.printReceipt(
+            orderForPrint,
+            isComp ? 0 : receivedAmount.value,
+            isComp ? 0 : changeAmount,
+            customerName: customerNameController.text,
+            paymentMethod: isComp ? "compliment".tr : paymentMethod.value.tr,
+            discount: printDiscount,
+            roundOff: printRoundOff,
+            isSale: true,
+          );
+        }
+        if (!printSuccess) {
+          showSafeSnackbar(
+            "Receipt Print Failed",
+            "Order settled successfully, but receipt printing failed. You can retry printing from Paid Orders.",
+          );
+        }
       }
     } catch (e) {
       log("Receipt Print Error: $e");
+      showSafeSnackbar(
+        "Receipt Print Error",
+        "Order settled successfully, but receipt printing encountered an error: $e",
+      );
     }
   }
 }

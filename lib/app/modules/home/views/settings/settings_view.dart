@@ -123,7 +123,7 @@ class SettingsView extends GetView<SettingsController> {
             ),
           ),
           SizedBox(height: 12.h),
-          _buildInfoTile(context, Icons.info_outline, 'version'.tr, "1.2.4"),
+          _buildInfoTile(context, Icons.info_outline, 'version'.tr, "1.2.9"),
           _buildInfoTile(
             context,
             Icons.business_outlined,
@@ -740,7 +740,7 @@ class SettingsView extends GetView<SettingsController> {
           ),
         ],
       ),
-    );
+    ).then((_) => textController.dispose());
   }
 
   void _showHostPortDialog(BuildContext context) {
@@ -775,7 +775,7 @@ class SettingsView extends GetView<SettingsController> {
           ),
         ],
       ),
-    );
+    ).then((_) => textController.dispose());
   }
 
   Widget _buildInfoTile(

@@ -200,7 +200,7 @@ class TableCard extends StatelessWidget {
                               children: [
                                 Container(
                                   padding: EdgeInsets.symmetric(
-                                    horizontal: 6.w,
+                                    horizontal: 3.w,
                                     vertical: 4.h,
                                   ),
                                   decoration: BoxDecoration(

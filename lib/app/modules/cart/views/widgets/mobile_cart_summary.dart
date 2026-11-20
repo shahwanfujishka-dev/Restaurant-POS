@@ -123,6 +123,8 @@ class MobileCartSummary extends StatelessWidget {
       return;
     }
 
+    if (controller.blockIfUnprintable()) return;
+
     if (DeviceConfig.isOnline && !await NetworkHelper.hasInternetConnection()) {
       showSafeSnackbar('no_internet'.tr, 'check_network_msg'.tr);
       return;
@@ -231,6 +233,16 @@ class MobileCartSummary extends StatelessWidget {
       // ✅ Capture BEFORE stopEditing/clearTable wipes these values
       final String snapshotTableName = controller.selectedTableName.value;
       final int snapshotChairCount = controller.selectedChairCount.value;
+      OrderModel? liveOrder;
+      try {
+        liveOrder = ordersController.parseOrderResponse(
+          responseData,
+          fallbackTableName: snapshotTableName,
+          fallbackChairCount: snapshotChairCount,
+        );
+      } catch (e) {
+        debugPrint("Pre-clear parse failed: $e");
+      }
 
       if (wasEditing) {
         showSafeSnackbar(
@@ -252,6 +264,7 @@ class MobileCartSummary extends StatelessWidget {
       Get.offAllNamed(Routes.ORDER_TYPE);
 
       _runBackgroundTasks(
+        liveOrder: liveOrder,
         responseData: responseData,
         isDraft: isDraft,
         wasEditing: wasEditing,
@@ -331,6 +344,7 @@ class MobileCartSummary extends StatelessWidget {
       items: items,
       status: OrderStatus.pending,
       createdAt: DateTime.now(),
+      orderTime: DateTime.now(),
       totalAmount: controller.grandTotal,
       totalTax: controller.totalTaxAmount,
       sales_odr_order_type: AppState.orderType.id,
@@ -351,28 +365,44 @@ class MobileCartSummary extends StatelessWidget {
     String snapshotTableName = "",
     int snapshotChairCount = 0,
     bool shouldPrintReceipt = false,
+    OrderModel? liveOrder,
   }) async {
     if (!isDraft) {
       try {
         final printerController = Get.find<PrinterController>();
-        final OrderModel liveOrder = ordersController.parseOrderResponse(
-          responseData,
-          fallbackTableName: snapshotTableName,
-          fallbackChairCount: snapshotChairCount,
-        );
+        final OrderModel order = liveOrder ??
+            ordersController.parseOrderResponse(
+              responseData,
+              fallbackTableName: snapshotTableName,
+              fallbackChairCount: snapshotChairCount,
+            );
+        final oldItemsForKOT = (wasEditing && !wasDraft) ? originalItems : null;
 
-        List<OrderItem>? oldItemsForKOT;
-        if (wasEditing && !wasDraft) {
-          oldItemsForKOT = originalItems;
+        try {
+          final kotSuccess = await printerController.printKOT(order, oldItems: oldItemsForKOT);
+          if (!kotSuccess) {
+            showSafeSnackbar('KOT Print Failed', 'Order placed, but KOT printing failed. Please check printer connection and retry from Orders.');
+          }
+        } catch (e) {
+          debugPrint("KOT print failed: $e");
+          showSafeSnackbar('KOT not printed', '$e');
         }
 
-        await printerController.printKOT(liveOrder, oldItems: oldItemsForKOT);
-
         if (shouldPrintReceipt) {
-          await printerController.printReceipt(liveOrder, 0, 0);
+          await Future.delayed(const Duration(milliseconds: 600)); // BT printer switch gap
+          try {
+            final receiptSuccess = await printerController.printReceipt(order, 0, 0, isBill: true);
+            if (!receiptSuccess) {
+              showSafeSnackbar('Bill Print Failed', 'Bill printing failed. Please check printer connection and retry.');
+            }
+          } catch (e) {
+            debugPrint("Receipt print failed: $e");
+            showSafeSnackbar('Receipt not printed', '$e');
+          }
         }
       } catch (e) {
         debugPrint("Background Printing failed: $e");
+        showSafeSnackbar('Print failed', '$e');
       }
     }
 
@@ -534,7 +564,7 @@ class MobileCartSummary extends StatelessWidget {
                               _handlePlaceOrUpdateOrder(
                                 isDraft: true,
                                 validateClient: true,
-                                validatePrinter: true,
+                                validatePrinter: false,
                               );
                             },
                             color: colors.isDark
@@ -558,8 +588,8 @@ class MobileCartSummary extends StatelessWidget {
                                 );
                                 return;
                               }
-                              final ready = await _validatePrinterReady();
-                              if (!ready) return;
+                              // final ready = await _validatePrinterReady();
+                              // if (!ready) return;
                               _handlePlaceOrUpdateOrder(
                                 isDraft: false,
                                 validateClient: true,
@@ -589,8 +619,8 @@ class MobileCartSummary extends StatelessWidget {
                                 );
                                 return;
                               }
-                              final ready = await _validatePrinterReady();
-                              if (!ready) return;
+                              // final ready = await _validatePrinterReady();
+                              // if (!ready) return;
                               _handlePlaceOrUpdateOrder(
                                 isDraft: false,
                                 shouldPrintReceipt: true,

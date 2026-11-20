@@ -121,6 +121,9 @@ class CartSummary extends StatelessWidget {
       );
       return;
     }
+
+    if (controller.blockIfUnprintable()) return;
+
     if (controller.selectedCaptainId.value == null) {
       showSafeSnackbar(
         'captain_required'.tr,
@@ -338,6 +341,7 @@ class CartSummary extends StatelessWidget {
       items: items,
       status: OrderStatus.pending,
       createdAt: DateTime.now(),
+      orderTime: DateTime.now(),
       totalAmount: totalWithTax,
       totalTax: totalTax,
       sales_odr_order_type: AppState.orderType.id,
@@ -361,29 +365,36 @@ class CartSummary extends StatelessWidget {
     OrderModel? liveOrder,
   }) async {
     if (!isDraft) {
+      final printerController = Get.find<PrinterController>();
+      final OrderModel order = liveOrder ??
+          ordersController.parseOrderResponse(
+            responseData,
+            fallbackTableName: snapshotTableName,
+            fallbackChairCount: snapshotChairCount,
+          );
+      final oldItemsForKOT = (wasEditing && !wasDraft) ? originalItems : null;
+
       try {
-        final printerController = Get.find<PrinterController>();
-
-        final OrderModel order =
-            liveOrder ??
-            ordersController.parseOrderResponse(
-              responseData,
-              fallbackTableName: snapshotTableName,
-              fallbackChairCount: snapshotChairCount,
-            );
-
-        List<OrderItem>? oldItemsForKOT;
-        if (wasEditing && !wasDraft) {
-          oldItemsForKOT = originalItems;
-        }
-
-        await printerController.printKOT(order, oldItems: oldItemsForKOT);
-
-        if (shouldPrintReceipt) {
-          await printerController.printReceipt(order, 0, 0);
+        final kotSuccess = await printerController.printKOT(order, oldItems: oldItemsForKOT);
+        if (!kotSuccess) {
+          showSafeSnackbar('KOT Print Failed', 'Order placed, but KOT printing failed. Please check printer connection and retry from Orders.');
         }
       } catch (e) {
-        debugPrint("Background Printing failed: $e");
+        debugPrint("KOT print failed: $e");
+        showSafeSnackbar('KOT not printed', '$e');
+      }
+
+      if (shouldPrintReceipt) {
+        await Future.delayed(const Duration(milliseconds: 600)); // BT printer switch gap
+        try {
+          final receiptSuccess = await printerController.printReceipt(order, 0, 0, isBill: true);
+          if (!receiptSuccess) {
+            showSafeSnackbar('Bill Print Failed', 'Bill printing failed. Please check printer connection and retry.');
+          }
+        } catch (e) {
+          debugPrint("Receipt print failed: $e");
+          showSafeSnackbar('Receipt not printed', '$e');
+        }
       }
     }
 

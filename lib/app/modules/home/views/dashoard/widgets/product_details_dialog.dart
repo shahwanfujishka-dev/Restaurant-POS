@@ -235,7 +235,7 @@ class ProductDetailsDialog extends GetView<DashboardController> {
                   controller.selectedUnit.value?.existAddOns ?? [];
 
               for (var a in currentUnitAddons) {
-                if (a.prdaddon_flags == 1 && a.quantity.value > 0) {
+                if (a.prdaddon_flags == 1) {
                   selectedAddons.add(
                     a.copyWith(quantityValue: a.quantity.value),
                   );
@@ -333,6 +333,7 @@ class ProductDetailsDialog extends GetView<DashboardController> {
                   colors: colors,
                   onPressed: () {
                     if (addon.quantity.value > 0) addon.quantity.value--;
+                    debugPrint('ADDON ${addon.name} (${addon.prdId}) qty -> ${addon.quantity.value}');
                   },
                 ),
                 Obx(
