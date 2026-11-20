@@ -20,7 +20,7 @@ import 'app/theme/theme_controller.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
+// GetStorage().erase();
   // Capture the existing native database directory on mobile before switching
   // the sqflite-compatible API to the SQLCipher-backed FFI implementation.
   final legacyMobileDatabasesPath =

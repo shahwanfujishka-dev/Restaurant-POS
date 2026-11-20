@@ -531,7 +531,9 @@ class DashboardController extends GetxController {
       );
 
       if (response.statusCode == 200) {
-        final data = response.data['data'] as List? ?? [];
+        final data = (response.data['data'] as List? ?? [])
+            .where((e) => parseInt(e['produnit_flag'], defaultValue: 1) != 0)
+            .toList();
         final common = response.data['commonAddon'] as List? ?? [];
 
         final List<ProductUnit> resolvedUnits = [];

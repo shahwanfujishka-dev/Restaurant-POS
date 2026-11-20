@@ -575,9 +575,7 @@ class PrinterController extends GetxController {
     _btChain = completer.future.then((_) {}, onError: (_) {});
     prev.then((_) async {
       try {
-        completer.complete(
-          await action().timeout(const Duration(seconds: 30)),
-        );
+        completer.complete(await action());
       } catch (e, s) {
         completer.completeError(e, s);
       }
@@ -1332,7 +1330,13 @@ class PrinterController extends GetxController {
       if (attempt > 0) await _btHardReset(); // don't trust old socket
 
       final c = Stopwatch()..start();
-      final connected = await ensureBluetoothConnected(address);
+      final connected = await ensureBluetoothConnected(
+        address,
+        retries: attempt == 0 ? 1 : 3,   // fail fast on attempt 1, hard reset, then try properly
+      ).timeout(const Duration(seconds: 20), onTimeout: () {
+        _btError = "Connect timed out.";
+        return false;
+      });
       debugPrint("⏱ [$tag] connect ${c.elapsedMilliseconds}ms "
           "(attempt ${attempt + 1}, stale=$stale)");
       if (!Platform.isAndroid) {
@@ -1887,9 +1891,9 @@ class PrinterController extends GetxController {
         if (addon.quantity.value <= 0) continue;
         final double addonTotal = addon.price * addon.quantity.value;
         calculatedSubTotal += addonTotal;
-
         if (addon.price > 0) {
-          b += await _nameRow(g, " + ${addon.name}", 7, [
+          b += await _nameRow(g, " + ${addon.name}", 6, [
+            PosColumn(text: addon.quantity.value.toString(), width: 1),
             PosColumn(
               text: addon.price.toStringAsFixed(2),
               width: 2,
@@ -2111,6 +2115,16 @@ class PrinterController extends GetxController {
         (item.priceAtOrder * item.quantity).toStringAsFixed(2),
         leftW: 9,
       );
+      for (final addon in item.selectedAddons.where(
+            (a) => a.price > 0 && a.quantity.value > 0,
+      )) {
+        b += await _line(
+          g,
+          " + ${addon.quantity.value}x ${addon.name}",
+          (addon.price * addon.quantity.value).toStringAsFixed(2),
+          leftW: 9,
+        );
+      }
     }
 
     b += g.text(_hr);

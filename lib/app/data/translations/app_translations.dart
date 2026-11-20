@@ -29,6 +29,7 @@ class AppTranslations extends Translations {
       'pull_to_refresh': 'Pull To Refresh',
       'retry': 'Retry',
       'all': 'All',
+      'gstin' : 'GSTIN',
       'error': 'Error',
       'success': 'Success',
       'version': 'Version',

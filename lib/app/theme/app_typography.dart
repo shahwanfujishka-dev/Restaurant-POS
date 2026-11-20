@@ -62,6 +62,7 @@ class AppTypography {
   static double get iconLarge => ScreenType.isMobile() ? 30.sp : 8.sp;
 
   static double get iconXL => ScreenType.isMobile() ? 36.sp : 12.sp;
+  static double get price => ScreenType.isMobile() ? 36.sp : 15.sp;
 
   static double get foodIcon => ScreenType.isMobile() ? 60.sp : 20.sp;
 

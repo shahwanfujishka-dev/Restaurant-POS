@@ -1680,7 +1680,9 @@ CREATE TABLE orders (
         'price': _toDouble(addon['sale_rate']),
         'unit_id': _toInt(addon['unit_id']),
         'unit_display': addon['unit_display'],
-        'tax_per': _toDouble(addon['tax_per']),
+        'tax_per': _toDouble(
+          (_toDouble(addon['tax_per']) > 0) ? addon['tax_per'] : addon['prd_tax'],
+        ),
         'tax_cat_id': _toInt(addon['prd_tax_cat_id']),
         'unit_base_qty': _toDouble(addon['unit_base_qty'], defaultValue: 1.0),
         'prdaddon_flags': _toInt(addon['prdaddon_flags']),
@@ -2009,6 +2011,7 @@ CREATE TABLE orders (
       FROM bulk_product_units b
       LEFT JOIN units u ON b.produnit_unit_id = u.id
       WHERE b.produnit_prod_id = ?
+      AND COALESCE(b.produnit_flag, 1) != 0
     ''',
       [prodId],
     );

@@ -180,8 +180,14 @@ class CashierWidgets {
                           colors,
                         ),
                         SizedBox(height: 10.h),
+                        AppState.cmpTaxType == 1?
                         minimalCustomerField(
                           "vat".tr,
+                          customerVatController,
+                          colors,
+                          Keyboard: TextInputType.phone,
+                        ) :  minimalCustomerField(
+                          "gstin".tr,
                           customerVatController,
                           colors,
                           Keyboard: TextInputType.phone,
