@@ -3,8 +3,10 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
+import 'package:sqflite/sqflite.dart' as mobile_sqflite;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'app/data/services/api_services.dart';
 import 'app/data/services/database_helper.dart';
@@ -19,18 +21,41 @@ import 'app/theme/theme_controller.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-  }
+  // Capture the existing native database directory on mobile before switching
+  // the sqflite-compatible API to the SQLCipher-backed FFI implementation.
+  final legacyMobileDatabasesPath =
+      Platform.isAndroid || Platform.isIOS
+          ? await mobile_sqflite.getDatabasesPath()
+          : null;
+
+  sqfliteFfiInit();
+  databaseFactory = databaseFactoryFfi;
+  DatabaseHelper.configureDatabasesDirectory(
+    legacyMobileDatabasesPath ?? await databaseFactoryFfi.getDatabasesPath(),
+  );
 
   await GetStorage.init();
-  await LocalHubServer.instance.start();
+  final savedLang = GetStorage().read('app_language') ?? 'en';
+  final initialLocale = savedLang == 'ar' ? const Locale('ar', 'AR') : const Locale('en', 'US');
+  try {
+    await LocalHubServer.instance.start();
+  } catch (e) {
+    debugPrint("Main: Failed to start LocalHubServer (port in use or network error): $e");
+  }
   final apiService = Get.put(ApiService(), permanent: true);
   Get.put(SyncService(), permanent: true);
   debugPrint(
     'STORAGE: ${GetStorage().getKeys()} -> ${GetStorage().getValues()}',
   );
+  final secureStorage = Platform.isMacOS
+      ? const FlutterSecureStorage(
+          mOptions: MacOsOptions(usesDataProtectionKeychain: false),
+        )
+      : const FlutterSecureStorage();
+  final databaseKey = await secureStorage.read(
+    key: 'pos_app_database_key_v1',
+  );
+  debugPrint('Database encryption key available: ${databaseKey != null}');
   final themeController = Get.put(ThemeController(), permanent: true);
 
   final storage = GetStorage();
@@ -55,7 +80,13 @@ void main() async {
 
         if (response.statusCode == 200 && response.data['status'] == 200) {
           log("Main: Session active. App State UPI: ${AppState.upiId}");
-          initialRoute = Routes.HOME;
+          if (AppState.lastSyncedUserId.isNotEmpty &&
+              AppState.lastSyncedUserId != AppState.userId) {
+            log("Main: Synced user (${AppState.lastSyncedUserId}) differs from current user (${AppState.userId}). Routing to Sync.");
+            initialRoute = Routes.SYNC;
+          } else {
+            initialRoute = Routes.HOME;
+          }
         } else {
           log(
             "Main: Session check failed (${response.data['status']}), clearing data.",
@@ -74,7 +105,13 @@ void main() async {
           log(
             "Main: Network error during session check, allowing offline access.",
           );
-          initialRoute = Routes.HOME;
+          if (AppState.lastSyncedUserId.isNotEmpty &&
+              AppState.lastSyncedUserId != AppState.userId) {
+            log("Main: Synced user (${AppState.lastSyncedUserId}) differs from current user (${AppState.userId}). Routing to Sync.");
+            initialRoute = Routes.SYNC;
+          } else {
+            initialRoute = Routes.HOME;
+          }
         }
       }
     }
@@ -97,17 +134,19 @@ void main() async {
     storage.write('session_expired_flag', true);
   }
   // print("UPI: ${AppState.upiId}");
-  runApp(MyApp(initialRoute: initialRoute, themeController: themeController));
+  runApp(MyApp(initialRoute: initialRoute, themeController: themeController, initialLocale: initialLocale));
 }
 
 class MyApp extends StatelessWidget {
   final String initialRoute;
   final ThemeController themeController;
+  final Locale initialLocale;
 
   const MyApp({
     super.key,
     required this.initialRoute,
     required this.themeController,
+    this.initialLocale = const Locale('en', 'US'),
   });
 
   @override
@@ -129,7 +168,7 @@ class MyApp extends StatelessWidget {
                 ? ThemeMode.dark
                 : ThemeMode.light,
             translations: AppTranslations(),
-            locale: const Locale('en', 'US'),
+            locale: initialLocale,
             fallbackLocale: const Locale('en', 'US'),
             defaultTransition: Transition.fade,
             transitionDuration: const Duration(milliseconds: 200),

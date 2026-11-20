@@ -13,15 +13,14 @@ import '../controller/table_controller.dart';
 class HomeBinding extends Bindings {
   @override
   void dependencies() {
-    Get.lazyPut<HomeController>(() => HomeController());
-    Get.lazyPut<DashboardController>(() => DashboardController());
-
     // ✅ Make core controllers permanent to prevent "not found" errors and background job crashes
+    Get.put(CartController(), permanent: true);
+    Get.put(HomeController(), permanent: true);
+    Get.put(DashboardController(), permanent: true);
     Get.put(TablesController(), permanent: true);
     Get.put(SettingsController(), permanent: true);
     Get.put(OrderTypeController(), permanent: true);
     Get.put(PrinterController(), permanent: true);
     Get.put(OrdersController(), permanent: true);
-    Get.put(CartController(), permanent: true);
   }
 }

@@ -100,6 +100,10 @@ class SyncController extends GetxController {
   }
 
   Future<void> startSync() async {
+    if (AppState.isSyncInProgress) {
+      log("SyncController: Sync is already in progress, skipping duplicate startSync().");
+      return;
+    }
     try {
       AppState.isSyncInProgress = true;
       hasError.value = false;
@@ -308,6 +312,7 @@ class SyncController extends GetxController {
       progress.value = 1.0;
       statusMessage.value = 'sync_complete'.tr;
       AppState.isSyncInProgress = false;
+      AppState.lastSyncedUserId = AppState.userId;
       await Future.delayed(const Duration(milliseconds: 500));
       Get.offAllNamed(ScreenType.isMobile() ? Routes.ORDER_TYPE : Routes.HOME);
     } catch (e) {

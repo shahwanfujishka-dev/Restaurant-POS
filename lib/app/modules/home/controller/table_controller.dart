@@ -43,6 +43,7 @@ class AreaModel {
       priceGroupID: (json['ra_prcgrp_id'] as num? ?? 0).toInt(),
       tables: (json['pos_tables'] as List? ?? [])
           .map((t) => TableModel.fromJson(t as Map<String, dynamic>))
+          .where((table) => table.availableSeatCount > 0)
           .toList(),
     );
   }
@@ -52,22 +53,34 @@ class TableModel {
   final int id;
   final String name;
   final int chairCount;
+  final int availableSeatCount;
   final List<dynamic> processingTable;
 
   TableModel({
     required this.id,
     required this.name,
     required this.chairCount,
+    required this.availableSeatCount,
     required this.processingTable,
   });
 
   factory TableModel.fromJson(Map<String, dynamic> json) {
+    final capacity = (json['rt_seat_count'] as num? ??
+            (json['chair_count'] as num? ??
+                (json['rt_avl_seat'] as num? ??
+                    (json['available_seat_count'] as num? ?? 0))))
+        .toInt();
+    final availableSeats =
+        (json['rt_avl_seat'] as num? ??
+                json['available_seat_count'] as num? ??
+                capacity)
+            .toInt();
+
     return TableModel(
       id: (json['rt_id'] as num? ?? (json['id'] as num? ?? 0)).toInt(),
       name: (json['rt_name'] ?? (json['name'] ?? '')).toString(),
-      chairCount:
-          (json['rt_seat_count'] as num? ?? (json['chair_count'] as num? ?? 0))
-              .toInt(),
+      chairCount: capacity,
+      availableSeatCount: availableSeats,
       processingTable: json['processing_table'] is String
           ? jsonDecode(json['processing_table'])
           : (json['processing_table'] is List ? json['processing_table'] : []),
@@ -75,6 +88,7 @@ class TableModel {
   }
 
   TableStatus getStatus(int occupiedCount) {
+    if (availableSeatCount <= 0) return TableStatus.fullyOccupied;
     if (occupiedCount == 0) return TableStatus.vacant;
     if (occupiedCount < chairCount) return TableStatus.partiallyOccupied;
     return TableStatus.fullyOccupied;
@@ -87,7 +101,7 @@ class TablesController extends GetxController with WidgetsBindingObserver {
 
   final areas = <AreaModel>[].obs;
   final selectedArea = Rxn<AreaModel>();
-  final isLoading = false.obs;
+  final isLoading = true.obs;
 
   final selectedChairCount = 0.obs;
 
@@ -96,6 +110,8 @@ class TablesController extends GetxController with WidgetsBindingObserver {
   // Track which orders have a pending local update to avoid double counting with Hub/Cloud data
   final pendingUpdateIds = <String>{}.obs;
 
+  bool _pollingActive = false;
+
   Timer? _pollingTimer;
 
   @override
@@ -103,8 +119,14 @@ class TablesController extends GetxController with WidgetsBindingObserver {
     super.onInit();
     WidgetsBinding.instance.addObserver(this);
     fetchTables();
-    // _startPolling();
+    // Start polling only if the Tables page is already open (index 1).
+    // Otherwise HomeController will turn it on when the user navigates there.
+    if (Get.isRegistered<HomeController>() &&
+        Get.find<HomeController>().selectedIndex.value == 1) {
+      setPollingActive(true);
+    }
   }
+
 
   @override
   void onClose() {
@@ -112,17 +134,28 @@ class TablesController extends GetxController with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     super.onClose();
   }
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    // Only refresh on resume if the user is actually on the Tables page
+    if (state == AppLifecycleState.resumed && _pollingActive) {
       fetchTables(silent: true);
+    }
+  }
+
+  /// Called by HomeController when the Tables page becomes visible / hidden.
+  void setPollingActive(bool active) {
+    if (_pollingActive == active) return;
+    _pollingActive = active;
+    if (active) {
+      _startPolling();
+    } else {
+      _pollingTimer?.cancel();
+      _pollingTimer = null;
     }
   }
 
   void _startPolling() {
     _pollingTimer?.cancel();
-    // Fast polling in local mode to ensure multi-device sync
     final duration = DeviceConfig.operationMode == OperationMode.local
         ? const Duration(seconds: 5)
         : const Duration(seconds: 20);
@@ -142,12 +175,14 @@ class TablesController extends GetxController with WidgetsBindingObserver {
   Future<void> fetchTables({bool silent = false}) async {
     try {
       if (!silent) {
+        if (areas.isEmpty) isLoading.value = true;
         await _updateLocalOccupancy();
         await _loadFromLocalDB();
-        if (areas.isEmpty) isLoading.value = true;
+        if (areas.isNotEmpty) isLoading.value = false;
       }
 
       List<dynamic> dataList = [];
+      var hasAuthoritativeResponse = false;
 
       if (DeviceConfig.operationMode == OperationMode.local &&
           DeviceConfig.role == DeviceRole.client) {
@@ -159,8 +194,9 @@ class TablesController extends GetxController with WidgetsBindingObserver {
               hostIp: hostIp,
               port: DeviceConfig.hostPort,
             );
-            if (hubResult['success'] == true) {
-              dataList = hubResult['data'] ?? [];
+            if (hubResult['success'] == true && hubResult['data'] is List) {
+              dataList = hubResult['data'];
+              hasAuthoritativeResponse = true;
             }
           } catch (e) {
             debugPrint("fetchTables: Local Hub failed: $e");
@@ -179,8 +215,10 @@ class TablesController extends GetxController with WidgetsBindingObserver {
           if (response.statusCode == 200) {
             if (response.data is Map && response.data['data'] is List) {
               dataList = response.data['data'];
+              hasAuthoritativeResponse = true;
             } else if (response.data is List) {
               dataList = response.data;
+              hasAuthoritativeResponse = true;
             }
           }
         } catch (e) {
@@ -189,8 +227,8 @@ class TablesController extends GetxController with WidgetsBindingObserver {
         }
       }
 
-      if (dataList.isNotEmpty) {
-        // Update Cache
+      if (hasAuthoritativeResponse) {
+        // The API response is a complete snapshot; reconcile removals as well as updates.
         await _dbHelper.insertAreas(dataList.cast<Map<String, dynamic>>());
         await _updateLocalOccupancy();
         await _loadFromLocalDB();
@@ -198,7 +236,7 @@ class TablesController extends GetxController with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('Error fetching tables: $e');
     } finally {
-      isLoading.value = false;
+      if (!silent) isLoading.value = false;
     }
   }
 
@@ -262,33 +300,27 @@ class TablesController extends GetxController with WidgetsBindingObserver {
           name: areaMap['name'],
           isDefault: areaMap['is_default'],
           priceGroupID: areaMap['price_group_id'],
-          tables: tablesMap.map((t) => TableModel.fromJson(t)).toList(),
+          tables: tablesMap
+              .map((t) => TableModel.fromJson(t))
+              .where((table) => table.availableSeatCount > 0)
+              .toList(),
         ),
       );
     }
 
-    if (fetchedAreas.isNotEmpty) {
-      areas.assignAll(fetchedAreas);
-      if (areas.isNotEmpty) {
-        selectedArea.value ??= areas.first;
-      }
-      // Preserve selection if possible
-      if (selectedArea.value != null) {
-        selectedArea.value = areas.firstWhere(
-          (a) => a.id == selectedArea.value!.id,
-          orElse: () => areas.first,
-        );
-      } else {
-        selectedArea.value = areas.firstWhere(
-          (a) => a.isDefault == 1,
-          orElse: () => areas.first,
-        );
-      }
+    areas.assignAll(fetchedAreas);
+    if (areas.isEmpty) {
+      selectedArea.value = null;
+      return;
     }
+
+    final previousAreaId = selectedArea.value?.id;
+    selectedArea.value = areas.firstWhereOrNull((area) => area.id == previousAreaId) ?? areas.first;
   }
 
   void selectArea(AreaModel area) {
     selectedArea.value = area;
+    unawaited(fetchTables(silent: true));
   }
 
   int getOccupiedCountForTable(
@@ -350,7 +382,11 @@ class TablesController extends GetxController with WidgetsBindingObserver {
       includeCurrentSelection: false,
     );
 
-    if (baseOccupiedCount < table.chairCount) {
+    final isEditingCurrentTable =
+        cartController.isEditing &&
+        cartController.selectedTableId.value == table.id.toString();
+    if ((table.availableSeatCount > 0 || isEditingCurrentTable) &&
+        baseOccupiedCount < table.chairCount) {
       if (cartController.selectedTableId.value == table.id.toString()) {
         selectedChairCount.value = cartController.selectedChairCount.value;
       } else {
@@ -426,11 +462,17 @@ class ChairSelectionDialog extends GetView<TablesController> {
           ),
         ],
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Obx(
-            () => Wrap(
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.65,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: SingleChildScrollView(
+                child: Obx(
+                  () => Wrap(
               spacing: AppTypography.smallText,
               runSpacing: AppTypography.smallText,
               children: List.generate(table.chairCount, (index) {
@@ -483,10 +525,12 @@ class ChairSelectionDialog extends GetView<TablesController> {
                     ),
                   ),
                 );
-              }),
+                  }),
+                ),
+              ),
             ),
-          ),
-          SizedBox(height: 24.h),
+            ),
+            SizedBox(height: 24.h),
           Row(
             children: [
               Expanded(
@@ -507,7 +551,8 @@ class ChairSelectionDialog extends GetView<TablesController> {
               ),
             ],
           ),
-        ],
+          ],
+        ),
       ),
     );
   }

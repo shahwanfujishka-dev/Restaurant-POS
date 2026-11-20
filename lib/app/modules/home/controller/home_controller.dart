@@ -4,6 +4,7 @@ import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_instance/src/extension_instance.dart';
 import 'package:get/get_navigation/src/extension_navigation.dart';
 import 'package:get/get_rx/src/rx_types/rx_types.dart';
+import 'package:get/get_rx/src/rx_workers/rx_workers.dart';
 import 'package:get/get_state_manager/src/simple/get_controllers.dart';
 import 'package:get/get_utils/src/extensions/internacionalization.dart';
 import 'package:restaurant_pos/app/modules/home/controller/table_controller.dart';
@@ -28,6 +29,16 @@ class HomeController extends GetxController {
     'printers',
     'settings',
   ];
+
+  @override
+  void onInit() {
+    super.onInit();
+    ever<int>(selectedIndex, (index) {
+      if (Get.isRegistered<TablesController>()) {
+        Get.find<TablesController>().setPollingActive(index == 1);
+      }
+    });
+  }
 
   final List<Widget> pages = [
     const DashboardPage(),

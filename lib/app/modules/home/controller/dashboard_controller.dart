@@ -318,6 +318,7 @@ class DashboardController extends GetxController {
           localProducts = await _dbHelper.getFavoriteProducts(
             selectedFavoriteId.value!,
             pgId,
+            searchQuery: searchKeyword.value.isNotEmpty ? searchKeyword.value : null,
           );
         } else if (searchKeyword.value.isNotEmpty) {
           localProducts = await _dbHelper.searchProducts(
@@ -385,7 +386,7 @@ class DashboardController extends GetxController {
             "category_id": selectedCategoryId.value.isNotEmpty
                 ? int.tryParse(selectedCategoryId.value)
                 : 0,
-            "fav_id": selectedFavoriteId.value ?? 0,
+            "fav_id": searchKeyword.value.isNotEmpty ? 0 : (selectedFavoriteId.value ?? 0),
             "keyword": searchKeyword.value,
           },
         );

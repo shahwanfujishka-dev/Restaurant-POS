@@ -1,14 +1,26 @@
 import 'dart:convert';
 import 'dart:developer';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:path/path.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite/sqflite.dart' as mobile_sqflite;
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
+  static Future<Database>? _databaseFuture;
+  static String? _databasesDirectory;
+  static const String _databaseKeyName = 'pos_app_database_key_v1';
+  static final FlutterSecureStorage _secureStorage = Platform.isMacOS
+      ? const FlutterSecureStorage(
+          mOptions: MacOsOptions(usesDataProtectionKeychain: false),
+        )
+      : const FlutterSecureStorage();
+
   static const _lastTouched = '''
   MAX(
     COALESCE(o.updated_at, o.created_at, ''),
@@ -18,23 +30,204 @@ class DatabaseHelper {
 
   DatabaseHelper._init();
 
+  static void configureDatabasesDirectory(String path) {
+    _databasesDirectory = path;
+  }
+
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('pos_app.db');
-    return _database!;
+    final pending = _databaseFuture ??= _initDB('pos_app.db');
+    try {
+      _database = await pending;
+      return _database!;
+    } catch (_) {
+      if (identical(_databaseFuture, pending)) _databaseFuture = null;
+      rethrow;
+    }
   }
 
   Future<Database> _initDB(String filePath) async {
-    final dbPath = await getDatabasesPath();
+    final dbPath =
+        _databasesDirectory ?? await databaseFactoryFfi.getDatabasesPath();
     final path = join(dbPath, filePath);
+    await Directory(dirname(path)).create(recursive: true);
 
-    return await openDatabase(
+    await _recoverInterruptedEncryption(path);
+    final key = await _loadOrCreateEncryptionKey(path);
+    await _encryptExistingDatabase(path, key);
+
+    final database = await databaseFactoryFfi.openDatabase(
       path,
-      version: 23, // bumped from 21 → 22 for order_inv_issue in local server
-      onCreate: _createDB,
-      onUpgrade: _onUpgrade,
-      onOpen: _ensureOrderColumns,
+      options: OpenDatabaseOptions(
+        version: 24, // schema version is independent of the encryption format
+        onConfigure: (db) => _configureEncryptedDatabase(db, key),
+        onCreate: _createDB,
+        onUpgrade: _onUpgrade,
+        onOpen: _ensureOrderColumns,
+      ),
     );
+    if (!await _hasCipherSupport(database)) {
+      await database.close();
+      throw StateError('SQLCipher support is unavailable in this build.');
+    }
+    return database;
+  }
+
+  Future<void> _configureEncryptedDatabase(Database db, String key) async {
+    await db.execute("PRAGMA key = \"x'$key'\"");
+    await db.execute('PRAGMA cipher_memory_security = ON');
+  }
+
+  Future<bool> _hasCipherSupport(Database db) async {
+    final rows = await db.rawQuery('PRAGMA cipher_version');
+    return rows.isNotEmpty && rows.first.values.first?.toString().isNotEmpty == true;
+  }
+
+  Future<bool> _canOpenDatabase(String path, {String? key}) async {
+    if (!await File(path).exists()) return false;
+    Database? db;
+    try {
+      db = await databaseFactoryFfi.openDatabase(
+        path,
+        options: OpenDatabaseOptions(
+          readOnly: true,
+          singleInstance: false,
+          onConfigure: key == null ? null : (db) => _configureEncryptedDatabase(db, key),
+        ),
+      );
+      await db.rawQuery('SELECT name FROM sqlite_master LIMIT 1');
+      return await _hasCipherSupport(db);
+    } catch (_) {
+      return false;
+    } finally {
+      await db?.close();
+    }
+  }
+
+  Future<String> _loadOrCreateEncryptionKey(String path) async {
+    final savedKey = await _secureStorage.read(key: _databaseKeyName);
+    if (savedKey != null) {
+      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(savedKey)) {
+        throw StateError('The stored database encryption key is invalid.');
+      }
+      return savedKey;
+    }
+
+    if (await File(path).exists() &&
+        !await _canOpenDatabase(path, key: null)) {
+      throw StateError(
+        'The local database is encrypted but its key is missing. '
+        'The database was left untouched; restore the key before continuing.',
+      );
+    }
+
+    final random = math.Random.secure();
+    final keyBytes = List<int>.generate(32, (_) => random.nextInt(256));
+    final key = keyBytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    await _secureStorage.write(key: _databaseKeyName, value: key);
+    return key;
+  }
+
+  Future<void> _recoverInterruptedEncryption(String path) async {
+    final backupPath = '$path.plaintext_backup';
+    final temporaryPath = '$path.encrypted_tmp';
+    final backup = File(backupPath);
+    final temporary = File(temporaryPath);
+
+    if (await backup.exists()) {
+      final key = await _secureStorage.read(key: _databaseKeyName);
+      if (key != null && await _canOpenDatabase(path, key: key)) {
+        await backup.delete();
+        if (await temporary.exists()) await temporary.delete();
+        return;
+      }
+      if (key != null &&
+          !await File(path).exists() &&
+          await _canOpenDatabase(temporaryPath, key: key)) {
+        await temporary.rename(path);
+        if (await _canOpenDatabase(path, key: key)) {
+          await backup.delete();
+          return;
+        }
+      }
+
+      if (await File(path).exists()) await File(path).delete();
+      await backup.rename(path);
+      if (await temporary.exists()) await temporary.delete();
+      return;
+    }
+
+    // An export that never reached the commit step is safe to discard.
+    if (await temporary.exists()) await temporary.delete();
+  }
+
+  Future<void> _encryptExistingDatabase(String path, String key) async {
+    final databaseFile = File(path);
+    if (!await databaseFile.exists()) return;
+    if (await _canOpenDatabase(path, key: key)) return;
+    if (!await _canOpenDatabase(path, key: null)) {
+      throw StateError(
+        'The local database cannot be opened with its stored key or as a '
+        'legacy SQLite database. The file was left untouched.',
+      );
+    }
+
+    final temporaryPath = '$path.encrypted_tmp';
+    final backupPath = '$path.plaintext_backup';
+    final temporary = File(temporaryPath);
+    final backup = File(backupPath);
+    if (await temporary.exists()) await temporary.delete();
+
+    Database? source;
+    try {
+      source = await databaseFactoryFfi.openDatabase(
+        path,
+        options: OpenDatabaseOptions(singleInstance: false),
+      );
+      if (!await _hasCipherSupport(source)) {
+        throw StateError('SQLCipher support is unavailable for migration.');
+      }
+      final versionRows = await source.rawQuery('PRAGMA user_version');
+      final schemaVersion = int.tryParse(
+            versionRows.first.values.first.toString(),
+          ) ??
+          0;
+      await source.execute(
+        "ATTACH DATABASE ? AS encrypted KEY \"x'$key'\"",
+        [temporaryPath],
+      );
+      await source.rawQuery("SELECT sqlcipher_export('encrypted')");
+      // sqlcipher_export copies schema/data but does not preserve user_version.
+      await source.execute('PRAGMA encrypted.user_version = $schemaVersion');
+      await source.execute('DETACH DATABASE encrypted');
+    } finally {
+      await source?.close();
+    }
+
+    if (!await _canOpenDatabase(temporaryPath, key: key)) {
+      if (await temporary.exists()) await temporary.delete();
+      throw StateError('Encrypted database verification failed.');
+    }
+
+    try {
+      await databaseFile.rename(backupPath);
+      await temporary.rename(path);
+      if (!await _canOpenDatabase(path, key: key)) {
+        throw StateError('The migrated database failed verification.');
+      }
+      await backup.delete();
+    } catch (_) {
+      if (await File(path).exists() &&
+          !await _canOpenDatabase(path, key: key)) {
+        await File(path).delete();
+      }
+      if (await backup.exists() && !await File(path).exists()) {
+        await backup.rename(path);
+      }
+      rethrow;
+    }
   }
 
   // Robust Parsing Helpers
@@ -313,6 +506,16 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE orders ADD COLUMN updated_at TEXT');
       } catch (e) {}
     }
+    if (oldVersion < 24) {
+      try {
+        await db.execute(
+          'ALTER TABLE pos_tables ADD COLUMN available_seat_count INTEGER DEFAULT 0',
+        );
+        await db.execute(
+          'UPDATE pos_tables SET available_seat_count = chair_count WHERE available_seat_count = 0',
+        );
+      } catch (e) {}
+    }
   }
 
   Future _createDB(Database db, int version) async {
@@ -390,6 +593,7 @@ class DatabaseHelper {
         area_id INTEGER,
         name TEXT,
         chair_count INTEGER,
+        available_seat_count INTEGER DEFAULT 0,
         processing_table TEXT,
         sort_order INTEGER
       )
@@ -776,7 +980,7 @@ CREATE TABLE orders (
     final result = await db.rawQuery(
       'SELECT COUNT(*) as count FROM orders WHERE is_synced = 0',
     );
-    return Sqflite.firstIntValue(result) ?? 0;
+    return mobile_sqflite.Sqflite.firstIntValue(result) ?? 0;
   }
 
   Future<int> getUnsyncedPaymentsCount() async {
@@ -784,7 +988,7 @@ CREATE TABLE orders (
     final result = await db.rawQuery(
       'SELECT COUNT(*) as count FROM payments WHERE is_synced = 0',
     );
-    return Sqflite.firstIntValue(result) ?? 0;
+    return mobile_sqflite.Sqflite.firstIntValue(result) ?? 0;
   }
 
   Future<int> getDistinctUnsyncedCount() async {
@@ -796,7 +1000,7 @@ CREATE TABLE orders (
         SELECT order_uuid as uuid FROM payments WHERE is_synced = 0
       )
     ''');
-    return Sqflite.firstIntValue(result) ?? 0;
+    return mobile_sqflite.Sqflite.firstIntValue(result) ?? 0;
   }
 
   Future<List<Map<String, dynamic>>> getAllLocalOrders() async {
@@ -901,12 +1105,21 @@ CREATE TABLE orders (
                 .toString();
 
         int posStatus =
-            (json['sales_odr_pos_status'] as num? ?? (isSold ? 3 : 1)).toInt();
+            (json['sales_odr_pos_status'] as num? ??
+                    json['res_status'] as num? ??
+                    (isSold ? 3 : 1))
+                .toInt();
         String status = 'pending';
         if (posStatus == 0) status = 'draft';
         if (posStatus == 2) status = 'billed';
         if (posStatus == 3) status = 'paid';
         if (posStatus == 4) status = 'cancelled';
+
+        final rawTotal =
+            json['sales_odr_total'] ??
+            json['tot_amount'] ??
+            json['total_amount'] ??
+            json['sq_total'];
 
         final values = {
           'server_id': serverId,
@@ -918,16 +1131,13 @@ CREATE TABLE orders (
               json['sales_odr_table_name']?.toString() ??
               json['ledger_name']?.toString() ??
               'N/A',
-          'total_amount': _toDouble(
-            json['sales_odr_total'] ??
-                json['tot_amount'] ??
-                json['total_amount'],
-          ),
+          if (rawTotal != null) 'total_amount': _toDouble(rawTotal),
           'total_tax': _toDouble(
             json['sales_odr_tax'] ?? json['tot_tax'] ?? json['total_tax'],
           ),
           'status': status,
           'is_synced': 1,
+          'payload': jsonEncode(json),
         };
 
         final existing = await txn.query(
@@ -989,7 +1199,7 @@ CREATE TABLE orders (
     }
   }
 
-  Future<void> updateOrderStatusByUuid(
+  Future<int> updateOrderStatusByUuid(
     String uuid,
     String status, {
     int? isSynced,
@@ -1010,7 +1220,6 @@ CREATE TABLE orders (
     if (payload != null) values['payload'] = payload;
     if (total != null) values['total_amount'] = total;
     if (tax != null) values['total_tax'] = tax;
-
     int count = await db.update(
       'orders',
       values,
@@ -1025,6 +1234,7 @@ CREATE TABLE orders (
         whereArgs: [uuid],
       );
     }
+    return count;
   }
 
   Future<void> saveOrderOffline(
@@ -1221,7 +1431,7 @@ CREATE TABLE orders (
     final p = await db.rawQuery(
       'SELECT COUNT(*) AS c FROM payments WHERE is_synced = 0',
     );
-    return (Sqflite.firstIntValue(o) ?? 0) + (Sqflite.firstIntValue(p) ?? 0);
+    return (mobile_sqflite.Sqflite.firstIntValue(o) ?? 0) + (mobile_sqflite.Sqflite.firstIntValue(p) ?? 0);
   }
 
   Future<String> generateLocalInvoiceNumber(String branchCode) async {
@@ -1357,6 +1567,34 @@ CREATE TABLE orders (
     return await db.rawQuery(query, args);
   }
 
+  Future<Map<String, dynamic>?> getProductById(
+    String productId, {
+    int priceGroupId = 0,
+  }) async {
+    final db = await instance.database;
+    final query = '''
+      SELECT p.*, c.token_printer_id as cat_token_printer
+      FROM (
+        SELECT * FROM products WHERE id = ? AND price_group_id = ?
+        UNION ALL
+        SELECT * FROM products p1 WHERE id = ? AND price_group_id = 0 
+        AND NOT EXISTS (SELECT 1 FROM products p2 WHERE p2.id = p1.id AND p2.price_group_id = ?)
+      ) p
+      LEFT JOIN categories c ON p.category_id = c.id
+      LIMIT 1
+    ''';
+    final rows = await db.rawQuery(query, [
+      productId,
+      priceGroupId,
+      productId,
+      priceGroupId,
+    ]);
+    if (rows.isNotEmpty) {
+      return rows.first;
+    }
+    return null;
+  }
+
   Future<List<Map<String, dynamic>>> searchProducts(
     String query, {
     int priceGroupId = 0,
@@ -1469,6 +1707,11 @@ CREATE TABLE orders (
   Future<void> insertAreas(List<Map<String, dynamic>> areas) async {
     final db = await instance.database;
     await db.transaction((txn) async {
+      // This API provides a complete snapshot. Remove stale areas/tables before
+      // inserting it so deleted or deactivated tables disappear without a full sync.
+      await txn.delete('pos_tables');
+      await txn.delete('areas');
+
       final batch = txn.batch();
       for (int i = 0; i < areas.length; i++) {
         final area = areas[i];
@@ -1478,20 +1721,29 @@ CREATE TABLE orders (
           'is_default': _toInt(area['ra_is_default']),
           'price_group_id': _toInt(area['ra_prcgrp_id']),
           'sort_order': i,
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        });
 
         if (area['pos_tables'] != null) {
           final List tables = area['pos_tables'];
           for (int j = 0; j < tables.length; j++) {
             final table = tables[j];
+            final seatCapacity = _toInt(
+              table['rt_seat_count'] ?? table['rt_avl_seat'],
+            );
+            final availableSeats = _toInt(
+              table['rt_avl_seat'] ?? seatCapacity,
+            );
+            if (seatCapacity <= 0 || availableSeats <= 0) continue;
+
             batch.insert('pos_tables', {
               'id': _toInt(table['rt_id']),
               'area_id': _toInt(area['ra_id']),
               'name': table['rt_name'],
-              'chair_count': _toInt(table['rt_seat_count']),
+              'chair_count': seatCapacity,
+              'available_seat_count': availableSeats,
               'processing_table': jsonEncode(table['processing_table']),
               'sort_order': j,
-            }, conflictAlgorithm: ConflictAlgorithm.replace);
+            });
           }
         }
       }
@@ -1508,7 +1760,7 @@ CREATE TABLE orders (
     final db = await instance.database;
     return await db.query(
       'pos_tables',
-      where: 'area_id = ?',
+      where: 'area_id = ? AND available_seat_count > 0',
       whereArgs: [areaId],
       orderBy: 'sort_order ASC',
     );
@@ -1562,11 +1814,11 @@ CREATE TABLE orders (
 
   Future<List<Map<String, dynamic>>> getFavoriteProducts(
     int favId,
-    int pgId,
-  ) async {
+    int pgId, {
+    String? searchQuery,
+  }) async {
     final db = await instance.database;
-    return await db.rawQuery(
-      '''
+    String query = '''
       SELECT p.*, c.token_printer_id as cat_token_printer
       FROM (
         SELECT * FROM products WHERE price_group_id = ?
@@ -1577,11 +1829,18 @@ CREATE TABLE orders (
       INNER JOIN favorite_products fp ON p.id = fp.product_id AND (fp.price_group_id = ? OR fp.price_group_id = 0)
       LEFT JOIN categories c ON p.category_id = c.id
       WHERE fp.favorite_id = ?
-      GROUP BY p.id
-      ORDER BY p.sort_order ASC
-    ''',
-      [pgId, pgId, pgId, favId],
-    );
+    ''';
+    List<dynamic> args = [pgId, pgId, pgId, favId];
+
+    if (searchQuery != null && searchQuery.trim().isNotEmpty) {
+      query += " AND (p.name LIKE ? OR p.id = ?)";
+      args.add('%$searchQuery%');
+      args.add(searchQuery);
+    }
+
+    query += " GROUP BY p.id ORDER BY p.sort_order ASC";
+
+    return await db.rawQuery(query, args);
   }
 
   // --- Units ---
@@ -1711,7 +1970,7 @@ CREATE TABLE orders (
     });
 
     // 4. FINAL VERIFICATION
-    final count = Sqflite.firstIntValue(
+    final count = mobile_sqflite.Sqflite.firstIntValue(
       await db.rawQuery('SELECT COUNT(*) FROM bulk_product_units'),
     );
     log("DB_HELPER: DATABASE VERIFIED - Total rows now in table: $count");
@@ -1940,7 +2199,7 @@ CREATE TABLE orders (
           "SELECT COUNT(*) as count FROM orders WHERE created_at LIKE ? AND local_id <= ?",
           ["$datePart%", localId],
         );
-        return Sqflite.firstIntValue(countResult) ?? 1;
+        return mobile_sqflite.Sqflite.firstIntValue(countResult) ?? 1;
       }
       return localId;
     }

@@ -237,19 +237,17 @@ class CashierView extends GetView<CashierController> {
                     CashierWidgets.minimalRoundOffInput(
                       controller.roundOffController,
                       controller.updateRoundOffAmount,
-                      controller.incrementRoundOff,
-                      controller.decrementRoundOff,
+                      controller.roundOffIsNegative,
+                      controller.setRoundOffSign,
                       colors,
                     ),
                     Padding(
                       padding: EdgeInsets.symmetric(vertical: 12.h),
                       child: Divider(height: 1, color: colors.border),
                     ),
-                    CashierWidgets.summaryRow(
-                      "grand_total",
-                      controller.totalToPay.toStringAsFixed(2),
+                    CashierWidgets.grandTotalCard(
+                      controller.totalToPay,
                       colors,
-                      isTotal: true,
                     ),
                   ],
                 ),
@@ -282,37 +280,39 @@ class CashierView extends GetView<CashierController> {
                         entry.value,
                         (val) => controller.updateSplitAmount(entry.key, val),
                         colors,
+                        controller.getSplitVat(entry.key),
                       );
                     }),
                     SizedBox(height: 12.h),
                     CashierWidgets.splitSummaryRow(
                       controller.currentSplitTotal,
                       controller.splitDifference,
+                      controller.currentSplitVatTotal,
                       colors,
                     ),
                   ],
                 );
               }),
               SizedBox(height: 10.h),
-              Obx(() {
-                final method = controller.paymentMethod.value;
-                if (method != 'Cash') return const SizedBox.shrink();
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    CashierWidgets.cashReceivedRow(
-                      controller.amountController,
-                      controller.updateReceivedAmount,
-                      controller.receivedAmount,
-                      controller.totalToPay,
-                      colors,
-                      readOnly: false,
-                    ),
-                    SizedBox(height: 16.h),
-                  ],
-                );
-              }),
+              // Obx(() {
+              //   final method = controller.paymentMethod.value;
+              //   if (method != 'Cash') return const SizedBox.shrink();
+              //
+              //   return Column(
+              //     crossAxisAlignment: CrossAxisAlignment.start,
+              //     children: [
+              //       CashierWidgets.cashReceivedRow(
+              //         controller.amountController,
+              //         controller.updateReceivedAmount,
+              //         controller.receivedAmount,
+              //         controller.totalToPay,
+              //         colors,
+              //         readOnly: false,
+              //       ),
+              //       SizedBox(height: 16.h),
+              //     ],
+              //   );
+              // }),
             ],
           ),
         ),

@@ -13,6 +13,8 @@ import 'package:get_storage/get_storage.dart';
 import '../../modules/cart/controller/cart_controller.dart';
 import '../../modules/home/controller/order_controller.dart';
 import '../../modules/home/controller/printer_controller.dart';
+import '../../modules/home/controller/table_controller.dart';
+import '../../../helper/snackbar_helper.dart';
 import '../Device_Roles/device_roles.dart';
 import '../utils/AppState.dart';
 import 'api_services.dart';
@@ -163,6 +165,11 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     final msg = d is Map ? d['message'] : null;
     if (msg is Map && msg['status'] == 0) {
       log("SyncService: ❌ Step 1 rejected: ${msg['msg']}");
+      if (_isSeatUnavailableError(msg)) {
+        await _handleSeatUnavailable(msg);
+      } else {
+        await _registerFailure(uuid);
+      }
       return null;
     }
     final preview =
@@ -465,6 +472,27 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     final n =
         int.tryParse(await _dbHelper.getSetting('sync_fail_$uuid') ?? '0') ?? 0;
     await _dbHelper.saveSetting('sync_fail_$uuid', '${n + 1}');
+  }
+
+  bool _isSeatUnavailableError(dynamic msg) {
+    if (msg == null) return false;
+    final text = (msg is Map ? (msg['msg'] ?? msg.toString()) : msg.toString()).toLowerCase();
+    return text.contains('seat') || text.contains('available') || text.contains('requested seat');
+  }
+
+  Future<void> _handleSeatUnavailable(dynamic msg) async {
+    final errorMsg = msg is Map ? (msg['msg']?.toString() ?? 'Requested Seat Not available, Please Refresh and try again') : msg.toString();
+    log("SyncService: ⚠️ Table seat not available detected: $errorMsg. Refreshing tables...");
+    try {
+      if (Get.isRegistered<TablesController>()) {
+        await Get.find<TablesController>().fetchTables(silent: true);
+      }
+    } catch (e) {
+      log("SyncService: Error refreshing tables after seat unavailable rejection: $e");
+    }
+    try {
+      showSafeSnackbar("Table Seat Notice", errorMsg);
+    } catch (_) {}
   }
 
   int _safeInt(dynamic value) {
@@ -853,6 +881,7 @@ class SyncService extends GetxService with WidgetsBindingObserver {
       }
 
       log("SyncService: Master data sync complete.");
+      AppState.lastSyncedUserId = AppState.userId;
 
       // Refresh CartController if it's active so it picks up the new captains/ledgers
       if (Get.isRegistered<CartController>()) {
@@ -1173,6 +1202,11 @@ class SyncService extends GetxService with WidgetsBindingObserver {
     final msg2 = d2 is Map ? d2['message'] : null;
     if (msg2 is Map && msg2['status'] == 0) {
       log("SyncService: ❌ Step 2 rejected: ${msg2['msg']}");
+      if (_isSeatUnavailableError(msg2)) {
+        await _handleSeatUnavailable(msg2);
+      } else {
+        await _registerFailure(uuid);
+      }
       return;
     }
     final preview2 =
@@ -1350,7 +1384,11 @@ class SyncService extends GetxService with WidgetsBindingObserver {
           final msg = data['message'] as Map;
           if (msg['status'] == 0) {
             log("SyncService: ❌ Server rejected $uuid: ${msg['msg']}");
-            await _registerFailure(uuid);
+            if (_isSeatUnavailableError(msg)) {
+              await _handleSeatUnavailable(msg);
+            } else {
+              await _registerFailure(uuid);
+            }
             return;
           }
         }

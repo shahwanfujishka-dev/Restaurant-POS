@@ -68,6 +68,7 @@ class OrderModel {
   final List<OrderItem> items;
   final Rx<OrderStatus> status;
   final DateTime createdAt;
+  final DateTime orderTime;
   double subTotal;
   double totalAmount;
   double totalTax;
@@ -106,6 +107,7 @@ class OrderModel {
     required this.items,
     required OrderStatus status,
     required this.createdAt,
+    required this.orderTime,
     this.subTotal = 0.0, // ✅ Added
     required this.totalAmount,
     required this.totalTax,
@@ -156,6 +158,7 @@ class OrderModel {
     List<OrderItem>? items,
     OrderStatus? status,
     DateTime? createdAt,
+    DateTime? orderTime,
     double? subTotal, // ✅ Added
     double? totalAmount,
     double? totalTax,
@@ -194,6 +197,7 @@ class OrderModel {
       items: items ?? this.items,
       status: status ?? this.status.value,
       createdAt: createdAt ?? this.createdAt,
+      orderTime: orderTime ?? this.orderTime,
       subTotal: subTotal ?? this.subTotal, // ✅ Added
       totalAmount: totalAmount ?? this.totalAmount,
       totalTax: totalTax ?? this.totalTax,

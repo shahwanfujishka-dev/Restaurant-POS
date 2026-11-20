@@ -31,6 +31,10 @@ class OrderTypeController extends GetxController {
     selectedType.value = type;
     AppState.orderType = type;
 
+    if (Get.isRegistered<CartController>()) {
+      Get.find<CartController>().handleOrderTypeChange(type);
+    }
+
     if (!navigate) {
       _handleHomeNavigation(type);
       return;

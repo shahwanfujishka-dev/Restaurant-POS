@@ -112,13 +112,14 @@ class CartHeader extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text(
-                "($area)",
-                style: AppTypography.cardSubtitle.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.primaryGreen,
+              if (area.trim().isNotEmpty)
+                Text(
+                  "($area)",
+                  style: AppTypography.cardSubtitle.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryGreen,
+                  ),
                 ),
-              ),
               Text(
                 " - $table",
                 style: AppTypography.cardSubtitle.copyWith(
