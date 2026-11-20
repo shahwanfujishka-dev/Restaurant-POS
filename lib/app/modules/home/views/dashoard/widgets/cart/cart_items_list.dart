@@ -172,6 +172,7 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
               productDetails(),
               quantityControls(),
               priceDisplay(),
+              SizedBox(width: 10,)
             ],
           ),
         ),
@@ -221,7 +222,7 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
           Row(
             children: [
               Container(
-                padding: EdgeInsets.symmetric(horizontal: 2.w, vertical: 0.5.h),
+                padding: EdgeInsets.symmetric(horizontal: 1.w, vertical: 0.5.h),
                 decoration: BoxDecoration(
                   color: AppTheme.primaryGreen.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(4.r),
@@ -327,7 +328,7 @@ class _AnimatedCartItemState extends State<_AnimatedCartItem>
   Widget priceDisplay() {
     final colors = AppColors.of(context);
     return SizedBox(
-      width: AppTypography.iconXL,
+      width: AppTypography.price,
       child: Obx(
         () => Text(
           widget.cartItem.subtotalWithTax.toStringAsFixed(2),

@@ -329,6 +329,10 @@ void _showOrderDetailsDialog(
         double calculatedSubtotal = 0;
         for (var item in currentOrder.items) {
           calculatedSubtotal += item.priceAtOrder * item.quantity;
+          for (final a in item.selectedAddons) {
+            // free addons have price 0, so they add nothing
+            calculatedSubtotal += a.price * a.quantity.value;
+          }
         }
         final totAmt = currentOrder.finalTotal;
 
@@ -553,6 +557,17 @@ void _showOrderDetailsDialog(
                                       color: colors.subtext,
                                     ),
                                   ),
+
+                                  for (final a in item.selectedAddons.where(
+                                        (a) => a.price > 0 && a.quantity.value > 0,
+                                  ))
+                                    Text(
+                                      '+ ${a.name} x${a.quantity.value}  ${(a.price * a.quantity.value).toStringAsFixed(2)}',
+                                      style: AppTypography.cardSubtitle.copyWith(
+                                        color: colors.subtext,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
@@ -570,6 +585,9 @@ void _showOrderDetailsDialog(
                   ),
                 ),
               SizedBox(height: 10.h),
+              if (detailsState == OrderDetailsState.loading)
+                _totalsShimmer(colors, displayColor)
+              else if (detailsState == OrderDetailsState.loaded)
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 8.h),
                 decoration: BoxDecoration(
@@ -1266,6 +1284,10 @@ class _OrderDetailsContent extends StatelessWidget {
         double calculatedSubtotal = 0;
         for (var item in currentOrder.items) {
           calculatedSubtotal += item.priceAtOrder * item.quantity;
+          for (final a in item.selectedAddons) {
+            // free addons have price 0, so they add nothing
+            calculatedSubtotal += a.price * a.quantity.value;
+          }
         }
         final totAmt = currentOrder.finalTotal;
         return Column(
@@ -1511,6 +1533,9 @@ class _OrderDetailsContent extends StatelessWidget {
                 ),
               ),
             SizedBox(height: 20.h),
+            if (detailsState == OrderDetailsState.loading)
+              _totalsShimmer(colors, displayColor, rows: 5)
+            else if (detailsState == OrderDetailsState.loaded)
             Container(
               padding: EdgeInsets.all(12.w),
               decoration: BoxDecoration(
@@ -1591,7 +1616,8 @@ class _OrderDetailsContent extends StatelessWidget {
               ),
             ),
             SizedBox(height: 20.h),
-            if (currentOrder.status.value != OrderStatus.paid &&
+            if (detailsState == OrderDetailsState.loaded &&
+                currentOrder.status.value != OrderStatus.paid &&
                 currentOrder.status.value != OrderStatus.cancelled)
               ElevatedButton(
                 onPressed: () async {
@@ -1614,6 +1640,49 @@ class _OrderDetailsContent extends StatelessWidget {
       }),
     );
   }
+}
+
+Widget _totalsShimmer(AppColors colors, Color accent, {int rows = 4}) {
+  return Shimmer.fromColors(
+    baseColor: Colors.grey.shade300,
+    highlightColor: Colors.grey.shade100,
+    child: Container(
+      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 8.h),
+      decoration: BoxDecoration(
+        color: accent.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12.r),
+      ),
+      child: Column(
+        children: [
+          for (int i = 0; i < rows; i++)
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 4.h),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    width: 70.w,
+                    height: 12.h,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4.r),
+                    ),
+                  ),
+                  Container(
+                    width: 50.w,
+                    height: 12.h,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4.r),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
 }
 
 Widget printShimmer({double size = 20}) {

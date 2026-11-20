@@ -18,7 +18,7 @@ class SyncController extends GetxController {
 
   final progress = 0.0.obs;
   final statusMessage = 'initializing_sync'.tr.obs;
-
+  static bool _running = false;
   final syncedCount = 0.obs;
   final totalCount = 0.obs;
 
@@ -100,6 +100,11 @@ class SyncController extends GetxController {
   }
 
   Future<void> startSync() async {
+    if (_running) {
+      log("SyncController: Sync already running, skipping duplicate startSync().");
+      return;
+    }
+    _running = true;
     if (AppState.isSyncInProgress) {
       log("SyncController: Sync is already in progress, skipping duplicate startSync().");
       return;
@@ -328,6 +333,8 @@ class SyncController extends GetxController {
         colorText: Colors.white,
         duration: const Duration(seconds: 10),
       );
+    } finally {
+      _running = false;
     }
   }
 

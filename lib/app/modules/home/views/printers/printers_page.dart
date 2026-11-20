@@ -102,14 +102,14 @@ class PrintersPage extends GetView<PrinterController> {
               ),
               Row(
                 children: [
-                  _buildHeaderActionBtn(
-                    context,
-                    label: 'add_manual_ip'.tr,
-                    icon: Icons.add,
-                    onPressed: () => _showManualIpDialog(context),
-                    isPrimary: false,
-                  ),
-                  SizedBox(width: 6.w),
+                  // _buildHeaderActionBtn(
+                  //   context,
+                  //   label: 'add_manual_ip'.tr,
+                  //   icon: Icons.add,
+                  //   onPressed: () => _showManualIpDialog(context),
+                  //   isPrimary: false,
+                  // ),
+                  // SizedBox(width: 6.w),
                   _buildHeaderActionBtn(
                     context,
                     label: 'scan_for_devices'.tr,

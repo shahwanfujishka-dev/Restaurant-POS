@@ -243,6 +243,10 @@ class AddonModel {
   factory AddonModel.fromJson(Map<String, dynamic> json) {
     bool isCommon = json['commonAddon'] == true;
     int q = parseInt(json['prdaddon_qty']);
+    double taxPer = parseDouble(json['tax_per'], defaultValue: 0.0);
+    if (taxPer <= 0) {
+      taxPer = parseDouble(json['prd_tax'], defaultValue: 0.0);
+    }
 
     return AddonModel(
       id: parseInt(json['prdaddon_id'] ?? json['prd_id']),
@@ -260,7 +264,7 @@ class AddonModel {
           .toString(),
       unitId: parseInt(json['unit_id']),
       taxCatId: parseInt(json['prd_tax_cat_id']),
-      taxPer: parseDouble(json['tax_per'], defaultValue: 0.0),
+      taxPer: taxPer,
       unitBaseQty: parseDouble(json['unit_base_qty'], defaultValue: 1.0),
       isDefault: parseInt(json['is_default']),
       initialQty: isCommon ? 0 : q,
