@@ -56,6 +56,8 @@ add_subdirectory("runner")
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
 add_compile_definitions(_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
+# Allow CMake 4 to configure the bundled Firebase C++ SDK's legacy policies.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 include(flutter/generated_plugins.cmake)
 
 
