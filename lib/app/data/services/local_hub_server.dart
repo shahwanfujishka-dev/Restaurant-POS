@@ -8,6 +8,7 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
 
 import '../Device_Roles/device_roles.dart';
+import 'api_endpoints.dart';
 import 'database_helper.dart';
 import 'local_hub_network.dart';
 import 'local_hub_order_service.dart';
@@ -53,7 +54,7 @@ class LocalHubServer {
     try {
       final router = Router();
 
-      router.get('/hub/status', (Request request) {
+      router.get(ApiEndpoints.hubStatus, (Request request) {
         debugPrint('[LocalHubServer] GET /hub/status called');
         return _jsonResponse({
           'success': true,
@@ -68,12 +69,12 @@ class LocalHubServer {
         });
       });
 
-      router.get('/health', (Request request) {
+      router.get(ApiEndpoints.hubHealth, (Request request) {
         debugPrint('[LocalHubServer] GET /health called');
         return _jsonResponse({'success': true, 'status': 'ok'});
       });
 
-      router.post('/device/register', (Request request) async {
+      router.post(ApiEndpoints.hubRegisterDevice, (Request request) async {
         debugPrint('[LocalHubServer] POST /device/register called');
         try {
           final body = await _readJson(request);
@@ -128,7 +129,7 @@ class LocalHubServer {
         }
       });
 
-      router.get('/printers/assignments', (Request request) async {
+      router.get(ApiEndpoints.hubPrinterAssignments, (Request request) async {
         debugPrint('[LocalHubServer] GET /printers/assignments called');
         if (!_isAuthorized(request)) {
           debugPrint('[LocalHubServer] GET /printers/assignments Unauthorized');
@@ -153,7 +154,7 @@ class LocalHubServer {
       // ORDERS API
       // ------------------------------------------------------------
 
-      router.post('/orders/create', (Request request) async {
+      router.post(ApiEndpoints.hubCreateOrder, (Request request) async {
         debugPrint('[LocalHubServer] POST /orders/create called');
         if (!_isAuthorized(request)) {
           debugPrint('[LocalHubServer] POST /orders/create Unauthorized');
@@ -174,7 +175,7 @@ class LocalHubServer {
         }
       });
 
-      router.post('/orders/update', (Request request) async {
+      router.post(ApiEndpoints.hubUpdateOrder, (Request request) async {
         debugPrint('[LocalHubServer] POST /orders/update called');
         if (!_isAuthorized(request)) {
           debugPrint('[LocalHubServer] POST /orders/update Unauthorized');
@@ -195,7 +196,7 @@ class LocalHubServer {
         }
       });
 
-      router.get('/orders/list', (Request request) async {
+      router.get(ApiEndpoints.hubListOrders, (Request request) async {
         debugPrint('[LocalHubServer] GET /orders/list called');
         if (!_isAuthorized(request)) {
           debugPrint('[LocalHubServer] GET /orders/list Unauthorized');
@@ -210,7 +211,7 @@ class LocalHubServer {
         }
       });
 
-      router.get('/orders/sold', (Request request) async {
+      router.get(ApiEndpoints.hubListSoldOrders, (Request request) async {
         final date = request.url.queryParameters['date'];
         debugPrint('[LocalHubServer] GET /orders/sold called with date: $date');
         if (!_isAuthorized(request)) {
@@ -232,7 +233,7 @@ class LocalHubServer {
         }
       });
 
-      router.get('/orders/details', (Request request) async {
+      router.get(ApiEndpoints.hubOrderDetails, (Request request) async {
         final id = request.url.queryParameters['id'];
         debugPrint('[LocalHubServer] GET /orders/details called with id: $id');
         if (!_isAuthorized(request)) {
@@ -259,7 +260,7 @@ class LocalHubServer {
       // MASTER DATA API
       // ------------------------------------------------------------
 
-      router.get('/master/tables', (Request request) async {
+      router.get(ApiEndpoints.hubTables, (Request request) async {
         debugPrint('[LocalHubServer] GET /master/tables called');
         if (!_isAuthorized(request)) {
           debugPrint('[LocalHubServer] GET /master/tables Unauthorized');
@@ -278,7 +279,7 @@ class LocalHubServer {
         }
       });
 
-      router.get('/master/categories', (Request request) async {
+      router.get(ApiEndpoints.hubCategories, (Request request) async {
         debugPrint('[LocalHubServer] GET /master/categories called');
         if (!_isAuthorized(request)) {
           debugPrint('[LocalHubServer] GET /master/categories Unauthorized');
@@ -297,7 +298,7 @@ class LocalHubServer {
         }
       });
 
-      router.get('/master/captains', (Request request) async {
+      router.get(ApiEndpoints.hubCaptains, (Request request) async {
         debugPrint('[LocalHubServer] GET /master/captains called');
         if (!_isAuthorized(request)) {
           debugPrint('[LocalHubServer] GET /master/captains Unauthorized');
@@ -316,7 +317,7 @@ class LocalHubServer {
         }
       });
 
-      router.get('/master/products', (Request request) async {
+      router.get(ApiEndpoints.hubProducts, (Request request) async {
         final categoryId = request.url.queryParameters['category_id'];
         final priceGroupId =
             int.tryParse(
@@ -346,7 +347,7 @@ class LocalHubServer {
         }
       });
 
-      router.get('/master/product-units', (Request request) async {
+      router.get(ApiEndpoints.hubProductUnits, (Request request) async {
         final productIdStr = request.url.queryParameters['product_id'];
         final priceGroupId =
             int.tryParse(
@@ -378,7 +379,7 @@ class LocalHubServer {
         }
       });
 
-      router.post('/kot/create', (Request request) async {
+      router.post(ApiEndpoints.hubCreateKot, (Request request) async {
         debugPrint('[LocalHubServer] POST /kot/create called');
         return _jsonResponse({'success': true, 'message': 'KOT received'});
       });

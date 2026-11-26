@@ -42,6 +42,12 @@ class SettingsController extends GetxController {
   final openingTime = Rxn<TimeOfDay>();
   final pendingCount = 0.obs;
   final isSyncingOrders = false.obs;
+  final requireOrderPrinting = DeviceConfig.requireOrderPrinting.obs;
+
+  Future<void> setRequireOrderPrinting(bool value) async {
+    requireOrderPrinting.value = value;
+    await DeviceConfig.setRequireOrderPrinting(value);
+  }
 
   @override
   void onInit() {

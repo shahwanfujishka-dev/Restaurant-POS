@@ -34,10 +34,26 @@ class AppState {
   static String get cmptoken => _storage.read('cmptoken') ?? '';
   static String get username => _storage.read('usr_name') ?? '';
   static String get userId => _storage.read('usr_id')?.toString() ?? '';
-  static String get lastSyncedUserId =>
-      _storage.read('last_synced_user_id')?.toString() ?? '';
-  static set lastSyncedUserId(String val) =>
-      _storage.write('last_synced_user_id', val);
+  static const _masterSyncKey = 'master_sync_user_id';
+
+  static Future<bool> requiresMasterSync() async {
+    final syncedUserId = await DatabaseHelper.instance.getSetting(_masterSyncKey);
+    if (syncedUserId != null) {
+      return syncedUserId.isEmpty || syncedUserId != userId;
+    }
+
+    // Honor the saved state of installations upgraded from GetStorage.
+    final legacyUserId = _storage.read('last_synced_user_id')?.toString();
+    return _storage.read('is_sync_in_progress') == true ||
+        userId.isEmpty ||
+        legacyUserId != userId;
+  }
+
+  static Future<void> markMasterSyncPending() =>
+      DatabaseHelper.instance.saveSetting(_masterSyncKey, '');
+
+  static Future<void> markMasterSyncComplete(String syncedUserId) =>
+      DatabaseHelper.instance.saveSetting(_masterSyncKey, syncedUserId);
   static String get serverUrl => _storage.read('base_url') ?? '';
   static String get ledgerId => _storage.read('ledger_id')?.toString() ?? '0';
   static String get cashLedgerId =>
@@ -70,12 +86,8 @@ class AppState {
       _storage.read('bg_sync_enabled') ?? true;
   static set isBackgroundSyncEnabled(bool value) =>
       _storage.write('bg_sync_enabled', value);
-  static bool get isSyncInProgress =>
-      _storage.read('is_sync_in_progress') ?? false;
-  static set isSyncInProgress(bool value) =>
-      _storage.write('is_sync_in_progress', value);
-
-  static void updateSession({required dynamic profile}) {
+  static Future<void> updateSession({required dynamic profile}) async {
+    await markMasterSyncPending();
     _storage.write('usr_id', profile['usr_id']);
     _storage.write('usr_name', profile['usr_name']);
     _storage.write('ledger_id', profile['ledger_id']);

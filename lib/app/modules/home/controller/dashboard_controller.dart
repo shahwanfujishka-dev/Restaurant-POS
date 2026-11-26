@@ -8,6 +8,7 @@ import 'package:restaurant_pos/app/data/models/order_type.dart';
 import 'package:restaurant_pos/app/data/services/local_hub_client.dart';
 import '../../../../helper/snackbar_helper.dart';
 import '../../../../local_server_test.dart';
+import '../../../data/services/api_endpoints.dart';
 import '../../../data/services/api_services.dart';
 import '../../../data/services/database_helper.dart';
 import '../../../data/services/sync_service.dart';
@@ -46,6 +47,8 @@ class DashboardController extends GetxController {
   final vatType = 0.obs;
   RxBool get isSyncing => _syncService.isSyncing;
   bool isDisposed = false;
+  int _productRequest = 0;
+  final _workers = <Worker>[];
   // Local Snackbar State
   final localErrorTitle = ''.obs;
   final localErrorMessage = ''.obs;
@@ -69,18 +72,22 @@ class DashboardController extends GetxController {
     categoryScrollController = ScrollController();
     searchController = TextEditingController();
     searchFocusNode = FocusNode();
-    debounce(
+    _workers.add(debounce(
       searchKeyword,
-      (_) => fetchProducts(),
+      (String keyword) {
+        if (keyword.isNotEmpty) fetchProducts();
+      },
       time: const Duration(milliseconds: 350),
-    );
+    ));
 
     // Auto-refresh when settings change
     if (Get.isRegistered<SettingsController>()) {
       final settings = Get.find<SettingsController>();
-      ever(settings.operationMode, (_) => refreshDashboardData());
-      ever(settings.hostIp, (_) => refreshDashboardData());
-      ever(settings.deviceRoleRx, (_) => refreshDashboardData());
+      _workers.addAll([
+        ever(settings.operationMode, (_) => refreshDashboardData()),
+        ever(settings.hostIp, (_) => refreshDashboardData()),
+        ever(settings.deviceRoleRx, (_) => refreshDashboardData()),
+      ]);
     }
 
     refreshDashboardData();
@@ -115,7 +122,7 @@ class DashboardController extends GetxController {
       } else if (DeviceConfig.operationMode != OperationMode.local ||
           DeviceConfig.role == DeviceRole.server) {
         final response = await _apiService.post(
-          "mobileapp/sales_settings/vat_type",
+          ApiEndpoints.getVatType,
           data: {"part_no": 0, "limit": 500, "sync_time": ""},
         );
 
@@ -146,7 +153,7 @@ class DashboardController extends GetxController {
       if (DeviceConfig.operationMode != OperationMode.local ||
           DeviceConfig.role == DeviceRole.server) {
         final response = await _apiService.post(
-          "mobileapp/pos/list_favorite",
+          ApiEndpoints.listFavorites,
           data: {"usr_id": int.tryParse(AppState.userId) ?? 0},
         );
 
@@ -251,7 +258,7 @@ class DashboardController extends GetxController {
         // Online/Server: If local data is empty, try a one-time fetch from API
         if (fetchedCategories.isEmpty) {
           final response = await _apiService.post(
-            "mobileapp/category/download",
+            ApiEndpoints.downloadCategories,
             data: {"part_no": 0, "limit": 1000, "sync_time": ""},
           );
           if (response.statusCode == 200) {
@@ -308,29 +315,53 @@ class DashboardController extends GetxController {
   }
 
   Future<void> fetchProducts() async {
+    if (isDisposed) return;
+    final request = ++_productRequest;
+    final pgId = cartController.selectedPriceGroupId.value;
+    final categoryId = selectedCategoryId.value;
+    final keyword = searchKeyword.value;
+    final favoriteId = selectedFavoriteId.value;
+    final mode = DeviceConfig.operationMode;
+    final role = DeviceConfig.role;
+    final hostIp = DeviceConfig.hostIp;
+    final hostPort = DeviceConfig.hostPort;
+    bool isCurrent() =>
+        !isDisposed &&
+        request == _productRequest &&
+        pgId == cartController.selectedPriceGroupId.value &&
+        categoryId == selectedCategoryId.value &&
+        keyword == searchKeyword.value &&
+        favoriteId == selectedFavoriteId.value &&
+        mode == DeviceConfig.operationMode &&
+        role == DeviceConfig.role &&
+        hostIp == DeviceConfig.hostIp &&
+        hostPort == DeviceConfig.hostPort;
+
     isLoadingProducts.value = true;
     try {
-      final pgId = cartController.selectedPriceGroupId.value;
+      log("DASHBOARD_CTRL: fetchProducts called with pgId=$pgId, categoryId='${categoryId}', search='${keyword}', orderType=${AppState.orderType.name}");
 
-      Future<void> loadLocalProducts() async {
+      Future<bool> loadLocalProducts() async {
         List<Map<String, dynamic>> localProducts;
-        if (selectedFavoriteId.value != null) {
+        if (favoriteId != null) {
           localProducts = await _dbHelper.getFavoriteProducts(
-            selectedFavoriteId.value!,
+            favoriteId,
             pgId,
-            searchQuery: searchKeyword.value.isNotEmpty ? searchKeyword.value : null,
+            searchQuery: keyword.isNotEmpty ? keyword : null,
           );
-        } else if (searchKeyword.value.isNotEmpty) {
+        } else if (keyword.isNotEmpty) {
           localProducts = await _dbHelper.searchProducts(
-            searchKeyword.value,
+            keyword,
             priceGroupId: pgId,
           );
         } else {
           localProducts = await _dbHelper.getProducts(
-            categoryId: selectedCategoryId.value,
+            categoryId: categoryId,
             priceGroupId: pgId,
           );
         }
+
+        log("DASHBOARD_CTRL: loadLocalProducts found ${localProducts.length} items for pgId=$pgId");
 
         final mappedProducts = localProducts
             .map(
@@ -351,45 +382,48 @@ class DashboardController extends GetxController {
             )
             .toList();
 
-        filteredFoodItems.assignAll(mappedProducts);
+        if (isCurrent()) filteredFoodItems.assignAll(mappedProducts);
+        return mappedProducts.isEmpty;
       }
 
-      await loadLocalProducts();
+      final localResultsEmpty = await loadLocalProducts();
+      if (!isCurrent()) return;
 
-      if (DeviceConfig.operationMode == OperationMode.local &&
-          DeviceConfig.role == DeviceRole.client) {
-        final hostIp = DeviceConfig.hostIp;
+      if (mode == OperationMode.local &&
+          role == DeviceRole.client) {
         if (hostIp != null && hostIp.isNotEmpty && DeviceConfig.hasAuthToken) {
           final hubResult = await LocalHubClient.instance.fetchMasterProducts(
             hostIp: hostIp,
-            port: DeviceConfig.hostPort,
-            categoryId: selectedCategoryId.value.isNotEmpty
-                ? selectedCategoryId.value
+            port: hostPort,
+            categoryId: categoryId.isNotEmpty
+                ? categoryId
                 : null,
             priceGroupId: pgId,
           );
+          if (!isCurrent()) return;
           if (hubResult['success'] == true) {
             final List<dynamic> data = hubResult['data'] ?? [];
             await _dbHelper.insertProducts(data.cast<Map<String, dynamic>>());
             await loadLocalProducts();
           }
         }
-      } else if ((DeviceConfig.operationMode == OperationMode.online ||
-              DeviceConfig.role == DeviceRole.server) &&
-          filteredFoodItems.isEmpty) {
+      } else if ((mode == OperationMode.online ||
+              role == DeviceRole.server) &&
+          localResultsEmpty) {
         // Online fallback: fetch current category/favorites if local DB is empty
         final response = await _apiService.post(
-          "mobileapp/pos/get_product_list",
+          ApiEndpoints.getProducts,
           data: {
             "usr_id": int.tryParse(AppState.userId) ?? 0,
             "price_group_id": pgId,
-            "category_id": selectedCategoryId.value.isNotEmpty
-                ? int.tryParse(selectedCategoryId.value)
+            "category_id": categoryId.isNotEmpty
+                ? int.tryParse(categoryId)
                 : 0,
-            "fav_id": searchKeyword.value.isNotEmpty ? 0 : (selectedFavoriteId.value ?? 0),
-            "keyword": searchKeyword.value,
+            "fav_id": keyword.isNotEmpty ? 0 : (favoriteId ?? 0),
+            "keyword": keyword,
           },
         );
+        if (!isCurrent()) return;
         if (response.statusCode == 200) {
           final List<dynamic> data = response.data['data'] ?? [];
           final String baseUrl = response.data['url']?.toString() ?? "";
@@ -405,8 +439,8 @@ class DashboardController extends GetxController {
               'price_group_id': pgId,
               'name': (json['prd_name'] ?? '').toString(),
               'category_id': (json['prd_cat_id']?.toString() ??
-                  (selectedCategoryId.value.isNotEmpty
-                      ? selectedCategoryId.value
+                  (categoryId.isNotEmpty
+                      ? categoryId
                       : '')),
               'price': (json['sale_rate'] as num? ?? 0.0).toDouble(),
               'prd_tax': (json['prd_tax'] as num? ?? 0.0).toDouble(),
@@ -426,7 +460,9 @@ class DashboardController extends GetxController {
     } catch (e) {
       debugPrint("Error fetching products: $e");
     } finally {
-      isLoadingProducts.value = false;
+      if (!isDisposed && request == _productRequest) {
+        isLoadingProducts.value = false;
+      }
     }
   }
 
@@ -447,6 +483,7 @@ class DashboardController extends GetxController {
         customRate = rateMap['sur_unit_rate2'] ?? 0.0;
       }
       if (customRate > 0) {
+        log("DASHBOARD_CTRL: Stock rate override applied for prdId=$productId, unitId=${unit.unitId}, pgId=$pgId -> rate: $customRate");
         return ProductUnit(
           unitId: unit.unitId,
           unitName: unit.unitName,
@@ -457,6 +494,7 @@ class DashboardController extends GetxController {
         );
       }
     }
+    log("DASHBOARD_CTRL: No stock rate override applied for prdId=$productId, unitId=${unit.unitId}, pgId=$pgId -> using unit rate: ${unit.rate}");
     return unit;
   }
 
@@ -522,7 +560,7 @@ class DashboardController extends GetxController {
       }
 
       final response = await _apiService.post(
-        "mobileapp/pos/get_product_unit_and_addon",
+        ApiEndpoints.getPosProductUnitsAndAddons,
         data: {
           "usr_id": int.tryParse(AppState.userId) ?? 0,
           "prd_id": productId,
@@ -625,6 +663,10 @@ class DashboardController extends GetxController {
     if (searchKeyword.value == trimmed) return;
 
     searchKeyword.value = trimmed;
+    if (trimmed.isNotEmpty) {
+      _productRequest++;
+      isLoadingProducts.value = true;
+    }
     if (trimmed.isEmpty) {
       fetchProducts();
     }
@@ -642,7 +684,12 @@ class DashboardController extends GetxController {
   @override
   void onClose() {
     isDisposed = true;
-    searchFocusNode.unfocus();
+    for (final worker in _workers) {
+      worker.dispose();
+    }
+    searchFocusNode.dispose();
+    searchController.dispose();
+    categoryScrollController.dispose();
     super.onClose();
   }
 }

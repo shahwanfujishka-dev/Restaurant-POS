@@ -199,7 +199,7 @@ class MainContent extends GetView<DashboardController> {
                                 ),
                                 child: Text(
                                   'editing_order'.trParams({
-                                    'id': cartController.editingOrderId.value,
+                                    'id': cartController.editingInvNo.value,
                                   }),
                                   style: TextStyle(
                                     color: Colors.white,

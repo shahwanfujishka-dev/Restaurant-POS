@@ -174,9 +174,20 @@ class PrinterController extends GetxController {
   /// old address -> healed address (when a printer's id changed).
   final Map<String, String> _btAlias = {};
 
+  String _resolveBluetoothAddress(String address) =>
+      _btAlias[address.toUpperCase()] ?? address;
+
+  String _bluetoothAddressKey(String address) =>
+      _resolveBluetoothAddress(address).toUpperCase();
+
   /// Upper-case addresses discovered by a scan this app session.
   /// macOS/iOS can only connect to printers discovered in the current session.
   final Set<String> _btSeen = {};
+  Future<List<BluetoothInfo>>? _bluetoothDiscovery;
+
+  Future<List<BluetoothInfo>> _discoverBluetoothPrinters() =>
+      _bluetoothDiscovery ??= PrintBluetoothThermal.pairedBluetooths
+          .whenComplete(() => _bluetoothDiscovery = null);
 
   /// KOT de-duplication (must live on the class, not inside printKOT).
   final Map<String, DateTime> _lastKotPrint = {};
@@ -361,6 +372,7 @@ class PrinterController extends GetxController {
     required String name,
     required List<int> bytes,
     bool clearOnSuccess = false,
+    String? error,
   }) {
     if (ok) {
       if (clearOnSuccess) clearPrintIssues(orderId);
@@ -372,7 +384,7 @@ class PrinterController extends GetxController {
       PrintIssue(
         kind: kind,
         target: target,
-        message: "Could not reach $target",
+        message: error ?? "Could not reach $target",
         at: DateTime.now(),
         type: type,
         address: address,
@@ -450,7 +462,7 @@ class PrinterController extends GetxController {
   /// Rescans. Returns the address the plugin knows now (same address, or the
   /// same-name device if the id changed). null = not found nearby.
   Future<String?> _findBtAddress(String address, String? name) async {
-    final devices = await PrintBluetoothThermal.pairedBluetooths;
+    final devices = await _discoverBluetoothPrinters();
     _btSeen.addAll(devices.map((d) => d.macAdress.toUpperCase()));
 
     if (devices.any(
@@ -467,7 +479,7 @@ class PrinterController extends GetxController {
 
   /// Printer id changed: update saved assignments and remember the alias.
   Future<void> _healAddress(String oldAddr, String newAddr) async {
-    _btAlias[oldAddr] = newAddr;
+    _btAlias[oldAddr.toUpperCase()] = newAddr;
     for (final a in tokenPrinterAssignments) {
       if (a.printerAddress.value == oldAddr) {
         a.printerAddress.value = newAddr;
@@ -492,23 +504,19 @@ class PrinterController extends GetxController {
   Future<bool> ensureBluetoothConnected(
       String address, {
         int retries = 3,
+        bool reconnect = false,
       }) async {
     _btError = "";
-    address = _btAlias[address] ?? address;
+    address = _resolveBluetoothAddress(address);
     final name = _nameForAddress(address);
     try {
-      // ✅ FAST PATH: If already connected to this exact address and recently used, skip handshake entirely!
-      if (_btConnectedAddress == address && _btLastUsed != null && DateTime.now().difference(_btLastUsed!) < const Duration(minutes: 3)) {
-        final connected = await PrintBluetoothThermal.connectionStatus;
-        if (connected) {
-          debugPrint("⚡ [BT FAST PATH] Already connected to $address (skipping handshake)");
-          return true;
-        }
-      }
-
       final connected = await PrintBluetoothThermal.connectionStatus;
-      if (connected && _btConnectedAddress == address) return true;
-      if (connected && _btConnectedAddress != address) {
+      if (connected &&
+          _btConnectedAddress == _bluetoothAddressKey(address) &&
+          !reconnect) {
+        return true;
+      }
+      if (connected) {
         await PrintBluetoothThermal.disconnect;
         await Future.delayed(const Duration(milliseconds: 200));
       }
@@ -526,13 +534,14 @@ class PrinterController extends GetxController {
         }
       }
 
-      // macOS/iOS: the plugin can't connect to a printer it hasn't discovered
-      // this session, so scan BEFORE the first connect attempt.
-      final bool needsScan =
-          !Platform.isAndroid && !_btSeen.contains(address.toUpperCase());
-
-      for (var i = 0; i < retries; i++) {
-        if (i > 0 || needsScan) {
+      // macOS can retrieve a saved CoreBluetooth identifier directly.
+      // Discover only if the lookup fails, or when iOS needs a scan first.
+      final needsScan = !Platform.isAndroid &&
+          !_btSeen.contains(_bluetoothAddressKey(address));
+      final trySavedAddress = Platform.isMacOS && needsScan;
+      final attempts = trySavedAddress && retries < 2 ? 2 : retries;
+      for (var i = 0; i < attempts; i++) {
+        if (i > 0 || (needsScan && !trySavedAddress)) {
           final found = await _findBtAddress(address, name);
           if (found == null) {
             _btError =
@@ -551,13 +560,19 @@ class PrinterController extends GetxController {
           macPrinterAddress: address,
         );
         if (ok) {
-          _btConnectedAddress = address;
+          final connectedKey = _bluetoothAddressKey(address);
+          _btConnectedAddress = connectedKey;
+          _btSeen.add(connectedKey);
           _btLastUsed = DateTime.now();
           return true;
         }
         _btError = "Connect failed for ${name ?? address}";
-        await PrintBluetoothThermal.disconnect; // clear stale native state
-        await Future.delayed(const Duration(milliseconds: 600));
+        if (await PrintBluetoothThermal.connectionStatus) {
+          await PrintBluetoothThermal.disconnect;
+        }
+        if (i + 1 < attempts && !trySavedAddress) {
+          await Future.delayed(const Duration(milliseconds: 600));
+        }
       }
       return false;
     } catch (e) {
@@ -846,7 +861,67 @@ class PrinterController extends GetxController {
     return problems;
   }
 
-  Future<bool> checkPrinterConnection(PrinterModel printer) async {
+  Future<bool> checkReceiptPrinterForOrder() =>
+      _checkRequiredPrinterConnections(const [], includeReceipt: true);
+
+  Future<bool> _checkRequiredPrinterConnections(
+    Iterable<TokenPrinterAssignment> assignments, {
+    bool includeReceipt = false,
+  }) async {
+    final receipt = includeReceipt ? _receiptAssignment() : null;
+    if (includeReceipt && receipt == null) {
+      showSafeSnackbar('Printer required', 'Assign a receipt printer first.');
+      return false;
+    }
+
+    final targets = [...assignments, if (receipt != null) receipt];
+    final active = targets.indexWhere((assignment) {
+      final type = assignment.printerType.value;
+      return type != 'wifi' &&
+          type != 'windows' &&
+          _bluetoothAddressKey(assignment.printerAddress.value) ==
+              _btConnectedAddress;
+    });
+    // Check the current Bluetooth printer before switching to another one.
+    if (active > 0) targets.insert(0, targets.removeAt(active));
+
+    final checked = <(String, String)>{};
+    for (final assignment in targets) {
+      final address = assignment.printerAddress.value;
+      final type = assignment.printerType.value.isEmpty
+          ? 'bluetooth'
+          : assignment.printerType.value;
+      final addressKey = type == 'bluetooth'
+          ? _bluetoothAddressKey(address)
+          : address;
+      if (!checked.add((type, addressKey))) continue;
+      final name = assignment.printerName.value;
+      final timing = Stopwatch()..start();
+      final ready = await checkPrinterConnection(
+        PrinterModel(name: name, address: address, type: type),
+        forOrder: true,
+      );
+      debugPrint(
+        '[Printer timing] ${type} preflight=${timing.elapsedMilliseconds}ms '
+        'ready=$ready',
+      );
+      if (!ready) {
+        final label = name.isEmpty ? 'Printer' : name;
+        showSafeSnackbar(
+          'Printer unavailable',
+          '$label could not be reached. Check its connection and try again.',
+          duration: const Duration(seconds: 6),
+        );
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<bool> checkPrinterConnection(
+    PrinterModel printer, {
+    bool forOrder = false,
+  }) async {
     isCheckingConnection.value = true;
     bool isConnected = false;
     try {
@@ -866,9 +941,34 @@ class PrinterController extends GetxController {
         // Windows printers are installed in the OS; if it was listed, it exists.
         isConnected = windowsPrinters.any((p) => p.address == printer.address);
       } else {
-        isConnected = await _withBtLock(
-              () => ensureBluetoothConnected(printer.address),
-        );
+        final needsDiscovery = !Platform.isAndroid &&
+            !_btSeen.contains(_bluetoothAddressKey(printer.address));
+        var expired = false;
+        final check = _withBtLock(() async {
+          if (expired) return false;
+          return ensureBluetoothConnected(
+            printer.address,
+            // Keep a healthy connection to the same printer. Reopening it
+            // during checkout can make a reachable printer fail preflight.
+            retries: forOrder ? (Platform.isAndroid ? 2 : 1) : 3,
+          );
+        });
+        isConnected = forOrder
+            ? await check.timeout(
+                needsDiscovery ? _btDiscoveryTimeout : _btPrintTimeout,
+                onTimeout: () {
+                  expired = true;
+                  debugPrint(
+                    'Order printer preflight timed out for '
+                    '${printer.name.isEmpty ? printer.address : printer.name}.',
+                  );
+                  return false;
+                },
+              )
+            : await check;
+        if (!isConnected && !expired && _btError.isNotEmpty) {
+          debugPrint('Bluetooth printer preflight failed: $_btError');
+        }
       }
     } catch (e) {
       debugPrint("Connection check error: $e");
@@ -1011,7 +1111,7 @@ class PrinterController extends GetxController {
       }
 
       // Only bonded devices can be printed to via RFCOMM
-      final paired = await PrintBluetoothThermal.pairedBluetooths;
+      final paired = await _discoverBluetoothPrinters();
       bluetoothPrinters.assignAll(
         paired.map(
               (d) => PrinterModel(
@@ -1287,33 +1387,26 @@ class PrinterController extends GetxController {
   }
 
   DateTime? _btLastUsed;
-  static const _btIdle = Duration(minutes: 5); // reconnect if unused this long
   static const _btChunk = 512;
+  static const _btPrintTimeout = Duration(seconds: 6);
+  // The Apple plugin can spend five seconds each on address lookup/connect
+  // and discovery, followed by another connect after discovery.
+  static const _btDiscoveryTimeout = Duration(seconds: 17);
+  static const _btDiscoveryPrintTimeout = Duration(seconds: 20);
+  static const _btApplePrintTimeout = Duration(seconds: 10);
 
-  Future<void> _btHardReset() async {
-    try { await PrintBluetoothThermal.disconnect; } catch (_) {}
-    _btConnectedAddress = null;
-    await Future.delayed(const Duration(milliseconds: 500));
-  }
-
-  Future<bool> _btWrite(List<int> bytes) async {
+  Future<bool> _btWrite(List<int> bytes, bool Function() expired) async {
     try {
       for (var i = 0; i < bytes.length; i += _btChunk) {
+        if (expired()) return false;
         final end = (i + _btChunk < bytes.length) ? i + _btChunk : bytes.length;
-        final chunk = bytes.sublist(i, end);
-
-        // First chunk: characteristic discovery may still be running
-        final tries = i == 0 ? 8 : 1;
-        var ok = false;
-        for (var t = 0; t < tries && !ok; t++) {
-          ok = await PrintBluetoothThermal.writeBytes(chunk);
-          if (!ok) await Future.delayed(const Duration(milliseconds: 400));
+        if (!await PrintBluetoothThermal.writeBytes(bytes.sublist(i, end))) {
+          return false;
         }
-        if (!ok) return false;
         await Future.delayed(const Duration(milliseconds: 20));
       }
       await Future.delayed(const Duration(milliseconds: 300));
-      return true;
+      return !expired();
     } catch (e) {
       debugPrint("BT write error: $e");
       return false;
@@ -1321,46 +1414,83 @@ class PrinterController extends GetxController {
   }
 
   Future<({bool ok, String error})> _btSend(
-      String address, List<int> bytes, String tag,
-      ) async {
-    final total = Stopwatch()..start();
-    String err = '';
-    for (var attempt = 0; attempt < 2; attempt++) {
-      final stale = _btLastUsed == null || DateTime.now().difference(_btLastUsed!) > _btIdle;
-      if (attempt > 0) await _btHardReset(); // don't trust old socket
+    String address,
+    List<int> bytes,
+  ) {
+    final resolvedAddress = _bluetoothAddressKey(address);
+    final needsDiscovery =
+        !Platform.isAndroid && !_btSeen.contains(resolvedAddress.toUpperCase());
+    var expired = false;
+    var startedWriting = false;
+    final timing = Stopwatch()..start();
+    const timedOut = (
+      ok: false,
+      error: 'Bluetooth print timed out. Check printer power and paper before retrying.',
+    );
 
-      final c = Stopwatch()..start();
-      final connected = await ensureBluetoothConnected(
-        address,
-        retries: attempt == 0 ? 1 : 3,   // fail fast on attempt 1, hard reset, then try properly
-      ).timeout(const Duration(seconds: 20), onTimeout: () {
-        _btError = "Connect timed out.";
-        return false;
-      });
-      debugPrint("⏱ [$tag] connect ${c.elapsedMilliseconds}ms "
-          "(attempt ${attempt + 1}, stale=$stale)");
-      if (!Platform.isAndroid) {
-        await Future.delayed(const Duration(milliseconds: 1000)); // let service discovery finish
-      }
+    // Keep native operations serialized after a UI timeout. Expired jobs
+    // must never start writing when they reach the front of the queue.
+    return _withBtLock<({bool ok, String error})>(() async {
+      if (expired) return timedOut;
+      final queuedMs = timing.elapsedMilliseconds;
+      final lastUsed = _btLastUsed;
+      final connected = await ensureBluetoothConnected(address, retries: 1);
+      final connectionMs = timing.elapsedMilliseconds - queuedMs;
+      if (expired) return timedOut;
       if (!connected) {
-        err = _btError.isNotEmpty ? _btError : "Could not connect to the printer.";
-        debugPrint("❌ [PRINT FAILURE] [$tag] Connect failed: $err");
-        continue;
+        _btSeen.remove(resolvedAddress.toUpperCase());
+        return (
+          ok: false,
+          error: _btError.isNotEmpty
+              ? _btError
+              : 'Printer unavailable. Check that it is switched on and nearby.',
+        );
       }
 
-      final w = Stopwatch()..start();
-      final ok = await _btWrite(bytes);
-      debugPrint("⏱ [$tag] write ${w.elapsedMilliseconds}ms for ${bytes.length}B");
-      if (ok) {
+      if (!Platform.isAndroid && _btLastUsed != lastUsed) {
+        await Future.delayed(const Duration(seconds: 1));
+      }
+
+      if (expired) return timedOut;
+      startedWriting = true;
+      final writeStarted = timing.elapsedMilliseconds;
+      final written = await _btWrite(bytes, () => expired);
+      final stillConnected =
+          written && await PrintBluetoothThermal.connectionStatus;
+      debugPrint(
+        '[Printer timing] Bluetooth queue=${queuedMs}ms '
+        'connection=${connectionMs}ms '
+        'write=${timing.elapsedMilliseconds - writeStarted}ms '
+        'total=${timing.elapsedMilliseconds}ms bytes=${bytes.length}',
+      );
+      if (stillConnected && !expired) {
         _btLastUsed = DateTime.now();
-        debugPrint("✅ [PRINT SUCCESS] [$tag] TOTAL ${total.elapsedMilliseconds}ms (${bytes.length} bytes)");
         return (ok: true, error: '');
       }
-      err = "Connected, but the printer did not accept the data or write timed out.";
-      debugPrint("❌ [PRINT FAILURE] [$tag] $err");
-    }
-    _btConnectedAddress = null;
-    return (ok: false, error: err);
+
+      _btConnectedAddress = null;
+      _btSeen.remove(resolvedAddress.toUpperCase());
+      await PrintBluetoothThermal.disconnect;
+      return (
+        ok: false,
+        error: 'Printer stopped accepting data. Check power, connection, and paper.',
+      );
+    }).timeout(
+      needsDiscovery
+          ? _btDiscoveryPrintTimeout
+          : (Platform.isMacOS || Platform.isIOS)
+          ? _btApplePrintTimeout
+          : _btPrintTimeout,
+      onTimeout: () {
+        expired = true;
+        return startedWriting
+            ? (
+                ok: false,
+                error: 'Print status unknown. Check the printer before retrying.',
+              )
+            : timedOut;
+      },
+    );
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -1407,10 +1537,7 @@ class PrinterController extends GetxController {
       }
 
       // Bluetooth (default)
-      final btRes = await _withBtLock<({bool ok, String error})>(
-            () => _btSend(address, bytes, tag),
-      );
-      return btRes;
+      return await _btSend(address, bytes);
     } catch (e, s) {
       debugPrint("❌ [PRINT EXCEPTION] [$tag] send error: $e\n$s");
       return (ok: false, error: "$e");
@@ -1715,12 +1842,22 @@ class PrinterController extends GetxController {
         String? paymentMethod,
         double? discount,
         double? roundOff,
+        double? netTotalOverride,
         bool? isSale,
       }) async {
     try {
       final assignment = _receiptAssignment();
       final address = assignment?.printerAddress.value ?? "";
       if (assignment == null || address.isEmpty) {
+        _trackJob(
+          orderId: order.id,
+          kind: 'RECEIPT',
+          ok: false,
+          type: 'none',
+          address: '',
+          name: 'Receipt Printer',
+          bytes: const [],
+        );
         showSafeSnackbar("Receipt not printed", "No receipt printer assigned.");
         return false;
       }
@@ -1754,6 +1891,7 @@ class PrinterController extends GetxController {
         paymentMethod: paymentMethod,
         discount: discount ?? order.discount,
         roundOff: roundOff ?? order.roundOff,
+        netTotalOverride: netTotalOverride,
       );
 
       final r = await _sendBytesDetailed(
@@ -1776,6 +1914,15 @@ class PrinterController extends GetxController {
       return r.ok;
     } catch (e, s) {
       log("printReceipt crashed: $e\n$s");
+      _trackJob(
+        orderId: order.id,
+        kind: 'RECEIPT',
+        ok: false,
+        type: 'none',
+        address: '',
+        name: 'Receipt Printer',
+        bytes: const [],
+      );
       showSafeSnackbar("Receipt not printed", "$e");
       return false;
     }
@@ -1791,6 +1938,7 @@ class PrinterController extends GetxController {
         String? paymentMethod,
         double discount = 0,
         double roundOff = 0,
+        double? netTotalOverride,
       }) async {
     final int vatType = Get.isRegistered<DashboardController>()
         ? Get.find<DashboardController>().vatType.value
@@ -1835,7 +1983,6 @@ class PrinterController extends GetxController {
 
     b += g.text(_hr);
 
-    // Column titles
     b += g.row([
       PosColumn(text: "Item", width: 6),
       PosColumn(text: "Qty", width: 1),
@@ -1856,7 +2003,12 @@ class PrinterController extends GetxController {
     double calculatedTax = 0;
     final Set<double> taxRates = {};
 
-    for (var item in order.items.where((i) => !i.isRemoved)) {
+    final receiptItems = _mergeItemsByProduct(
+      order.items.where((i) => !i.isRemoved && i.quantity > 0),
+      preserveAddonPrices: true,
+    );
+
+    for (final item in receiptItems.values) {
       final double taxPer = item.product.taxPer;
       final double baseQty = item.unit.unitBaseQty.toDouble();
       final double qty = item.quantity.toDouble();
@@ -1951,7 +2103,9 @@ class PrinterController extends GetxController {
         !order.isUnsynced || order.status.value == OrderStatus.paid;
 
     double netTotal;
-    if (isCompliment) {
+    if (netTotalOverride != null) {
+      netTotal = netTotalOverride;
+    } else if (isCompliment) {
       netTotal = 0.0;
     } else if (vatType == 0) {
       // Tax-exclusive
@@ -1977,6 +2131,12 @@ class PrinterController extends GetxController {
     }
 
     b += g.text("Thank You!", styles: const PosStyles(align: PosAlign.center));
+    b += g.text(
+      "We truly appreciate your visit.",
+      styles: const PosStyles(
+        align: PosAlign.center,
+      ),
+    );
     b += _cutTight();
     return b;
   }
@@ -1990,6 +2150,7 @@ class PrinterController extends GetxController {
       int totalSplits, {
         String? customerName,
         String? paymentMethod,
+        bool stopOnFailure = false,
       }) async {
     debugPrint("--- START SPLIT RECEIPT PRINTING ($totalSplits splits) ---");
     final double splitsTotal = splits.fold<double>(
@@ -2041,7 +2202,10 @@ class PrinterController extends GetxController {
         name: assignment.printerName.value,
         bytes: bytes,
       );
-      if (!ok) allOk = false;
+      if (!ok) {
+        if (stopOnFailure) return false;
+        allOk = false;
+      }
 
       await Future.delayed(const Duration(milliseconds: 500));
     }
@@ -2174,12 +2338,18 @@ class PrinterController extends GetxController {
   // ──────────────────────────────────────────────────────────────────────
   // KOT
   // ──────────────────────────────────────────────────────────────────────
-  OrderItem _copyItem(OrderItem i, {int? quantity, bool? isRemoved}) {
+  OrderItem _copyItem(
+    OrderItem i, {
+    int? quantity,
+    bool? isRemoved,
+    List<AddonModel>? selectedAddons,
+    String? notes,
+  }) {
     return OrderItem(
       subId: i.subId,
       product: i.product,
       unit: i.unit,
-      selectedAddons: i.selectedAddons,
+      selectedAddons: selectedAddons ?? i.selectedAddons,
       addonParentPrdId: i.addonParentPrdId,
       addonParentUnitId: i.addonParentUnitId,
       unitId: i.unitId,
@@ -2191,85 +2361,276 @@ class PrinterController extends GetxController {
       isKotModified: i.isKotModified,
       cgstRate: i.cgstRate,
       sgstRate: i.sgstRate,
-      notes: i.notes,
+      notes: notes ?? i.notes,
     );
   }
 
-  String _addonSig(List<AddonModel> addons) {
-    final parts = addons.map((a) => '${a.prdId}:${a.quantity.value}').toList()
-      ..sort();
-    return parts.join(',');
+  List<AddonModel> _copyAddons(List<AddonModel> addons) {
+    return addons.map((a) {
+      final copy = AddonModel(
+        id: a.id,
+        subId: a.subId,
+        prdId: a.prdId,
+        prdaddon_flags: a.prdaddon_flags,
+        name: a.name,
+        price: a.price,
+        unitDisplay: a.unitDisplay,
+        unitId: a.unitId,
+        taxCatId: a.taxCatId,
+        taxPer: a.taxPer,
+        unitBaseQty: a.unitBaseQty,
+        initialQty: a.quantity.value,
+        isDefault: a.isDefault,
+        freeQty: a.freeQty,
+        flags: a.flags,
+      );
+      copy.quantity.value = a.quantity.value;
+      return copy;
+    }).toList();
   }
 
-  /// product + unit + addon set. Different addon sets = different kitchen
-  /// lines, so a changed addon shows as "remove old / add new".
-  String _lineKey(OrderItem i) =>
-      '${i.product.id}_${i.unitId ?? i.unit.unitId}_${_addonSig(i.selectedAddons)}';
+  List<AddonModel> _consolidateAddons(
+    List<AddonModel> addons, {
+    required bool preservePrices,
+  }) {
+    final map = <(int, int?, double?), AddonModel>{};
+    for (final a in addons) {
+      if (a.quantity.value <= 0) continue;
+      final key = preservePrices
+          ? (a.prdId, a.unitId, a.price)
+          : (a.prdId, null, null);
+      if (map.containsKey(key)) {
+        map[key]!.quantity.value += a.quantity.value;
+      } else {
+        final copy = AddonModel(
+          id: a.id,
+          subId: a.subId,
+          prdId: a.prdId,
+          prdaddon_flags: a.prdaddon_flags,
+          name: a.name,
+          price: a.price,
+          unitDisplay: a.unitDisplay,
+          unitId: a.unitId,
+          taxCatId: a.taxCatId,
+          taxPer: a.taxPer,
+          unitBaseQty: a.unitBaseQty,
+          initialQty: a.quantity.value,
+          isDefault: a.isDefault,
+          freeQty: a.freeQty,
+          flags: a.flags,
+        );
+        copy.quantity.value = a.quantity.value;
+        map[key] = copy;
+      }
+    }
+    return map.values.toList();
+  }
 
-  /// Merges duplicate lines (same key) by summing quantity so none is lost.
-  Map<String, OrderItem> _mergeByKey(Iterable<OrderItem> items) {
+  /// Groups items by product.id + unit.
+  Map<String, OrderItem> _mergeItemsByProduct(
+    Iterable<OrderItem> items, {
+    bool preserveAddonPrices = false,
+  }) {
     final map = <String, OrderItem>{};
     for (final i in items) {
-      final k = _lineKey(i);
+      final k = '${i.product.id}_${i.unitId ?? i.unit.unitId}';
       final existing = map[k];
-      map[k] = existing == null
-          ? i
-          : _copyItem(existing, quantity: existing.quantity + i.quantity);
+      if (existing == null) {
+        map[k] = _copyItem(
+          i,
+          selectedAddons: _consolidateAddons(
+            i.selectedAddons,
+            preservePrices: preserveAddonPrices,
+          ),
+        );
+      } else {
+        final combinedAddons = _consolidateAddons(
+          [...existing.selectedAddons, ...i.selectedAddons],
+          preservePrices: preserveAddonPrices,
+        );
+        map[k] = _copyItem(
+          existing,
+          quantity: existing.quantity + i.quantity,
+          selectedAddons: combinedAddons,
+          notes: existing.notes.isNotEmpty ? existing.notes : i.notes,
+        );
+      }
     }
     return map;
   }
 
-  Future<bool> printKOT(OrderModel order, {List<OrderItem>? oldItems}) async {
+  Future<bool> printKOT(
+    OrderModel order, {
+    List<OrderItem>? oldItems,
+    bool suppressDuplicates = true,
+    bool checkConnections = false,
+    bool includeReceipt = false,
+    void Function(String message)? onMissingAssignment,
+  }) async {
     debugPrint("--- START KOT PRINTING ---");
 
     final List<OrderItem> itemsToPrint = [];
     final bool isUpdate = oldItems != null && oldItems.isNotEmpty;
 
     if (!isUpdate) {
-      itemsToPrint.addAll(
+      // Consolidate identical items & addons for clean printing
+      final merged = _mergeItemsByProduct(
         order.items.where((item) => !item.isRemoved && item.quantity > 0),
       );
+      itemsToPrint.addAll(merged.values);
     } else {
-      final oldMap = _mergeByKey(
+      final oldMap = _mergeItemsByProduct(
         oldItems.where((i) => !i.isRemoved && i.quantity > 0),
       );
-      final newMap = _mergeByKey(
+      final newMap = _mergeItemsByProduct(
         order.items.where((i) => !i.isRemoved && i.quantity > 0),
       );
 
-      debugPrint("OLD KEYS: ${oldMap.keys.toList()}");
-      debugPrint("NEW KEYS: ${newMap.keys.toList()}");
+      debugPrint("OLD PRODUCT KEYS: ${oldMap.keys.toList()}");
+      debugPrint("NEW PRODUCT KEYS: ${newMap.keys.toList()}");
 
       for (final key in {...oldMap.keys, ...newMap.keys}) {
         final oldItem = oldMap[key];
         final newItem = newMap[key];
 
         if (oldItem == null && newItem != null) {
-          // Brand new line (also covers changed unit / changed addons)
+          // Brand new product added to the order
           itemsToPrint.add(newItem);
           debugPrint("🆕 NEW: ${newItem.product.name} x${newItem.quantity}");
         } else if (newItem == null && oldItem != null) {
-          // Line gone entirely (also covers changed unit / changed addons)
+          // Product removed entirely from the order
           itemsToPrint.add(_copyItem(oldItem, isRemoved: true));
           debugPrint("❌ REMOVED: ${oldItem.product.name} x${oldItem.quantity}");
         } else if (oldItem != null && newItem != null) {
           final int diff = newItem.quantity - oldItem.quantity;
 
+          // Calculate addon deltas
+          final oldAddonMap = <String, AddonModel>{
+            for (final a in oldItem.selectedAddons) '${a.prdId}': a,
+          };
+          final newAddonMap = <String, AddonModel>{
+            for (final a in newItem.selectedAddons) '${a.prdId}': a,
+          };
+
+          final List<AddonModel> addedAddons = [];
+          final List<AddonModel> removedAddons = [];
+
+          for (final aKey in {...oldAddonMap.keys, ...newAddonMap.keys}) {
+            final oldA = oldAddonMap[aKey];
+            final newA = newAddonMap[aKey];
+            final int oldQ = oldA?.quantity.value ?? 0;
+            final int newQ = newA?.quantity.value ?? 0;
+            final int aDiff = newQ - oldQ;
+
+            if (aDiff > 0 && newA != null) {
+              final copy = AddonModel(
+                id: newA.id,
+                subId: newA.subId,
+                prdId: newA.prdId,
+                prdaddon_flags: newA.prdaddon_flags,
+                name: newA.name,
+                price: newA.price,
+                unitDisplay: newA.unitDisplay,
+                unitId: newA.unitId,
+                taxCatId: newA.taxCatId,
+                taxPer: newA.taxPer,
+                unitBaseQty: newA.unitBaseQty,
+                initialQty: aDiff,
+                freeQty: newA.freeQty,
+                flags: newA.flags,
+              );
+              copy.quantity.value = aDiff;
+              addedAddons.add(copy);
+            } else if (aDiff < 0 && oldA != null) {
+              final copy = AddonModel(
+                id: oldA.id,
+                subId: oldA.subId,
+                prdId: oldA.prdId,
+                prdaddon_flags: oldA.prdaddon_flags,
+                name: oldA.name,
+                price: oldA.price,
+                unitDisplay: oldA.unitDisplay,
+                unitId: oldA.unitId,
+                taxCatId: oldA.taxCatId,
+                taxPer: oldA.taxPer,
+                unitBaseQty: oldA.unitBaseQty,
+                initialQty: -aDiff,
+                freeQty: oldA.freeQty,
+                flags: oldA.flags,
+              );
+              copy.quantity.value = -aDiff;
+              removedAddons.add(copy);
+            }
+          }
+
           if (diff > 0) {
-            itemsToPrint.add(_copyItem(newItem, quantity: diff));
-            debugPrint("⬆️ +$diff ${newItem.product.name}");
-          } else if (diff < 0) {
+            // Main item increased: print delta quantity with added addons
             itemsToPrint.add(
-              _copyItem(oldItem, quantity: -diff, isRemoved: true),
+              _copyItem(
+                newItem,
+                quantity: diff,
+                selectedAddons: addedAddons,
+              ),
+            );
+            debugPrint("⬆️ +$diff ${newItem.product.name} (with ${addedAddons.length} added addons)");
+          } else if (diff < 0) {
+            // Main item decreased
+            itemsToPrint.add(
+              _copyItem(
+                oldItem,
+                quantity: -diff,
+                selectedAddons: removedAddons,
+                isRemoved: true,
+              ),
             );
             debugPrint("⬇️ ${-diff} removed ${oldItem.product.name}");
-          } else if (newItem.notes != oldItem.notes) {
-            // Same qty, only the note changed
-            itemsToPrint.add(newItem);
-            debugPrint("📝 NOTE CHANGED: ${newItem.product.name}");
+          } else {
+            // Same main item quantity, but addons or note changed
+            if (addedAddons.isNotEmpty) {
+              itemsToPrint.add(
+                _copyItem(
+                  newItem,
+                  quantity: 0, // Only addon added
+                  selectedAddons: addedAddons,
+                ),
+              );
+              debugPrint("➕ Addons added to ${newItem.product.name}: ${addedAddons.map((a) => a.name).join(', ')}");
+            }
+            if (removedAddons.isNotEmpty) {
+              itemsToPrint.add(
+                _copyItem(
+                  oldItem,
+                  quantity: 0, // Only addon removed
+                  selectedAddons: removedAddons,
+                  isRemoved: true,
+                ),
+              );
+              debugPrint("➖ Addons removed from ${oldItem.product.name}: ${removedAddons.map((a) => a.name).join(', ')}");
+            }
+            if (newItem.notes != oldItem.notes && addedAddons.isEmpty && removedAddons.isEmpty) {
+              itemsToPrint.add(
+                _copyItem(
+                  newItem,
+                  quantity: newItem.quantity,
+                  selectedAddons: [],
+                ),
+              );
+              debugPrint("📝 NOTE CHANGED: ${newItem.product.name}");
+            }
           }
         }
       }
+    }
+
+    if (checkConnections) {
+      return _distributeToPrinters(
+        order,
+        itemsToPrint,
+        status: isUpdate ? 'Modified' : 'Original',
+        checkConnections: true,
+        includeReceipt: includeReceipt,
+        onMissingAssignment: onMissingAssignment,
+      );
     }
 
     if (itemsToPrint.isEmpty) {
@@ -2286,35 +2647,47 @@ class PrinterController extends GetxController {
         '${order.id}|${order.invNo}|'
         '${itemsToPrint.map((i) => '${i.product.id}:${i.quantity}:${i.isRemoved}').join(',')}';
     final last = _lastKotPrint[sig];
-    if (last != null && now.difference(last) < const Duration(seconds: 3)) {
+    if (suppressDuplicates && last != null &&
+        now.difference(last) < const Duration(seconds: 3)) {
       debugPrint("⚠️ Duplicate KOT call suppressed: $sig");
       return true;
     }
-    _lastKotPrint[sig] = now;
-
     debugPrint("📋 Total items to print: ${itemsToPrint.length}");
-    return await _distributeToPrinters(
+    final printed = await _distributeToPrinters(
       order,
       itemsToPrint,
       status: isUpdate ? "Modified" : "Original",
+      onMissingAssignment: onMissingAssignment,
     );
+    if (printed && suppressDuplicates) _lastKotPrint[sig] = now;
+    return printed;
   }
 
-  Future<bool> printCancelledOrder(OrderModel order) async {
+  Future<bool> printCancelledOrder(
+    OrderModel order, {
+    bool checkConnections = false,
+  }) async {
     debugPrint("--- PRINTING CANCELLED ORDER ---");
     final cancelledItems = order.items
         .map((i) => _copyItem(i, isRemoved: true))
         .toList();
-    return await _distributeToPrinters(order, cancelledItems, status: "CANCELLED");
+    return _distributeToPrinters(
+      order,
+      cancelledItems,
+      status: 'CANCELLED',
+      checkConnections: checkConnections,
+    );
   }
 
   Future<bool> _distributeToPrinters(
       OrderModel order,
       List<OrderItem> items, {
         required String status,
+        bool checkConnections = false,
+        bool includeReceipt = false,
+        void Function(String message)? onMissingAssignment,
       }) async {
     debugPrint("📍 DISTRIBUTING - Status: $status, Items: ${items.length}");
-    final invoiceLabel = await _resolveInvoiceLabel(order);
 
     final groups = <String, List<OrderItem>>{};
     final assignmentByAddress = <String, TokenPrinterAssignment>{};
@@ -2342,9 +2715,33 @@ class PrinterController extends GetxController {
       assignmentByAddress[address] = assignment;
     }
 
+    final missingAssignment = unrouted.isEmpty
+        ? null
+        : 'No kitchen printer assigned for ${unrouted.join(', ')}. '
+          'Assign a printer to the corresponding token in Printer Settings.';
+    if (missingAssignment != null) {
+      onMissingAssignment?.call(missingAssignment);
+    }
+
+    if (checkConnections) {
+      if (missingAssignment != null) {
+        showSafeSnackbar(
+          'Kitchen printer required',
+          missingAssignment,
+          duration: const Duration(seconds: 6),
+        );
+        return false;
+      }
+      return _checkRequiredPrinterConnections(
+        assignmentByAddress.values,
+        includeReceipt: includeReceipt,
+      );
+    }
+
     final failedPrinters = <String>[];
 
     if (groups.isNotEmpty) {
+      final invoiceLabel = await _resolveInvoiceLabel(order);
       final profile = await _getProfile();
 
       // Different printers print in parallel; Bluetooth jobs are serialised
@@ -2367,16 +2764,16 @@ class PrinterController extends GetxController {
             invoiceLabel: invoiceLabel,
           );
 
-          final ok = await _sendBytes(
+          final result = await _sendBytesDetailed(
             type: type,
             address: address,
             bytes: bytes,
             tag: 'KOT',
           );
-          if (!ok) {
-            failedPrinters.add(
-              a.printerName.value.isNotEmpty ? a.printerName.value : address,
-            );
+          if (!result.ok) {
+            final name = a.printerName.value;
+            final target = name.isNotEmpty ? name : 'Kitchen printer';
+            failedPrinters.add('$target: ${result.error}');
             _trackJob(
               orderId: order.id,
               kind: 'KOT',
@@ -2385,6 +2782,7 @@ class PrinterController extends GetxController {
               address: address,
               name: a.printerName.value,
               bytes: bytes,
+              error: result.error,
             );
           }
         }),
@@ -2397,23 +2795,26 @@ class PrinterController extends GetxController {
     }
 
     if (unrouted.isNotEmpty || failedPrinters.isNotEmpty) {
-      if (unrouted.isNotEmpty) {
+      if (missingAssignment != null) {
         _addIssue(
           order.id,
           PrintIssue(
             kind: 'KOT',
             target: unrouted.join(', '),
-            message: "No printer assigned for: ${unrouted.join(', ')}",
+            message: missingAssignment,
             at: DateTime.now(),
           ),
         );
       }
       final msg = [
-        if (unrouted.isNotEmpty) "No printer for: ${unrouted.join(', ')}",
-        if (failedPrinters.isNotEmpty)
-          "Failed to print on: ${failedPrinters.join(', ')}",
+        if (missingAssignment != null) missingAssignment,
+        ...failedPrinters,
       ].join('\n');
-      showSafeSnackbar("KOT not fully printed", msg);
+      showSafeSnackbar(
+        'Kitchen ticket not printed',
+        msg,
+        duration: const Duration(seconds: 6),
+      );
       return false;
     }
 
@@ -2505,12 +2906,22 @@ class PrinterController extends GetxController {
       b += g.text(_hr);
 
       for (final item in list) {
-        b += await _line(
-          g,
-          item.product.name,
-          "${item.quantity} ${item.unit.unitDisplay}",
-          bold: removed,
-        );
+        if (item.quantity > 0) {
+          b += await _line(
+            g,
+            item.product.name,
+            "${item.quantity} ${item.unit.unitDisplay}",
+            bold: removed,
+          );
+        } else {
+          // If only addons were added/removed without changing parent item qty
+          b += await _line(
+            g,
+            "${item.product.name} (Add-on update)",
+            "",
+            bold: removed,
+          );
+        }
         if (item.notes.isNotEmpty) {
           b += await _line(g, "   NOTE: ${item.notes}", "", bold: removed);
         }
@@ -2527,6 +2938,38 @@ class PrinterController extends GetxController {
 
     await section(removedItems, removed: true);
     await section(newItems, removed: false);
+
+    // TOTAL ON TABLE / ACTIVE SUMMARY FOR MODIFIED ORDERS
+    if (status == "Modified") {
+      final activeMerged = _mergeItemsByProduct(
+        order.items.where((i) => !i.isRemoved && i.quantity > 0),
+      );
+      if (activeMerged.isNotEmpty) {
+        b += g.text(_hr);
+        b += g.text(
+          "--- CURRENT ORDER TOTAL ---",
+          styles: const PosStyles(
+            align: PosAlign.center,
+            bold: true,
+          ),
+        );
+        for (final item in activeMerged.values) {
+          b += await _line(
+            g,
+            item.product.name,
+            "${item.quantity} ${item.unit.unitDisplay}",
+          );
+          for (final addon in item.selectedAddons) {
+            if (addon.quantity.value <= 0) continue;
+            b += await _line(
+              g,
+              "  * ${addon.name}",
+              "${addon.quantity.value} ${addon.unitDisplay}",
+            );
+          }
+        }
+      }
+    }
 
     // FOOTER
     b += g.text(_dbl, styles: const PosStyles(bold: true));

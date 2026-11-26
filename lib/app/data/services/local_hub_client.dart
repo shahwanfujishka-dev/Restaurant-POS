@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../Device_Roles/device_roles.dart';
 import '../utils/AppState.dart';
+import 'api_endpoints.dart';
 
 class LocalHubClient {
   static final LocalHubClient instance = LocalHubClient._internal();
@@ -21,7 +22,7 @@ class LocalHubClient {
     required String hostIp,
     int port = 8080,
   }) async {
-    final url = Uri.parse('http://$hostIp:$port/hub/status');
+    final url = Uri.parse('http://$hostIp:$port${ApiEndpoints.hubStatus}');
     try {
       final response = await http.get(url).timeout(const Duration(seconds: 5));
       if (response.statusCode != 200)
@@ -45,7 +46,7 @@ class LocalHubClient {
     String? userId,
     String? userName,
   }) async {
-    final url = Uri.parse('http://$hostIp:$port/device/register');
+    final url = Uri.parse('http://$hostIp:$port${ApiEndpoints.hubRegisterDevice}');
     try {
       final response = await http
           .post(
@@ -125,7 +126,7 @@ class LocalHubClient {
     required String hostIp,
     int port = 8080,
   }) async {
-    final url = Uri.parse('http://$hostIp:$port/orders/create');
+    final url = Uri.parse('http://$hostIp:$port${ApiEndpoints.hubCreateOrder}');
     try {
       final response = await _sendAuthenticatedRequest(
         (headers) => http
@@ -154,7 +155,7 @@ class LocalHubClient {
     required String hostIp,
     int port = 8080,
   }) async {
-    final url = Uri.parse('http://$hostIp:$port/orders/update');
+    final url = Uri.parse('http://$hostIp:$port${ApiEndpoints.hubUpdateOrder}');
     try {
       final response = await _sendAuthenticatedRequest(
         (headers) => http
@@ -181,7 +182,7 @@ class LocalHubClient {
     required String hostIp,
     int port = 8080,
   }) async {
-    final url = Uri.parse('http://$hostIp:$port/orders/list');
+    final url = Uri.parse('http://$hostIp:$port${ApiEndpoints.hubListOrders}');
     try {
       final response = await _sendAuthenticatedRequest(
         (headers) => http
@@ -204,7 +205,7 @@ class LocalHubClient {
     int port = 8080,
     required String date,
   }) async {
-    final url = Uri.parse('http://$hostIp:$port/orders/sold?date=$date');
+    final url = Uri.parse('http://$hostIp:$port${ApiEndpoints.hubListSoldOrders}?date=$date');
     try {
       final response = await _sendAuthenticatedRequest(
         (headers) => http
@@ -227,7 +228,7 @@ class LocalHubClient {
     int port = 8080,
     required String orderId,
   }) async {
-    final url = Uri.parse('http://$hostIp:$port/orders/details?id=$orderId');
+    final url = Uri.parse('http://$hostIp:$port${ApiEndpoints.hubOrderDetails}?id=$orderId');
     try {
       final response = await _sendAuthenticatedRequest(
         (headers) => http
@@ -251,7 +252,7 @@ class LocalHubClient {
     required String hostIp,
     int port = 8080,
   }) async {
-    final url = Uri.parse('http://$hostIp:$port/master/tables');
+    final url = Uri.parse('http://$hostIp:$port${ApiEndpoints.hubTables}');
     try {
       final response = await _sendAuthenticatedRequest(
         (headers) => http
@@ -273,7 +274,7 @@ class LocalHubClient {
     required String hostIp,
     int port = 8080,
   }) async {
-    final url = Uri.parse('http://$hostIp:$port/master/categories');
+    final url = Uri.parse('http://$hostIp:$port${ApiEndpoints.hubCategories}');
     try {
       final response = await _sendAuthenticatedRequest(
         (headers) => http
@@ -295,7 +296,7 @@ class LocalHubClient {
     required String hostIp,
     int port = 8080,
   }) async {
-    final url = Uri.parse('http://$hostIp:$port/master/captains');
+    final url = Uri.parse('http://$hostIp:$port${ApiEndpoints.hubCaptains}');
     try {
       final response = await _sendAuthenticatedRequest(
         (headers) => http
@@ -317,7 +318,7 @@ class LocalHubClient {
     required String hostIp,
     int port = 8080,
   }) async {
-    final url = Uri.parse('http://$hostIp:$port/printers/assignments');
+    final url = Uri.parse('http://$hostIp:$port${ApiEndpoints.hubPrinterAssignments}');
     try {
       final response = await _sendAuthenticatedRequest(
         (headers) => http
@@ -344,7 +345,7 @@ class LocalHubClient {
     final query = categoryId != null
         ? 'category_id=$categoryId&price_group_id=$priceGroupId'
         : 'price_group_id=$priceGroupId';
-    final url = Uri.parse('http://$hostIp:$port/master/products?$query');
+    final url = Uri.parse('http://$hostIp:$port${ApiEndpoints.hubProducts}?$query');
     try {
       final response = await _sendAuthenticatedRequest(
         (headers) => http

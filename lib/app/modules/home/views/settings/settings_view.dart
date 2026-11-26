@@ -35,6 +35,18 @@ class SettingsView extends GetView<SettingsController> {
           ),
           SizedBox(height: 12.h),
           _buildOperationModeCard(context),
+          Obx(
+            () => SwitchListTile(
+              title: const Text('Require order printing'),
+              subtitle: Text(
+                controller.isLocalMode
+                    ? 'Print before saving orders on this device. Drafts can always be saved.'
+                    : 'Check printers before posting, then print with the server order details. Drafts can always be saved.',
+              ),
+              value: controller.requireOrderPrinting.value,
+              onChanged: controller.setRequireOrderPrinting,
+            ),
+          ),
           Obx(() {
             if (!controller.isLocalMode) {
               return const SizedBox.shrink();

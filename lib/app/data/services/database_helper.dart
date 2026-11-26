@@ -28,13 +28,121 @@ class DatabaseHelper {
   )
 ''';
 
-  DatabaseHelper._init();
+  DatabaseHelper._init() : _isMasterStaging = false;
+
+  DatabaseHelper._masterStaging() : _isMasterStaging = true;
+
+  final bool _isMasterStaging;
+  Future<Database>? _stagingDatabase;
+
+  static const _catalogTables = [
+    'categories',
+    'products',
+    'areas',
+    'pos_tables',
+    'favorites',
+    'favorite_products',
+    'bulk_product_units',
+    'units',
+    'stock_unit_rates',
+    'ledgers',
+    'captains',
+  ];
+
+  /// Downloads into a private database, then publishes a complete catalog in
+  /// one transaction. The active database stays available during downloads.
+  Future<void> replaceMasterCatalog(
+    Future<void> Function(DatabaseHelper staging) download, {
+    required bool fullRefresh,
+    required void Function() checkSession,
+  }) async {
+    final staging = DatabaseHelper._masterStaging();
+    try {
+      await download(staging);
+      checkSession();
+      final snapshot = await staging.database;
+      final live = await database;
+      final replacementTables = [
+        ..._catalogTables,
+        if (fullRefresh) ...['product_units', 'common_addons', 'customers'],
+      ];
+      await live.transaction((txn) async {
+        for (final table in replacementTables) {
+          await txn.delete(table);
+          await _copyMasterRows(snapshot, txn, table);
+        }
+        if (!fullRefresh) {
+          // Manual sync adds basic fallback units alongside detailed units.
+          await _copyMasterRows(
+            snapshot,
+            txn,
+            'product_units',
+            insertMissing: true,
+          );
+        }
+        await _copyMasterRows(snapshot, txn, 'app_settings');
+        checkSession();
+      });
+    } finally {
+      final pending = staging._stagingDatabase;
+      if (pending != null) {
+        // The download already propagates any error opening the database.
+        final opened = await pending.then<Database?>(
+          (db) => db,
+          onError: (Object _) => null,
+        );
+        await opened?.close();
+      }
+    }
+  }
+
+  Future<void> _copyMasterRows(
+    Database source,
+    Transaction target,
+    String table, {
+    bool insertMissing = false,
+  }) async {
+    const pageSize = 500;
+    for (int offset = 0; ; offset += pageSize) {
+      final rows = await source.query(
+        table,
+        orderBy: 'rowid',
+        limit: pageSize,
+        offset: offset,
+      );
+      final batch = target.batch();
+      for (final row in rows) {
+        if (insertMissing) {
+          final values = Map<String, Object?>.of(row)..remove('id');
+          batch.insert(
+            table,
+            values,
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
+        } else {
+          batch.insert(table, row, conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+      }
+      await batch.commit(noResult: true);
+      if (rows.length < pageSize) return;
+    }
+  }
 
   static void configureDatabasesDirectory(String path) {
     _databasesDirectory = path;
   }
 
   Future<Database> get database async {
+    if (_isMasterStaging) {
+      return _stagingDatabase ??= databaseFactoryFfi.openDatabase(
+        inMemoryDatabasePath,
+        options: OpenDatabaseOptions(
+          version: 1,
+          onCreate: _createDB,
+          singleInstance: false,
+        ),
+      );
+    }
     if (_database != null) return _database!;
     final pending = _databaseFuture ??= _initDB('pos_app.db');
     try {
@@ -775,7 +883,7 @@ CREATE TABLE orders (
 
   // --- App Settings ---
   Future<void> saveSetting(String key, String value) async {
-    final db = await instance.database;
+    final db = await database;
     await db.insert('app_settings', {
       'key': key,
       'value': value,
@@ -798,7 +906,7 @@ CREATE TABLE orders (
     List<Map<String, dynamic>> ledgers,
     String type,
   ) async {
-    final db = await instance.database;
+    final db = await database;
     await db.transaction((txn) async {
       // Clear existing ledgers of this type before inserting fresh ones
       await txn.delete('ledgers', where: 'type = ?', whereArgs: [type]);
@@ -821,7 +929,7 @@ CREATE TABLE orders (
 
   // --- Captains ---
   Future<void> insertCaptains(List<Map<String, dynamic>> captains) async {
-    final db = await instance.database;
+    final db = await database;
     await db.transaction((txn) async {
       await txn.delete('captains');
       final batch = txn.batch();
@@ -842,7 +950,7 @@ CREATE TABLE orders (
   }
 
   Future<void> insertCustomers(List<Map<String, dynamic>> customers) async {
-    final db = await instance.database;
+    final db = await database;
     await db.transaction((txn) async {
       final batch = txn.batch();
       for (var customer in customers) {
@@ -914,9 +1022,46 @@ CREATE TABLE orders (
   }
 
   // --- Payments ---
-  Future<void> insertPayment(Map<String, dynamic> payment) async {
+  Future<void> saveOfflinePayment(
+    Map<String, dynamic> payment, {
+    required double roundOff,
+    required int payType,
+  }) async {
     final db = await instance.database;
-    await db.insert('payments', payment);
+    await db.transaction((txn) async {
+      final id = payment['order_uuid'];
+      final rows = await txn.query(
+        'orders',
+        where: 'uuid = ? OR server_id = ?',
+        whereArgs: [id, id],
+        orderBy: 'is_synced ASC, local_id ASC',
+        limit: 1,
+      );
+      if (rows.isEmpty) throw StateError('Order $id is missing locally');
+      final row = rows.single;
+      final uuid = row['uuid'];
+      final values = <String, Object?>{
+        'status': 'paid',
+        'total_amount': payment['amount'],
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      final raw = row['payload'];
+      if (raw is String && raw.isNotEmpty) {
+        final payload = jsonDecode(raw);
+        if (payload is Map && payload['sale_items'] is List) {
+          payload['tot_disc'] = payment['discount_amount'];
+          payload['sales_odr_roundoff'] = roundOff;
+          payload['tot_amount'] = payment['amount'];
+          payload['sales_odr_total'] = payment['amount'];
+          payload['res_status'] = 3;
+          payload['sale_pay_type'] = payType;
+          values['payload'] = jsonEncode(payload);
+          values['is_synced'] = 0;
+        }
+      }
+      await txn.insert('payments', {...payment, 'order_uuid': uuid});
+      await txn.update('orders', values, where: 'uuid = ?', whereArgs: [uuid]);
+    });
   }
 
   Future<List<Map<String, dynamic>>> getUnsyncedPayments() async {
@@ -1142,21 +1287,26 @@ CREATE TABLE orders (
 
         final existing = await txn.query(
           'orders',
-          columns: ['uuid', 'is_synced'],
+          columns: ['uuid', 'is_synced', 'hub_synced', 'payload', 'total_amount'],
           where: "server_id = ? OR uuid = ? OR (inv_no = ? AND inv_no != '')",
           whereArgs: [serverId, serverId, invNo],
           limit: 1,
         );
 
         if (existing.isNotEmpty) {
-          if ((existing.first['is_synced'] as int? ?? 0) == 0)
-            continue; // local edits win
-          await txn.update(
-            'orders',
-            values,
-            where: 'uuid = ?',
-            whereArgs: [existing.first['uuid']],
-          );
+          final row = existing.first;
+          if (row['is_synced'] != 1 || row['hub_synced'] == 0) continue;
+
+          final oldPayload = row['payload'] as String? ?? '';
+          final hasDetail = oldPayload.contains('"sales_order_sub"') ||
+              oldPayload.contains('"sale_items"');
+          final sameTotal = rawTotal != null &&
+              (_toDouble(row['total_amount']) - _toDouble(rawTotal)).abs() < 1.0;
+
+          final toWrite = Map<String, dynamic>.of(values);
+          if (hasDetail && sameTotal) toWrite.remove('payload'); // keep items
+
+          await txn.update('orders', toWrite, where: 'uuid = ?', whereArgs: [row['uuid']]);
         } else {
           await txn.insert('orders', {
             ...values,
@@ -1186,17 +1336,79 @@ CREATE TABLE orders (
   /// Remove synced, still-open orders that the server no longer lists (paid or cancelled elsewhere).
   Future<void> pruneSyncedActiveOrders(Set<String> liveServerIds) async {
     final db = await instance.database;
-    final rows = await db.query(
-      'orders',
-      columns: ['uuid', 'server_id'],
-      where: "is_synced = 1 AND status NOT IN ('paid','cancelled')",
-    );
-    for (final r in rows) {
-      final sid = r['server_id']?.toString() ?? '';
-      if (sid.isNotEmpty && !liveServerIds.contains(sid)) {
-        await deleteOrder(r['uuid'].toString());
+    await db.transaction((txn) async {
+      final rows = await txn.query(
+        'orders',
+        columns: ['uuid', 'server_id'],
+        where: """
+          is_synced = 1 AND hub_synced = 1
+          AND status NOT IN ('paid','cancelled')
+          AND NOT EXISTS (
+            SELECT 1 FROM payments p
+            WHERE p.is_synced = 0
+              AND p.order_uuid IN (orders.uuid, orders.server_id)
+          )
+        """,
+      );
+      for (final row in rows) {
+        final serverId = row['server_id']?.toString() ?? '';
+        if (serverId.isEmpty || liveServerIds.contains(serverId)) continue;
+        final uuid = row['uuid'];
+        await txn.delete('order_items', where: 'order_uuid = ?', whereArgs: [uuid]);
+        await txn.delete('payments', where: 'order_uuid = ?', whereArgs: [uuid]);
+        await txn.delete('orders', where: 'uuid = ?', whereArgs: [uuid]);
       }
-    }
+    });
+  }
+
+  /// A response for an older upload must leave a newer local edit pending.
+  Future<bool> acknowledgeOrderUpload(
+    Map<String, dynamic> uploaded, {
+    required String serverId,
+    String? invNo,
+    String? branchInv,
+    bool includesPayment = false,
+  }) async {
+    final db = await instance.database;
+    return db.transaction((txn) async {
+      final uuid = uploaded['uuid'];
+      final identity = <String, Object?>{
+        'server_id': serverId,
+        if (invNo != null && invNo.isNotEmpty) 'inv_no': invNo,
+      };
+      final changed = await txn.update(
+        'orders',
+        {
+          ...identity,
+          'is_synced': 1,
+          if (branchInv != null && branchInv.isNotEmpty) 'branch_inv': branchInv,
+        },
+        where: 'uuid = ? AND local_id = ? AND is_synced = 0 '
+            'AND payload IS ? AND updated_at IS ? AND status IS ?',
+        whereArgs: [
+          uuid, uploaded['local_id'], uploaded['payload'],
+          uploaded['updated_at'], uploaded['status'],
+        ],
+      );
+      if (changed == 0) {
+        // Retain the assigned IDs so the newer edit updates the same live order.
+        await txn.update(
+          'orders',
+          identity,
+          where: 'uuid = ? AND local_id = ? AND is_synced = 0 '
+              'AND server_id IS ?',
+          whereArgs: [uuid, uploaded['local_id'], uploaded['server_id']],
+        );
+      } else if (includesPayment) {
+        await txn.update(
+          'payments',
+          {'is_synced': 1},
+          where: 'is_synced = 0 AND order_uuid IN (?, ?)',
+          whereArgs: [uuid, serverId],
+        );
+      }
+      return changed != 0;
+    });
   }
 
   Future<int> updateOrderStatusByUuid(
@@ -1209,8 +1421,16 @@ CREATE TABLE orders (
     String? payload,
     double? total,
     double? tax,
+    bool refreshingCache = false,
   }) async {
     final db = await instance.database;
+    final cacheGuard = refreshingCache
+        ? ''' AND is_synced = 1 AND hub_synced = 1 AND NOT EXISTS (
+              SELECT 1 FROM payments p
+              WHERE p.is_synced = 0
+                AND p.order_uuid IN (orders.uuid, orders.server_id)
+            )'''
+        : '';
     final Map<String, dynamic> values = {'status': status};
     if (isSynced != null) values['is_synced'] = isSynced;
     if (serverId != null) values['server_id'] = serverId;
@@ -1223,14 +1443,14 @@ CREATE TABLE orders (
     int count = await db.update(
       'orders',
       values,
-      where: 'uuid = ?',
+      where: 'uuid = ?$cacheGuard',
       whereArgs: [uuid],
     );
     if (count == 0) {
       count = await db.update(
         'orders',
         values,
-        where: 'server_id = ?',
+        where: 'server_id = ?$cacheGuard',
         whereArgs: [uuid],
       );
     }
@@ -1259,6 +1479,7 @@ CREATE TABLE orders (
       String targetUuid;
       if (existing.isNotEmpty) {
         targetUuid = existing.first['uuid'];
+        orderValues['uuid'] = targetUuid;
         orderValues.remove('created_at'); // keep creation time
         orderValues['updated_at'] =
             nowIso; // every edit/settle moves it to "latest"
@@ -1292,19 +1513,22 @@ CREATE TABLE orders (
     });
   }
 
-  Future<void> deleteOrder(String id) async {
+  Future<void> deleteOrder(String id, {String? invNo}) async {
     final db = await instance.database;
     await db.transaction((txn) async {
-      final List<Map<String, dynamic>> maps = await txn.query(
+      final where = invNo == null
+          ? 'uuid = ? OR server_id = ?'
+          : 'uuid = ? OR server_id = ? OR inv_no = ?';
+      final whereArgs = [id, id, if (invNo != null) invNo];
+      final rows = await txn.query(
         'orders',
         columns: ['uuid'],
-        where: 'uuid = ? OR server_id = ?',
-        whereArgs: [id, id],
-        limit: 1,
+        where: where,
+        whereArgs: whereArgs,
       );
 
-      if (maps.isNotEmpty) {
-        final String uuid = maps.first['uuid'];
+      for (final row in rows) {
+        final uuid = row['uuid'];
         await txn.delete(
           'order_items',
           where: 'order_uuid = ?',
@@ -1317,11 +1541,7 @@ CREATE TABLE orders (
         );
       }
 
-      await txn.delete(
-        'orders',
-        where: 'uuid = ? OR server_id = ?',
-        whereArgs: [id, id],
-      );
+      await txn.delete('orders', where: where, whereArgs: whereArgs);
     });
   }
 
@@ -1505,7 +1725,7 @@ CREATE TABLE orders (
 
   // --- Master Data ---
   Future<void> insertCategories(List<Map<String, dynamic>> categories) async {
-    final db = await instance.database;
+    final db = await database;
     final batch = db.batch();
     for (var cat in categories) {
       batch.insert(
@@ -1523,7 +1743,7 @@ CREATE TABLE orders (
   }
 
   Future<void> insertProducts(List<Map<String, dynamic>> products) async {
-    final db = await instance.database;
+    final db = await database;
     await db.transaction((txn) async {
       final batch = txn.batch();
       for (var prod in products) {
@@ -1543,7 +1763,7 @@ CREATE TABLE orders (
   }) async {
     final db = await instance.database;
 
-    // Fallback: If product doesn't exist in specific price group, use default group (0)
+    // Fallback order: Requested price_group_id -> Default group (0) -> Any available price_group_id
     String query = '''
       SELECT p.*, c.token_printer_id as cat_token_printer
       FROM (
@@ -1551,20 +1771,24 @@ CREATE TABLE orders (
         UNION ALL
         SELECT * FROM products p1 WHERE price_group_id = 0 
         AND NOT EXISTS (SELECT 1 FROM products p2 WHERE p2.id = p1.id AND p2.price_group_id = ?)
+        UNION ALL
+        SELECT * FROM products p3 WHERE NOT EXISTS (SELECT 1 FROM products p4 WHERE p4.id = p3.id AND (p4.price_group_id = ? OR p4.price_group_id = 0))
       ) p
       LEFT JOIN categories c ON p.category_id = c.id
       WHERE 1=1
     ''';
 
-    List<dynamic> args = [priceGroupId, priceGroupId];
+    List<dynamic> args = [priceGroupId, priceGroupId, priceGroupId];
 
     if (categoryId != null && categoryId.isNotEmpty) {
       query += " AND p.category_id = ?";
       args.add(categoryId.trim());
     }
-    query += " ORDER BY p.sort_order ASC";
+    query += " GROUP BY p.id ORDER BY p.sort_order ASC";
 
-    return await db.rawQuery(query, args);
+    final results = await db.rawQuery(query, args);
+    log("DB_HELPER: getProducts(catId: $categoryId, pgId: $priceGroupId) -> fetched ${results.length} items");
+    return results;
   }
 
   Future<Map<String, dynamic>?> getProductById(
@@ -1579,6 +1803,8 @@ CREATE TABLE orders (
         UNION ALL
         SELECT * FROM products p1 WHERE id = ? AND price_group_id = 0 
         AND NOT EXISTS (SELECT 1 FROM products p2 WHERE p2.id = p1.id AND p2.price_group_id = ?)
+        UNION ALL
+        SELECT * FROM products p3 WHERE id = ? AND NOT EXISTS (SELECT 1 FROM products p4 WHERE p4.id = p3.id AND (p4.price_group_id = ? OR p4.price_group_id = 0))
       ) p
       LEFT JOIN categories c ON p.category_id = c.id
       LIMIT 1
@@ -1588,10 +1814,14 @@ CREATE TABLE orders (
       priceGroupId,
       productId,
       priceGroupId,
+      productId,
+      priceGroupId,
     ]);
     if (rows.isNotEmpty) {
+      log("DB_HELPER: getProductById($productId, pgId: $priceGroupId) -> found item: ${rows.first['name']}, price: ${rows.first['price']}");
       return rows.first;
     }
+    log("DB_HELPER: getProductById($productId, pgId: $priceGroupId) -> item NOT found");
     return null;
   }
 
@@ -1601,7 +1831,7 @@ CREATE TABLE orders (
   }) async {
     final db = await instance.database;
 
-    return await db.rawQuery(
+    final results = await db.rawQuery(
       '''
       SELECT p.*, c.token_printer_id as cat_token_printer
       FROM (
@@ -1609,15 +1839,20 @@ CREATE TABLE orders (
         UNION ALL
         SELECT * FROM products p1 WHERE price_group_id = 0 
         AND NOT EXISTS (SELECT 1 FROM products p2 WHERE p2.id = p1.id AND p2.price_group_id = ?)
+        UNION ALL
+        SELECT * FROM products p3 WHERE NOT EXISTS (SELECT 1 FROM products p4 WHERE p4.id = p3.id AND (p4.price_group_id = ? OR p4.price_group_id = 0))
       ) p
       LEFT JOIN categories c ON p.category_id = c.id
       WHERE p.name LIKE ? 
          OR p.id = ? 
          OR EXISTS (SELECT 1 FROM bulk_product_units b WHERE b.produnit_prod_id = CAST(p.id AS INTEGER) AND b.produnit_ean_barcode = ?)
+      GROUP BY p.id
       ORDER BY p.sort_order ASC
     ''',
-      [priceGroupId, priceGroupId, '%$query%', query, query],
+      [priceGroupId, priceGroupId, priceGroupId, '%$query%', query, query],
     );
+    log("DB_HELPER: searchProducts('$query', pgId: $priceGroupId) -> found ${results.length} items");
+    return results;
   }
 
   Future<void> insertProductUnits(
@@ -1707,7 +1942,7 @@ CREATE TABLE orders (
   }
 
   Future<void> insertAreas(List<Map<String, dynamic>> areas) async {
-    final db = await instance.database;
+    final db = await database;
     await db.transaction((txn) async {
       // This API provides a complete snapshot. Remove stale areas/tables before
       // inserting it so deleted or deactivated tables disappear without a full sync.
@@ -1730,12 +1965,13 @@ CREATE TABLE orders (
           for (int j = 0; j < tables.length; j++) {
             final table = tables[j];
             final seatCapacity = _toInt(
-              table['rt_seat_count'] ?? table['rt_avl_seat'],
+              table['rt_seat_count'] ?? table['rt_avl_seat'] ??
+                  table['rt_avl_seat_count'],
             );
             final availableSeats = _toInt(
-              table['rt_avl_seat'] ?? seatCapacity,
+              table['rt_avl_seat'] ?? table['rt_avl_seat_count'] ?? seatCapacity,
             );
-            if (seatCapacity <= 0 || availableSeats <= 0) continue;
+            if (seatCapacity <= 0) continue;
 
             batch.insert('pos_tables', {
               'id': _toInt(table['rt_id']),
@@ -1743,7 +1979,7 @@ CREATE TABLE orders (
               'name': table['rt_name'],
               'chair_count': seatCapacity,
               'available_seat_count': availableSeats,
-              'processing_table': jsonEncode(table['processing_table']),
+              'processing_table': jsonEncode(table['processing_table'] ?? []),
               'sort_order': j,
             });
           }
@@ -1762,14 +1998,14 @@ CREATE TABLE orders (
     final db = await instance.database;
     return await db.query(
       'pos_tables',
-      where: 'area_id = ? AND available_seat_count > 0',
+      where: 'area_id = ?',
       whereArgs: [areaId],
       orderBy: 'sort_order ASC',
     );
   }
 
   Future<void> insertFavorites(List<Map<String, dynamic>> favorites) async {
-    final db = await instance.database;
+    final db = await database;
     final batch = db.batch();
     for (int i = 0; i < favorites.length; i++) {
       final fav = favorites[i];
@@ -1793,7 +2029,7 @@ CREATE TABLE orders (
     int pgId,
     List<String> prdIds,
   ) async {
-    final db = await instance.database;
+    final db = await database;
     await db.transaction((txn) async {
       // Clear existing records for this favorite and price group to prevent stale data
       await txn.delete(
@@ -1847,7 +2083,7 @@ CREATE TABLE orders (
 
   // --- Units ---
   Future<void> insertUnits(List<dynamic> units) async {
-    final db = await instance.database;
+    final db = await database;
     final batch = db.batch();
     for (var unit in units) {
       batch.insert('units', {
@@ -1888,7 +2124,7 @@ CREATE TABLE orders (
   }
 
   Future<void> insertBulkProductUnits(List<dynamic> rawList) async {
-    final db = await instance.database;
+    final db = await database;
 
     log("DB_HELPER: Received ${rawList.length} records from API.");
     if (rawList.isNotEmpty) {
@@ -1979,7 +2215,7 @@ CREATE TABLE orders (
   }
 
   Future<void> insertBasicProductUnits(List<Map<String, dynamic>> units) async {
-    final db = await instance.database;
+    final db = await database;
     final batch = db.batch();
     for (var unit in units) {
       batch.insert(
@@ -2031,11 +2267,14 @@ CREATE TABLE orders (
         if (serverId.isEmpty) continue;
         final existing = await txn.query(
           'orders',
-          columns: ['uuid', 'branch_inv'],
+          columns: ['uuid', 'branch_inv', 'is_synced', 'hub_synced'],
           where: 'uuid = ? OR server_id = ?',
           whereArgs: [serverId, serverId],
-          limit: 1,
         );
+        if (existing.any((row) =>
+            row['is_synced'] != 1 || row['hub_synced'] == 0)) {
+          continue;
+        }
 
         final String serverBranch =
             (order['sales_odr_branch_inv'] ??
@@ -2049,8 +2288,7 @@ CREATE TABLE orders (
                   ? (existing.first['branch_inv']?.toString() ?? '')
                   : '');
 
-        await txn.insert('orders', {
-          'uuid': serverId,
+        final values = <String, Object?>{
           'server_id': serverId,
           'inv_no': (order['sales_odr_inv_no'] ?? '').toString(),
           'branch_inv': keepBranch,
@@ -2072,15 +2310,28 @@ CREATE TABLE orders (
               DateTime.now().toIso8601String(),
           'order_type_id': _toInt(order['sales_odr_order_type']),
           'table_id': (order['sales_odr_table_id'] ?? '').toString(),
-          'payload': jsonEncode(order), // Store raw response
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+          'payload': jsonEncode(order),
+        };
+        if (existing.isEmpty) {
+          await txn.insert('orders', {...values, 'uuid': serverId});
+        } else {
+          values.remove('created_at');
+          for (final row in existing) {
+            await txn.update(
+              'orders',
+              values,
+              where: 'uuid = ?',
+              whereArgs: [row['uuid']],
+            );
+          }
+        }
       }
     });
   }
 
   // --- Stock Unit Rates ---
   Future<void> insertStockUnitRates(List<dynamic> rates) async {
-    final db = await instance.database;
+    final db = await database;
     const chunkSize = 200;
     for (int i = 0; i < rates.length; i += chunkSize) {
       final end = (i + chunkSize < rates.length) ? i + chunkSize : rates.length;
@@ -2133,6 +2384,7 @@ CREATE TABLE orders (
     int priceGroupId,
   ) async {
     final db = await instance.database;
+    // 1. Query for requested priceGroupId
     List<Map<String, dynamic>> maps = await db.query(
       'stock_unit_rates',
       columns: ['sur_unit_rate', 'sur_unit_rate2'],
@@ -2140,6 +2392,7 @@ CREATE TABLE orders (
       whereArgs: [prdId, unitId, priceGroupId],
       limit: 1,
     );
+    // 2. Fallback to default priceGroupId = 0 if requested priceGroupId was not 0
     if (maps.isEmpty && priceGroupId != 0) {
       maps = await db.query(
         'stock_unit_rates',
@@ -2149,12 +2402,26 @@ CREATE TABLE orders (
         limit: 1,
       );
     }
+    // 3. Resilient Fallback: If still empty (e.g. pgId 0 requested but backend only has non-zero stock_unit_rates), return the first available valid stock rate for this product & unit
+    if (maps.isEmpty) {
+      maps = await db.query(
+        'stock_unit_rates',
+        columns: ['sur_unit_rate', 'sur_unit_rate2'],
+        where: 'sur_prd_id = ? AND sur_unit_id = ? AND (sur_unit_rate > 0 OR sur_unit_rate2 > 0)',
+        whereArgs: [prdId, unitId],
+        orderBy: 'sur_id ASC',
+        limit: 1,
+      );
+    }
+
     if (maps.isNotEmpty) {
+      log("DB_HELPER: getStockUnitRate(prdId: $prdId, unitId: $unitId, pgId: $priceGroupId) -> sur_unit_rate: ${maps.first['sur_unit_rate']}");
       return {
         'sur_unit_rate': _toDouble(maps.first['sur_unit_rate']),
         'sur_unit_rate2': _toDouble(maps.first['sur_unit_rate2']),
       };
     }
+    log("DB_HELPER: getStockUnitRate(prdId: $prdId, unitId: $unitId, pgId: $priceGroupId) -> null (no stock rate found)");
     return null;
   }
 

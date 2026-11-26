@@ -1,21 +1,17 @@
-import 'dart:developer';
 import 'package:flutter/material.dart';
+import 'package:restaurant_pos/app/widgets/order_follow_up.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart' hide ScreenType;
 import '../../../../../../../helper/network_helper.dart';
 import '../../../../../../../helper/snackbar_helper.dart';
 import '../../../../../../data/Device_Roles/device_roles.dart';
 import '../../../../../../data/models/order_model.dart';
-import '../../../../../../data/services/local_hub_client.dart';
 import '../../../../../../routes/app_pages.dart';
 import '../../../../../../theme/app_theme.dart';
 import '../../../../../../theme/app_typography.dart';
 import '../../../../../../widgets/reusable_button.dart';
 import '../../../../../cart/controller/cart_controller.dart';
 import '../../../../controller/dashboard_controller.dart';
-import '../../../../controller/order_controller.dart';
-import '../../../../controller/printer_controller.dart';
-import '../../../../controller/table_controller.dart';
 import '../../../../../../data/utils/AppState.dart';
 import '../../../../../../../helper/screen_type.dart';
 
@@ -23,257 +19,6 @@ class CartSummary extends StatelessWidget {
   final CartController controller;
 
   const CartSummary({super.key, required this.controller});
-
-  bool get _isLocalClient =>
-      DeviceConfig.operationMode == OperationMode.local &&
-      DeviceConfig.role == DeviceRole.client;
-
-  Future<bool> _validateClientReady() async {
-    if (!_isLocalClient) return true; // host / online: nothing to check
-
-    final ip = DeviceConfig.hostIp;
-    if (ip == null || ip.trim().isEmpty) {
-      showSafeSnackbar(
-        'main_cashier_not_set'.tr,
-        'main_cashier_ip_hint'.tr,
-      );
-      return false;
-    }
-
-    if (!DeviceConfig.hasAuthToken) {
-      showSafeSnackbar(
-        'device_not_registered'.tr,
-        'connect_to_hub_msg'.tr,
-      );
-      return false;
-    }
-
-    try {
-      await LocalHubClient.instance
-          .testConnection(hostIp: ip, port: DeviceConfig.hostPort)
-          .timeout(const Duration(seconds: 2));
-    } catch (_) {
-      // Warn but allow: placeOrder saves locally and SyncService retries later
-      showSafeSnackbar(
-        'hub_unreachable'.tr,
-        'offline_save_msg'.tr,
-      );
-    }
-    return true;
-  }
-
-  Future<bool> _validatePrinterReady() async {
-    final printerController = Get.find<PrinterController>();
-
-    // 1. Bluetooth permission check (no-op/true on non-Android platforms)
-    final hasPermission = await printerController.checkPermissions();
-    if (!hasPermission) {
-      showSafeSnackbar(
-        'permissions_required'.tr,
-        'bt_permission_kot_msg'.tr,
-      );
-      await printerController.requestBluetoothPermissions();
-      return false;
-    }
-
-    // 2. At least one printer must actually be assigned to a token
-    final hasAssignedPrinter = printerController.tokenPrinterAssignments.any(
-      (a) => a.printerAddress.value.isNotEmpty,
-    );
-    if (!hasAssignedPrinter) {
-      showSafeSnackbar(
-        'no_printer_assigned'.tr,
-        'no_printer_assigned_msg'.tr,
-      );
-      return false;
-    }
-
-    return true;
-  }
-
-  void _handlePlaceOrUpdateOrder({
-    bool isDraft = false,
-    int? payType,
-    double? cashAmt,
-    double? cardAmt,
-    bool isCompliment = false,
-    bool shouldPrintReceipt = false,
-  }) async {
-    if (controller.cartItems.isEmpty || controller.isProcessing.value) return;
-
-    // ✅ Table/Chair validation only required for Dine-In (id: 0)
-    if (AppState.orderType.id == 0 && !controller.hasSelectedTable) {
-      Get.find<DashboardController>().showError(
-        'table_required'.tr,
-        'select_table_msg'.tr,
-      );
-      return;
-    }
-
-    final hasValidItems = controller.cartItems.any(
-      (item) => !item.isDeleted.value && item.quantity.value > 0,
-    );
-
-    if (!hasValidItems) {
-      showSafeSnackbar(
-        'empty_order'.tr,
-        'empty_order_msg'.tr,
-      );
-      return;
-    }
-
-    if (controller.blockIfUnprintable()) return;
-
-    if (controller.selectedCaptainId.value == null) {
-      showSafeSnackbar(
-        'captain_required'.tr,
-        'captain_required_msg'.tr,
-      );
-      return;
-    }
-
-    if (DeviceConfig.isOnline && !await NetworkHelper.hasInternetConnection()) {
-      showSafeSnackbar('no_internet'.tr, 'check_network_msg'.tr);
-      return;
-    }
-
-    try {
-      controller.isProcessing.value = true;
-
-      final responseData = controller.isEditing
-          ? await controller.updateOrder(
-              isDraft: isDraft,
-              payType: payType,
-              cashAmt: cashAmt,
-              cardAmt: cardAmt,
-              isCompliment: isCompliment,
-            )
-          : await controller.placeOrder(
-              isDraft: isDraft,
-              payType: payType,
-              cashAmt: cashAmt,
-              cardAmt: cardAmt,
-              isCompliment: isCompliment,
-            );
-
-      if (responseData == null) {
-        if (DeviceConfig.isOnline &&
-            !await NetworkHelper.hasInternetConnection()) {
-          showSafeSnackbar('no_internet'.tr, 'check_network_msg'.tr);
-        } else {
-          showSafeSnackbar('error'.tr, 'unexpected_error'.tr);
-        }
-        return;
-      }
-
-      log("Order Success Response: $responseData");
-      if (DeviceConfig.operationMode == OperationMode.local) {
-        final localOrdersController = Get.find<OrdersController>();
-        final parsedOrder = localOrdersController.parseOrderResponse(
-          responseData,
-        );
-        localOrdersController.updateExistingOrder(parsedOrder);
-      }
-
-      // ✅ CHECK FOR ERROR STATUS IN RESPONSE
-      bool hasError = false;
-      String errorMessage = "";
-
-      if (responseData is Map) {
-        if (responseData['message'] is Map) {
-          final messageMap = responseData['message'] as Map;
-          if (messageMap['status'] == 0) {
-            hasError = true;
-            errorMessage = messageMap['msg'] ?? "Order processing failed";
-          }
-        }
-        else if (responseData['status'] == 0) {
-          hasError = true;
-          errorMessage =
-              responseData['message']?.toString() ?? "Order processing failed";
-        }
-      }
-
-      if (hasError) {
-        if (errorMessage.toLowerCase().contains('seat') || errorMessage.toLowerCase().contains('available')) {
-          try {
-            if (Get.isRegistered<TablesController>()) {
-              await Get.find<TablesController>().fetchTables(silent: true);
-            }
-          } catch (_) {}
-          showSafeSnackbar("Table Seat Notice", errorMessage);
-        } else {
-          showSafeSnackbar('error'.tr, errorMessage);
-        }
-        return;
-      }
-
-      if (responseData is Map && responseData['no_change'] == true) {
-        controller.stopEditing();
-        showSafeSnackbar('no_change'.tr, 'no_change_msg'.tr);
-        return;
-      }
-
-      final ordersController = Get.find<OrdersController>();
-      final bool wasEditing = controller.isEditing;
-      final bool wasDraftVal = controller.wasDraft.value;
-      final List<OrderItem> originalItemsCopy = List<OrderItem>.from(
-        controller.originalItems,
-      );
-
-      final String snapshotTableName = controller.selectedTableName.value;
-      final int snapshotChairCount = controller.selectedChairCount.value;
-      OrderModel? liveOrder;
-      try {
-        liveOrder = ordersController.parseOrderResponse(
-          responseData,
-          fallbackTableName: snapshotTableName,
-          fallbackChairCount: snapshotChairCount,
-        );
-      } catch (e) {
-        debugPrint("Pre-clear parse failed: $e");
-      }
-      if (wasEditing) {
-        showSafeSnackbar(
-          isDraft ? 'draft_updated'.tr : 'order_updated'.tr,
-          isDraft
-              ? 'draft_updated_msg'.tr
-              : 'order_updated_msg'.tr,
-        );
-        controller.stopEditing();
-      } else {
-        showSafeSnackbar(
-          isDraft ? 'draft_saved'.tr : 'order_placed'.tr,
-          isDraft ? 'draft_saved_msg'.tr : 'order_placed_msg'.tr,
-        );
-        controller.clearCart();
-        controller.clearTable();
-      }
-
-      Get.offAllNamed(ScreenType.isMobile() ? Routes.ORDER_TYPE : Routes.HOME);
-
-      _runBackgroundTasks(
-        liveOrder: liveOrder,
-        responseData: responseData,
-        isDraft: isDraft,
-        wasEditing: wasEditing,
-        wasDraft: wasDraftVal,
-        originalItems: originalItemsCopy,
-        ordersController: ordersController,
-        snapshotTableName: snapshotTableName,
-        snapshotChairCount: snapshotChairCount,
-        shouldPrintReceipt: shouldPrintReceipt,
-      );
-    } catch (e) {
-      debugPrint("Order processing error: $e");
-      showSafeSnackbar(
-        'error'.tr,
-        'unexpected_error'.tr,
-      );
-    } finally {
-      controller.isProcessing.value = false;
-    }
-  }
 
   void _navigateToCashier() async {
     if (controller.cartItems.isEmpty || controller.isProcessing.value) return;
@@ -350,61 +95,6 @@ class CartSummary extends StatelessWidget {
     );
 
     Get.toNamed(Routes.CASHIER, arguments: tempOrder);
-  }
-
-  void _runBackgroundTasks({
-    required dynamic responseData,
-    required bool isDraft,
-    required bool wasEditing,
-    required bool wasDraft,
-    required List<OrderItem> originalItems,
-    required OrdersController ordersController,
-    String snapshotTableName = "",
-    int snapshotChairCount = 0,
-    bool shouldPrintReceipt = false,
-    OrderModel? liveOrder,
-  }) async {
-    if (!isDraft) {
-      final printerController = Get.find<PrinterController>();
-      final OrderModel order = liveOrder ??
-          ordersController.parseOrderResponse(
-            responseData,
-            fallbackTableName: snapshotTableName,
-            fallbackChairCount: snapshotChairCount,
-          );
-      final oldItemsForKOT = (wasEditing && !wasDraft) ? originalItems : null;
-
-      try {
-        final kotSuccess = await printerController.printKOT(order, oldItems: oldItemsForKOT);
-        if (!kotSuccess) {
-          showSafeSnackbar('KOT Print Failed', 'Order placed, but KOT printing failed. Please check printer connection and retry from Orders.');
-        }
-      } catch (e) {
-        debugPrint("KOT print failed: $e");
-        showSafeSnackbar('KOT not printed', '$e');
-      }
-
-      if (shouldPrintReceipt) {
-        await Future.delayed(const Duration(milliseconds: 600)); // BT printer switch gap
-        try {
-          final receiptSuccess = await printerController.printReceipt(order, 0, 0, isBill: true);
-          if (!receiptSuccess) {
-            showSafeSnackbar('Bill Print Failed', 'Bill printing failed. Please check printer connection and retry.');
-          }
-        } catch (e) {
-          debugPrint("Receipt print failed: $e");
-          showSafeSnackbar('Receipt not printed', '$e');
-        }
-      }
-    }
-
-    try {
-      if (DeviceConfig.operationMode != OperationMode.local) {
-        await ordersController.fetchOrdersSafely();
-      }
-    } catch (e) {
-      debugPrint("Background Fetch Orders failed: $e");
-    }
   }
 
   @override
@@ -500,17 +190,14 @@ class CartSummary extends StatelessWidget {
                     child: PrimaryButton(
                       isLoading: controller.isProcessing.value,
                       height: 48.h,
-                      onPressed: () async {
-                        if (DeviceConfig.isOnline &&
-                            !await NetworkHelper.hasInternetConnection()) {
-                          showSafeSnackbar(
-                            'no_internet'.tr,
-                            'check_network_msg'.tr,
-                          );
-                          return;
-                        }
-                        _handlePlaceOrUpdateOrder(isDraft: true);
-                      },
+                      onPressed: () => submitCartOrder(
+                        controller: controller,
+                        destination: ScreenType.isMobile()
+                            ? Routes.ORDER_TYPE
+                            : Routes.HOME,
+                        requireCaptain: true,
+                        isDraft: true,
+                      ),
                       color: colors.isDark
                           ? Colors.orange.shade900
                           : Colors.orange.shade700,
@@ -522,20 +209,14 @@ class CartSummary extends StatelessWidget {
                     flex: 2,
                     child: PrimaryButton(
                       isLoading: controller.isProcessing.value,
-                      onPressed: () async {
-                        if (DeviceConfig.isOnline &&
-                            !await NetworkHelper.hasInternetConnection()) {
-                          showSafeSnackbar(
-                            'no_internet'.tr,
-                            'check_network_msg'.tr,
-                          );
-                          return;
-                        }
-                        if (!await _validateClientReady()) return;
-                        final ready = await _validatePrinterReady();
-                        if (!ready) return;
-                        _handlePlaceOrUpdateOrder(isDraft: false);
-                      },
+                      onPressed: () => submitCartOrder(
+                        controller: controller,
+                        destination: ScreenType.isMobile()
+                            ? Routes.ORDER_TYPE
+                            : Routes.HOME,
+                        requireCaptain: true,
+                        validateClient: true,
+                      ),
                       text: controller.isEditing
                           ? 'update_kot'.tr
                           : 'place_order'.tr,
@@ -550,22 +231,14 @@ class CartSummary extends StatelessWidget {
                     child: PrimaryButton(
                       isLoading: controller.isProcessing.value,
                       height: 48.h,
-                      onPressed: () async {
-                        if (DeviceConfig.isOnline &&
-                            !await NetworkHelper.hasInternetConnection()) {
-                          showSafeSnackbar(
-                            'no_internet'.tr,
-                            'check_network_msg'.tr,
-                          );
-                          return;
-                        }
-                        final ready = await _validatePrinterReady();
-                        if (!ready) return;
-                        _handlePlaceOrUpdateOrder(
-                          isDraft: false,
-                          shouldPrintReceipt: true,
-                        );
-                      },
+                      onPressed: () => submitCartOrder(
+                        controller: controller,
+                        destination: ScreenType.isMobile()
+                            ? Routes.ORDER_TYPE
+                            : Routes.HOME,
+                        requireCaptain: true,
+                        shouldPrintReceipt: true,
+                      ),
                       color: Colors.blueGrey,
                       text: 'kot_and_print'.tr,
                     ),

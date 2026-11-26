@@ -173,7 +173,8 @@ class HomeView extends GetView<HomeController> {
 
                       SizedBox(width: 2.w),
                       _buildThemeToggle(context),
-                      _buildLanguageToggle(context),
+                      if (AppState.cmpTaxType == 1)
+                        _buildLanguageToggle(context),
                     ],
                   ),
                 ),
@@ -248,7 +249,13 @@ class HomeView extends GetView<HomeController> {
                   color: colors.bg,
                   child: IndexedStack(
                     index: controller.selectedIndex.value,
-                    children: controller.pages,
+                    children: [
+                      for (var index = 0; index < controller.pages.length; index++)
+                        TickerMode(
+                          enabled: index == controller.selectedIndex.value,
+                          child: controller.pages[index],
+                        ),
+                    ],
                   ),
                 ),
               ),

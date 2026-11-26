@@ -11,6 +11,7 @@ import 'package:restaurant_pos/app/modules/cart/controller/cart_controller.dart'
 import 'package:restaurant_pos/app/widgets/reusable_button.dart';
 import '../../../../helper/snackbar_helper.dart';
 import '../../../data/Device_Roles/device_roles.dart';
+import '../../../data/services/api_endpoints.dart';
 import '../../../data/services/api_services.dart';
 import '../../../data/services/database_helper.dart';
 import '../../../data/services/local_hub_client.dart';
@@ -43,7 +44,6 @@ class AreaModel {
       priceGroupID: (json['ra_prcgrp_id'] as num? ?? 0).toInt(),
       tables: (json['pos_tables'] as List? ?? [])
           .map((t) => TableModel.fromJson(t as Map<String, dynamic>))
-          .where((table) => table.availableSeatCount > 0)
           .toList(),
     );
   }
@@ -68,22 +68,27 @@ class TableModel {
     final capacity = (json['rt_seat_count'] as num? ??
             (json['chair_count'] as num? ??
                 (json['rt_avl_seat'] as num? ??
-                    (json['available_seat_count'] as num? ?? 0))))
+                    (json['rt_avl_seat_count'] as num? ??
+                        (json['available_seat_count'] as num? ?? 0)))))
         .toInt();
     final availableSeats =
         (json['rt_avl_seat'] as num? ??
+                json['rt_avl_seat_count'] as num? ??
                 json['available_seat_count'] as num? ??
                 capacity)
             .toInt();
+
+    final processing = json['processing_table'];
+    final decodedProcessing = processing is String
+        ? jsonDecode(processing)
+        : processing;
 
     return TableModel(
       id: (json['rt_id'] as num? ?? (json['id'] as num? ?? 0)).toInt(),
       name: (json['rt_name'] ?? (json['name'] ?? '')).toString(),
       chairCount: capacity,
       availableSeatCount: availableSeats,
-      processingTable: json['processing_table'] is String
-          ? jsonDecode(json['processing_table'])
-          : (json['processing_table'] is List ? json['processing_table'] : []),
+      processingTable: decodedProcessing is List ? decodedProcessing : [],
     );
   }
 
@@ -209,7 +214,7 @@ class TablesController extends GetxController with WidgetsBindingObserver {
         };
         try {
           final response = await _apiService.post(
-            'mobileapp/pos/get_pos_table',
+            ApiEndpoints.getTables,
             data: requestBody,
           );
           if (response.statusCode == 200) {
@@ -254,10 +259,6 @@ class TablesController extends GetxController with WidgetsBindingObserver {
 
         final tableId = (order['table_id'] as num?)?.toInt();
         if (tableId == null) continue;
-        if (cartController.isEditing &&
-            order['uuid'] == cartController.editingOrderId.value) {
-          continue;
-        }
 
         // Mark both UUID and server_id to avoid double counting with Host data
         final uuid = order['uuid']?.toString();
@@ -266,6 +267,12 @@ class TablesController extends GetxController with WidgetsBindingObserver {
         final serverId = order['server_id']?.toString();
         if (serverId != null && serverId.isNotEmpty) {
           skipIds.add(serverId);
+        }
+
+        if (cartController.isEditing &&
+            (uuid == cartController.editingOrderId.value ||
+                serverId == cartController.editingOrderId.value)) {
+          continue;
         }
 
         int seats = 0;
@@ -302,7 +309,6 @@ class TablesController extends GetxController with WidgetsBindingObserver {
           priceGroupID: areaMap['price_group_id'],
           tables: tablesMap
               .map((t) => TableModel.fromJson(t))
-              .where((table) => table.availableSeatCount > 0)
               .toList(),
         ),
       );
@@ -373,6 +379,18 @@ class TablesController extends GetxController with WidgetsBindingObserver {
     return occupied;
   }
 
+  List<TableModel> get visibleTables {
+    final cartController = Get.find<CartController>();
+    final originalTableId = cartController.isEditing
+        ? cartController.originalTableId.value
+        : '';
+    return (selectedArea.value?.tables ?? <TableModel>[])
+        .where((table) =>
+            table.availableSeatCount > 0 ||
+            table.id.toString() == originalTableId)
+        .toList();
+  }
+
   void selectTable(TableModel table) {
     final cartController = Get.find<CartController>();
 
@@ -382,13 +400,21 @@ class TablesController extends GetxController with WidgetsBindingObserver {
       includeCurrentSelection: false,
     );
 
-    final isEditingCurrentTable =
-        cartController.isEditing &&
-        cartController.selectedTableId.value == table.id.toString();
-    if ((table.availableSeatCount > 0 || isEditingCurrentTable) &&
+    final isEditingOriginalTable = cartController.isEditing &&
+        cartController.originalTableId.value == table.id.toString();
+    if (isEditingOriginalTable && table.availableSeatCount <= 0) {
+      final occupiedByOtherOrders =
+          table.chairCount - cartController.originalChairCount.value;
+      if (occupiedByOtherOrders > baseOccupiedCount) {
+        baseOccupiedCount = occupiedByOtherOrders;
+      }
+    }
+    if ((table.availableSeatCount > 0 || isEditingOriginalTable) &&
         baseOccupiedCount < table.chairCount) {
       if (cartController.selectedTableId.value == table.id.toString()) {
-        selectedChairCount.value = cartController.selectedChairCount.value;
+        selectedChairCount.value = cartController.selectedChairCount.value
+            .clamp(0, table.chairCount - baseOccupiedCount)
+            .toInt();
       } else {
         selectedChairCount.value = 0;
       }
