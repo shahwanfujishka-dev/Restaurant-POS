@@ -385,63 +385,7 @@ void _showOrderDetailsDialog(
                   ),
                   Row(
                     children: [
-                      if (controller.loadingOrderDetailsIds.contains(currentOrder.id) ||
-                          (currentOrder.invNo.isNotEmpty &&
-                              controller.loadingOrderDetailsIds.contains(currentOrder.invNo)))
-                        Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 1.w),
-                          child: Shimmer.fromColors(
-                            baseColor: Colors.grey.shade300,
-                            highlightColor: Colors.grey.shade100,
-                            child: SizedBox(
-                              width: 20.w,
-                              height: 20.h,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(4.r),
-                                ),
-                              ),
-                            ),
-                          ),
-                        )
-                      else ...[
-                        if (currentOrder.sales_odr_pos_status == 1 ||
-                            currentOrder.sales_odr_pos_status == 2 ||
-                            currentOrder.status.value == OrderStatus.paid)
-                          Obx(() {
-                            final bool isPrinting =
-                                controller.printingOrderIds.contains(currentOrder.id) ||
-                                (currentOrder.invNo.isNotEmpty &&
-                                    controller.printingOrderIds.contains(currentOrder.invNo));
-                            return IconButton(
-                              onPressed: isPrinting ? null : () => controller.handlePrint(currentOrder),
-                              icon: isPrinting
-                                  ? printShimmer(size: AppTypography.sizeText)
-                                  : const Icon(Icons.print, color: Colors.blue),
-                              tooltip: 'print_kot'.tr,
-                            );
-                          }),
-                        if ((currentOrder.sales_odr_pos_status == 1 ||
-                                currentOrder.sales_odr_pos_status == 2) &&
-                            currentOrder.status.value != OrderStatus.paid)
-                          Obx(() {
-                            final bool isPrinting =
-                                controller.printingOrderIds.contains(currentOrder.id) ||
-                                (currentOrder.invNo.isNotEmpty &&
-                                    controller.printingOrderIds.contains(currentOrder.invNo));
-                            return IconButton(
-                              onPressed: isPrinting ? null : () => controller.handlePrint(currentOrder, isBill: true),
-                              icon: isPrinting
-                                  ? printShimmer(size: AppTypography.sizeText)
-                                  : const Icon(
-                                Icons.receipt_long,
-                                color: Colors.orange,
-                              ),
-                              tooltip: 'print_bill'.tr,
-                            );
-                          }),
-                      ],
+                      ..._printActions(controller, currentOrder, detailsState),
                       if (currentOrder.status.value != OrderStatus.paid)
                         IconButton(
                           onPressed: () {
@@ -474,11 +418,13 @@ void _showOrderDetailsDialog(
                       color: Colors.orange,
                     ),
                     SizedBox(width: 4.w),
-                    Text(
-                      controller.getElapsedTime(currentOrder.createdAt),
-                      style: AppTypography.cardTitle.copyWith(
-                        color: Colors.orange,
-                        fontWeight: FontWeight.bold,
+                    Obx(
+                      () => Text(
+                        controller.getElapsedTime(currentOrder.createdAt),
+                        style: AppTypography.cardTitle.copyWith(
+                          color: Colors.orange,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ],
@@ -558,16 +504,7 @@ void _showOrderDetailsDialog(
                                     ),
                                   ),
 
-                                  for (final a in item.selectedAddons.where(
-                                        (a) => a.price > 0 && a.quantity.value > 0,
-                                  ))
-                                    Text(
-                                      '+ ${a.name} x${a.quantity.value}  ${(a.price * a.quantity.value).toStringAsFixed(2)}',
-                                      style: AppTypography.cardSubtitle.copyWith(
-                                        color: colors.subtext,
-                                        fontStyle: FontStyle.italic,
-                                      ),
-                                    ),
+                                  ..._orderDetailAddons(item, colors),
                                 ],
                               ),
                             ),
@@ -1338,63 +1275,7 @@ class _OrderDetailsContent extends StatelessWidget {
                 ),
                 Row(
                   children: [
-                    if (controller.loadingOrderDetailsIds.contains(currentOrder.id) ||
-                        (currentOrder.invNo.isNotEmpty &&
-                            controller.loadingOrderDetailsIds.contains(currentOrder.invNo)))
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8.w),
-                        child: Shimmer.fromColors(
-                          baseColor: Colors.grey.shade300,
-                          highlightColor: Colors.grey.shade100,
-                          child: SizedBox(
-                            width: 20.w,
-                            height: 20.h,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(4.r),
-                              ),
-                            ),
-                          ),
-                        ),
-                      )
-                    else ...[
-                      if (currentOrder.sales_odr_pos_status == 1 ||
-                          currentOrder.sales_odr_pos_status == 2 ||
-                          currentOrder.status.value == OrderStatus.paid)
-                        Obx(() {
-                          final bool isPrinting =
-                              controller.printingOrderIds.contains(currentOrder.id) ||
-                              (currentOrder.invNo.isNotEmpty &&
-                                  controller.printingOrderIds.contains(currentOrder.invNo));
-                          return IconButton(
-                            onPressed: isPrinting ? null : () => controller.handlePrint(currentOrder),
-                            icon: isPrinting
-                                ? printShimmer(size: AppTypography.sizeText)
-                                : const Icon(Icons.print, color: Colors.blue),
-                            tooltip: 'print_kot'.tr,
-                          );
-                        }),
-                      if (currentOrder.sales_odr_pos_status == 1 ||
-                          currentOrder.sales_odr_pos_status == 2 &&
-                              currentOrder.status.value != OrderStatus.paid)
-                        Obx(() {
-                          final bool isPrinting =
-                              controller.printingOrderIds.contains(currentOrder.id) ||
-                              (currentOrder.invNo.isNotEmpty &&
-                                  controller.printingOrderIds.contains(currentOrder.invNo));
-                          return IconButton(
-                            onPressed: isPrinting ? null : () => controller.handlePrint(currentOrder, isBill: true),
-                            icon: isPrinting
-                                ? printShimmer(size: AppTypography.sizeText)
-                                : const Icon(
-                              Icons.receipt_long,
-                              color: Colors.orange,
-                            ),
-                            tooltip: 'print_bill'.tr,
-                          );
-                        }),
-                    ],
+                    ..._printActions(controller, currentOrder, detailsState),
                     if (currentOrder.status.value != OrderStatus.paid &&
                         currentOrder.status.value != OrderStatus.cancelled)
                       IconButton(
@@ -1437,11 +1318,13 @@ class _OrderDetailsContent extends StatelessWidget {
                     color: Colors.orange,
                   ),
                   SizedBox(width: 4.w),
-                  Text(
-                    controller.getElapsedTime(currentOrder.createdAt),
-                    style: AppTypography.cardTitle.copyWith(
-                      color: Colors.orange,
-                      fontWeight: FontWeight.bold,
+                  Obx(
+                    () => Text(
+                      controller.getElapsedTime(currentOrder.createdAt),
+                      style: AppTypography.cardTitle.copyWith(
+                        color: Colors.orange,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ],
@@ -1515,6 +1398,7 @@ class _OrderDetailsContent extends StatelessWidget {
                                     color: colors.text,
                                   ),
                                 ),
+                                ..._orderDetailAddons(item, colors),
                               ],
                             ),
                           ),
@@ -1640,6 +1524,61 @@ class _OrderDetailsContent extends StatelessWidget {
       }),
     );
   }
+}
+
+Iterable<Widget> _orderDetailAddons(OrderItem item, AppColors colors) sync* {
+  for (final addon in item.selectedAddons) {
+    final quantity = addon.quantity.value;
+    if (quantity <= 0) continue;
+    final amount = (addon.price * quantity).toStringAsFixed(2);
+    yield Text(
+      '+ ${addon.name} x$quantity  $amount',
+      style: AppTypography.cardSubtitle.copyWith(
+        color: colors.subtext,
+        fontStyle: FontStyle.italic,
+      ),
+    );
+  }
+}
+
+List<Widget> _printActions(
+    OrdersController c,
+    OrderModel o,
+    OrderDetailsState state,
+    ) {
+  if (state == OrderDetailsState.loading) {
+    return [Padding(
+      padding: EdgeInsets.symmetric(horizontal: 4.w),
+      child: printShimmer(size: AppTypography.sizeText),
+    )];
+  }
+  if (state != OrderDetailsState.loaded) return const []; // failed -> no print
+
+  final isPaid = o.status.value == OrderStatus.paid;
+  final pos = o.sales_odr_pos_status;
+  final canPrintBillOrKot = pos == 1 || pos == 2;
+
+  Widget btn(IconData ic, Color col, String tip, {bool bill = false}) =>
+      Obx(() {
+        final printing = c.printingOrderIds.contains(o.id) ||
+            (o.invNo.isNotEmpty && c.printingOrderIds.contains(o.invNo));
+        return IconButton(
+          onPressed: printing ? null : () => c.handlePrint(o, isBill: bill),
+          icon: printing
+              ? printShimmer(size: AppTypography.sizeText)
+              : Icon(ic, color: col),
+          tooltip: tip.tr,
+        );
+      });
+
+  return [
+    if (isPaid)
+      btn(Icons.receipt_long, Colors.orange, 'print_receipt')
+    else if (canPrintBillOrKot) ...[
+      btn(Icons.print, Colors.blue, 'print_kot'),
+      btn(Icons.receipt_long, Colors.orange, 'print_bill', bill: true),
+    ],
+  ];
 }
 
 Widget _totalsShimmer(AppColors colors, Color accent, {int rows = 4}) {

@@ -80,6 +80,14 @@ class DeviceConfig {
 
   static bool get isLocal => operationMode == OperationMode.local;
 
+  static const _requireOrderPrintingKey = 'require_order_printing';
+
+  static bool get requireOrderPrinting =>
+      _storage.read<bool>(_requireOrderPrintingKey) ?? false;
+
+  static Future<void> setRequireOrderPrinting(bool value) =>
+      _storage.write(_requireOrderPrintingKey, value);
+
   // ============================================================
   // HOST IP
   // ============================================================

@@ -8,6 +8,7 @@ import '../../../../helper/snackbar_helper.dart';
 import '../../../data/Device_Roles/device_roles.dart';
 import '../../../data/models/order_model.dart';
 import '../../../data/models/order_type.dart';
+import '../../../data/services/api_endpoints.dart';
 import '../../../data/services/api_services.dart';
 import '../../../data/services/database_helper.dart';
 import '../../../data/services/local_hub_client.dart';
@@ -388,7 +389,7 @@ class CartController extends GetxController {
     editingBranchInv.value = order.branchInv ?? ""; // ✅ Added
     editingTokenNo.value = order.tokenNo ?? "";
     wasDraft.value = order.sales_odr_pos_status == 0;
-    originalItems.assignAll(order.items);
+    final originalItemsForKot = <OrderItem>[];
     editingOrderFullData = _buildProcessingTable(order);
 
     assert(() {
@@ -504,6 +505,28 @@ class CartController extends GetxController {
 
       final originalAddonCopy = [...rawOriginals, ...freeAddonOriginals];
 
+      // Some orders store an existing free add-on on the unit.
+      // Use the same saved add-on quantities for the KOT and order update.
+      originalItemsForKot.add(
+        OrderItem(
+          subId: item.subId,
+          product: item.product,
+          unit: item.unit,
+          selectedAddons: originalAddonCopy.map((addon) => addon.copyWith()).toList(),
+          addonParentPrdId: item.addonParentPrdId,
+          addonParentUnitId: item.addonParentUnitId,
+          unitId: item.unitId,
+          tokenPrinterId: item.tokenPrinterId,
+          addonSubIdMap: item.addonSubIdMap,
+          quantity: item.quantity,
+          priceAtOrder: item.priceAtOrder,
+          isKotModified: item.isKotModified,
+          cgstRate: item.cgstRate,
+          sgstRate: item.sgstRate,
+          notes: item.notes,
+        ),
+      );
+
       cartItems.add(
         CartItem(
           subId: item.subId,
@@ -522,6 +545,7 @@ class CartController extends GetxController {
         ),
       );
     }
+    originalItems.assignAll(originalItemsForKot);
     cartItems.refresh();
     _rehydrateUnits();
   }
@@ -982,15 +1006,12 @@ class CartController extends GetxController {
     return sid.isEmpty || sid.startsWith('ORD-');
   }
 
-  Future<
-    ({
+  Future<({
       List<Map<String, dynamic>> saleItems,
       List<Map<String, dynamic>> localItems,
       double totalTax,
       double totalWithTax,
-    })
-  >
-  _buildCreateItems(bool isVatDisabled, String orderUuid) async {
+    })> _buildCreateItems(bool isVatDisabled, String orderUuid) async {
     final List<Map<String, dynamic>> saleItems = [];
     final List<Map<String, dynamic>> localItems = [];
     double totalTax = 0;
@@ -1200,7 +1221,7 @@ class CartController extends GetxController {
             "salesub_unit_display": addon.unitDisplay,
             "taxvalperqty": taxAmntPerUnit,
             "salesub_amnt": subtotal,
-            "is_addon": 0,
+            "is_addon": 1,
             "addon_parent_prd_id": int.tryParse(item.product.id),
             "addon_parent_unit_id": item.unit.unitId,
             "item_desc": "",
@@ -1279,10 +1300,62 @@ class CartController extends GetxController {
         ...Map<String, dynamic>.from(message as Map),
         'preview': preview,
       };
-    } else {
-      response['preview'] = preview;
     }
+    response['preview'] = preview;
     return response;
+  }
+
+  Future<bool> _prepareRequiredPrinting(
+    Map<String, dynamic> preview, {
+    required bool printBill,
+    required bool online,
+    Future<bool> Function(Map<String, dynamic>)? printPayment,
+  }) async {
+    String? missingAssignment;
+    try {
+      if (blockIfUnprintable()) return false;
+      final printer = Get.find<PrinterController>();
+      bool printed;
+      if (printPayment != null) {
+        printed = online
+            ? await printer.checkReceiptPrinterForOrder()
+            : await printPayment(preview);
+      } else {
+        final order = Get.find<OrdersController>().parseOrderResponse(preview);
+        printed = order.items.isNotEmpty && await printer.printKOT(
+          order,
+          oldItems: isEditing && !wasDraft.value ? originalItems : null,
+          suppressDuplicates: false,
+          checkConnections: online,
+          includeReceipt: online && printBill,
+          onMissingAssignment: (message) => missingAssignment = message,
+        );
+        if (printed && printBill && !online) {
+          printed = await printer.printReceipt(order, 0, 0, isBill: true);
+        }
+      }
+      if (printed) return true;
+    } catch (e) {
+      log('Required printing preparation failed: $e');
+    }
+    await Get.dialog<void>(
+      AlertDialog(
+        title: const Text('Printing required'),
+        content: Text(
+          missingAssignment == null
+              ? 'The order was not saved. Make sure the printer is switched on, '
+                'nearby, and has paper, then try the order again.'
+              : 'The order was not saved.\n\n$missingAssignment',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back<void>(),
+            child: Text('close'.tr),
+          ),
+        ],
+      ),
+    );
+    return false;
   }
 
   Future<Map<String, dynamic>?> placeOrder({
@@ -1306,8 +1379,11 @@ class CartController extends GetxController {
     bool isBill = false,
     int? splitCount,
     List<double> splitAmounts = const [],
-    bool skipPrinterCheck = false,
+    bool printBill = false,
+    Future<bool> Function(Map<String, dynamic>)? printPayment,
   }) async {
+    final requiresPrinting = DeviceConfig.requireOrderPrinting;
+    final operationMode = DeviceConfig.operationMode;
     try {
       if (AppState.orderType == OrderType.dineIn &&
           selectedTableId.value.isEmpty) {
@@ -1315,38 +1391,6 @@ class CartController extends GetxController {
         return null;
       }
       if (!await _ensureHubReachable()) return null;
-      if (!skipPrinterCheck && !isDraft) {
-        final printerCtrl = Get.find<PrinterController>();
-
-        // replace `cartItems` with your actual cart list (List<OrderItem>)
-        final failed = await printerCtrl.getUnreachablePrinters(
-          cartItems
-              .where((i) => !i.isDeleted.value)
-              .map((i) => i.product)
-              .toList(),
-        );
-
-        if (failed.isNotEmpty) {
-          final proceed = await Get.dialog<bool>(
-            AlertDialog(
-              title: const Text("Printer not connected"),
-              content: Text("Cannot reach: ${failed.join(', ')}"),
-              actions: [
-                TextButton(
-                  onPressed: () => Get.back(result: false),
-                  child: const Text("Cancel"),
-                ),
-                TextButton(
-                  onPressed: () => Get.back(result: true),
-                  child: const Text("Continue without print"),
-                ),
-              ],
-            ),
-            barrierDismissible: false,
-          );
-          if (proceed != true) return null; // order NOT posted
-        }
-      }
       final now = DateTime.now();
       final dateStr = DateFormat('yyyy-MM-dd').format(now);
       final syncTime = "${DateFormat('yyMMddHHmmssSSS').format(now)}000";
@@ -1442,7 +1486,27 @@ class CartController extends GetxController {
         "server_sync_time": syncTime,
       };
 
-      final operationMode = DeviceConfig.operationMode;
+      if (requiresPrinting && !isDraft &&
+          !await _prepareRequiredPrinting(
+            _buildOfflineResponse(
+              orderUuid: orderUuid,
+              branchInv: '',
+              tokenNo: offlineToken,
+              body: body,
+              totalWithTax: finalTotal,
+              totalTax: totalTax,
+              saleItems: saleItems,
+              isDraft: false,
+              now: now,
+              isCompliment: isCompliment,
+            ),
+            printBill: printBill,
+            online: operationMode == OperationMode.online,
+            printPayment: printPayment,
+          )) {
+        return {'print_blocked': true};
+      }
+
       final deviceRole = DeviceConfig.role;
 
       if (operationMode == OperationMode.local) {
@@ -1537,7 +1601,7 @@ class CartController extends GetxController {
 
       try {
         final response = await _apiService.post(
-          "mobileapp/pos/add_sales_order",
+          ApiEndpoints.createSalesOrder,
           data: body,
         );
         void debugPrintLong(String text, {int chunkSize = 800}) {
@@ -1631,7 +1695,11 @@ class CartController extends GetxController {
     int? splitCount,
     bool isBill = false,
     List<double> splitAmounts = const [],
+    bool printBill = false,
+    Future<bool> Function(Map<String, dynamic>)? printPayment,
   }) async {
+    final requiresPrinting = DeviceConfig.requireOrderPrinting;
+    final operationMode = DeviceConfig.operationMode;
     try {
       if (AppState.orderType == OrderType.dineIn &&
           selectedTableId.value.isEmpty) {
@@ -1973,53 +2041,24 @@ class CartController extends GetxController {
             (sa) => sa.prdId == addon.prdId,
           );
 
-          // ── Resolve selected version ─────────────────────────────────────────
           final AddonModel? selectedVersion = item.selectedAddons
               .firstWhereOrNull((sa) => sa.prdId == addon.prdId);
-
-          // ── SOURCE OF TRUTH: always read freeQty & catalog price from existAddOns ──
-          // The selectedAddon copy can lose freeQty (cloned as 0) and price (cloned as 0
-          // for free addons) — both are needed to correctly split free vs paid portions.
           final AddonModel? existSource = existAddOnMap[addon.prdId];
           final int resolvedFreeQty = existSource?.freeQty ?? addon.freeQty;
-          // catalogPrice = the price charged per unit BEYOND the free threshold.
-          // For a free addon (prdaddon_flags==1), this is existAddOn.price (may be > 0).
-          // For an explicitly paid addon selected by the user, use selectedVersion.price.
           final double catalogPrice = existSource?.price ?? addon.price;
-
-          // effectivePrice: what the user explicitly chose to pay (0 if it's a free addon
-          // they just incremented, > 0 if they picked a paid variant).
-          // effectivePrice: what the user explicitly chose to pay.
-          // IMPORTANT: If the addon has a free threshold (resolvedFreeQty > 0) or is flagged
-          // as a free/default addon (prdaddon_flags == 1), it must stay effectivePrice = 0
-          // so the free/paid split logic correctly allocates qty ≤ freeLimit as FREE
-          // and only the overflow as PAID (at catalogPrice). Setting effectivePrice > 0
-          // would incorrectly send ALL qty as paid with no free portion.
-          // AFTER — only resolvedFreeQty determines free-type:
           final bool isFreeAddonType = resolvedFreeQty > 0;
 
           final double effectivePrice = (userTouched && !isFreeAddonType)
               ? (selectedVersion?.price ?? addon.price)
               : (isFreeAddonType ? 0.0 : addon.price);
-
-          // ── Current qty ──────────────────────────────────────────────────────
           int currentQty;
-
           final bool shouldMirrorParentQty =
               resolvedFreeQty > 0 && !userTouched;
-
           if (shouldMirrorParentQty) {
             currentQty = newQty * resolvedFreeQty;
           } else {
             currentQty = addon.quantity.value;
           }
-          // Rules:
-          //  • effectivePrice > 0  → user picked an explicitly paid addon: ALL qty is paid.
-          //  • effectivePrice == 0 AND resolvedFreeQty > 0
-          //      → qty ≤ freeLimit is FREE, qty > freeLimit is PAID OVERFLOW
-          //        (charged at catalogPrice, which comes from existAddOns).
-          //  • effectivePrice == 0 AND resolvedFreeQty == 0 → all qty is free (no cap).
-
           final bool hasFreeThreshold = resolvedFreeQty > 0;
           final int freeLimit = hasFreeThreshold
               ? (newQty * resolvedFreeQty)
@@ -2079,7 +2118,7 @@ class CartController extends GetxController {
               anyAddonChanged = true;
               hasAnyChange = true;
             }
-            if (currentFreePart > 0 && (freeChanged || parentChanged)) {
+            if (currentFreePart > 0) {
               log(
                 "│  >>> FREE PART: ${addon.name}  qty: $currentFreePart  oldQty: $oldFreePart  subId: $addonSubId",
               );
@@ -2187,7 +2226,7 @@ class CartController extends GetxController {
               hasAnyChange = true;
             }
 
-            if (currentPaidPart > 0 && (paidChanged || parentChanged)) {
+            if (currentPaidPart > 0) {
               log(
                 "│  >>> PAID PART: ${addon.name}  qty: $currentPaidPart  oldQty: $oldPaidPart"
                 "  paidRate: $paidRate  subId: $paidSubId"
@@ -2215,7 +2254,7 @@ class CartController extends GetxController {
                 "salesub_unit_display": addon.unitDisplay,
                 "taxvalperqty": addonTaxPerUnit,
                 "salesub_amnt": paidRate * currentPaidPart,
-                "is_addon": 0, // paid portion is never free
+                "is_addon": 1, // paid portion is never free
                 "addon_parent_prd_id": int.tryParse(item.product.id),
                 "addon_parent_unit_id": item.unit.unitId,
                 "is_default": 0,
@@ -2439,9 +2478,27 @@ class CartController extends GetxController {
         if (editingTokenNo.value.isNotEmpty)
           "sales_odr_token_no": editingTokenNo.value,
       };
+      if (requiresPrinting && !isDraft && !isBill &&
+          !await _prepareRequiredPrinting(
+            _buildOfflineUpdateResponse(
+              body: body,
+              saleItems: saleItems,
+              totalWithTax: finalTotal,
+              totalTax: totalTax,
+              isDraft: false,
+              now: now,
+              isCompliment: isCompliment,
+            ),
+            printBill: printBill,
+            online: operationMode == OperationMode.online,
+            printPayment: printPayment,
+          )) {
+        return {'print_blocked': true};
+      }
+
       log("Final Body with ${saleItems.length} items");
       log('Api Body: ${jsonEncode(body)}');
-      if (DeviceConfig.operationMode == OperationMode.local) {
+      if (operationMode == OperationMode.local) {
         final hubItems = saleItems
             .where(
               (si) =>
@@ -2534,7 +2591,7 @@ class CartController extends GetxController {
 
       try {
         final response = await _apiService.post(
-          "mobileapp/pos/update_sales_order",
+          ApiEndpoints.updateSalesOrder,
           data: body,
         );
 
@@ -2592,23 +2649,35 @@ class CartController extends GetxController {
 
   Future<bool> cancelOrder(String invNo) async {
     try {
-      final body = {
-        "usr_id": int.tryParse(AppState.userId) ?? 18,
-        "sales_odr_inv_no": int.tryParse(invNo) ?? 0,
-      };
+      final invoice = int.tryParse(invNo);
+      if (invoice == null || invoice <= 0) return false;
 
       final response = await _apiService.post(
-        "mobileapp/pos/cancel_sales_order",
-        data: body,
+        ApiEndpoints.cancelSalesOrder,
+        data: {
+          "usr_id": int.tryParse(AppState.userId) ?? 18,
+          "sales_odr_inv_no": invoice,
+        },
       );
+      if (response.statusCode != 200) return false;
 
-      if (response.statusCode == 200) {
-        if (editingInvNo.value == invNo) {
-          stopEditing();
-        }
-        return true;
+      final data = response.data is String
+          ? jsonDecode(response.data as String)
+          : response.data;
+      if (data is! Map || data['success'] == false) return false;
+
+      final message = data['message'];
+      final status = (message is Map ? message['status'] : null) ??
+          data['status'];
+      final acknowledged = status == null
+          ? data['success'] == true
+          : status.toString() == '1' || status.toString() == '200';
+      if (!acknowledged) return false;
+
+      if (editingInvNo.value == invNo) {
+        stopEditing();
       }
-      return false;
+      return true;
     } catch (e) {
       log("❌ Error in cancelOrder: $e");
       return false;
@@ -2693,6 +2762,9 @@ class CartController extends GetxController {
         "sales_odr_time": timeStr,
         "sales_odr_total": isCompliment ? 0 : totalWithTax,
         "sales_odr_tax": totalTax,
+        "cust_name": body["cust_name"],
+        "tot_disc": body["sq_disc"],
+        "sales_odr_roundoff": body["sales_roundoff"],
         "sales_odr_pos_status": isDraft
             ? 0
             : isBill
@@ -2842,6 +2914,9 @@ class CartController extends GetxController {
         "agent_name": selectedCaptainName.value,
         "sales_odr_total": totalWithTax,
         "sales_odr_tax": totalTax,
+        "cust_name": body["cust_name"],
+        "tot_disc": body["sq_disc"],
+        "sales_odr_roundoff": body["sales_roundoff"],
         "sales_odr_pos_status": isDraft
             ? 0
             : isBill

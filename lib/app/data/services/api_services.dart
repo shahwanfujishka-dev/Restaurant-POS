@@ -82,12 +82,39 @@ class ApiService extends GetxService {
     }
   }
 
-  Future<Response> post(String path, {dynamic data, Options? options}) async {
-    try {
-      return await _dio.post(path, data: data, options: options);
-    } catch (e) {
-      rethrow;
+  Future<Response> post(
+    String path, {
+    dynamic data,
+    Options? options,
+    CancelToken? cancelToken,
+  }) {
+    return _dio.post(path, data: data, options: options, cancelToken: cancelToken);
+  }
+
+  Future<Response> postForMasterSync(
+    String path, {
+    required Map<String, dynamic> data,
+    Options? options,
+    CancelToken? cancelToken,
+  }) async {
+    final response = await post(
+      path,
+      data: data,
+      options: options,
+      cancelToken: cancelToken,
+    );
+    final body = response.data;
+    final status = body is Map ? body['status'] : null;
+    if (response.statusCode != 200 ||
+        body is! Map ||
+        body['success'] == false ||
+        (status != null && status.toString() != '200') ||
+        (status == null && !body.containsKey('data'))) {
+      throw StateError(
+        'Sync request failed: $path (${status ?? response.statusCode})',
+      );
     }
+    return response;
   }
 
   Future<Response> put(String path, {dynamic data}) async {
@@ -122,8 +149,7 @@ class ApiService extends GetxService {
         errorDescription = "Server Error: ${error.response?.statusCode}";
         break;
       case DioExceptionType.cancel:
-        errorDescription = "Request cancelled";
-        break;
+        return;
       case DioExceptionType.connectionError:
         errorDescription = "No Internet Connection";
         break;

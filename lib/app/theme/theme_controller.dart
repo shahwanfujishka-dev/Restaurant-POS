@@ -2,16 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 
-import '../theme/app_theme.dart';
-
-/// Manages light/dark theme preference reactively.
-/// Registered in main() as a permanent service.
-///
-/// Toggle from anywhere:
-///   ThemeController.to.toggleTheme();
-///
-/// Read current state:
-///   ThemeController.to.isDark.value
 class ThemeController extends GetxController {
   static ThemeController get to => Get.find();
 

@@ -501,7 +501,6 @@ class LocalHubOrderService {
     if (createdAt != null) {
       orderRow['created_at'] = createdAt;
     }
-    await _db.saveSetting('sync_fail_$uuid', '0');
     await _db.saveOrderOffline(orderRow, items);
 
     if (Get.isRegistered<OrdersController>()) {
@@ -672,7 +671,7 @@ class LocalHubOrderService {
             final cloudProcessing = t['processing_table'] is String
                 ? jsonDecode(t['processing_table'])
                 : (t['processing_table'] is List ? t['processing_table'] : []);
-            combined.addAll(cloudProcessing);
+            if (cloudProcessing is List) combined.addAll(cloudProcessing);
 
             // Merge with local hub orders
             if (hubOccupancy.containsKey(tId)) {
@@ -716,6 +715,7 @@ class LocalHubOrderService {
               'rt_id': t['id'],
               'rt_name': t['name'],
               'rt_seat_count': t['chair_count'],
+              'rt_avl_seat': t['available_seat_count'],
               'processing_table': combined,
             };
           }).toList(),

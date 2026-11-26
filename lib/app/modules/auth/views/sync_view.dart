@@ -4,6 +4,7 @@ import 'package:get/get.dart' hide ScreenType;
 import 'dart:math' as math;
 
 import '../../../../helper/screen_type.dart';
+import '../../../routes/app_pages.dart';
 import '../../../theme/app_theme.dart';
 import '../../../theme/app_typography.dart';
 import '../controllers/sync_controller.dart';
@@ -27,7 +28,7 @@ class SyncView extends GetView<SyncController> {
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(horizontal: 40.w, vertical: 24.h),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
                 child: Obx(
                   () => AnimatedSwitcher(
                     duration: const Duration(milliseconds: 450),
@@ -43,11 +44,12 @@ class SyncView extends GetView<SyncController> {
                         child: child,
                       ),
                     ),
-                    child: controller.hasError.value
-                        ? _ErrorBody(
-                            key: const ValueKey('error'),
-                            message: controller.errorMessage.value,
-                            onRetry: controller.startSync,
+                    child: controller.hasError.value ||
+                            controller.isComplete.value ||
+                            controller.reconnectingRequests.value > 0
+                        ? _SyncStatusCard(
+                            key: const ValueKey('sync_status'),
+                            controller: controller,
                           )
                         : _SyncingBody(
                             key: const ValueKey('syncing'),
@@ -159,6 +161,29 @@ class _SyncingBody extends StatelessWidget {
           ),
         ),
 
+        Obx(() {
+          if (controller.slowRequests.value == 0) {
+            return const SizedBox.shrink();
+          }
+
+          return Padding(
+            padding: EdgeInsets.only(top: 12.h),
+            child: Semantics(
+              liveRegion: true,
+              child: Text(
+                'sync_waiting_for_server'.tr,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: AppTypography.smallText,
+                  color: colors.text,
+                  fontWeight: FontWeight.w600,
+                  height: 1.5,
+                ),
+              ),
+            ),
+          );
+        }),
+
         SizedBox(height: 20.h),
 
         _FadeSlideIn(
@@ -199,170 +224,116 @@ class _SyncingBody extends StatelessWidget {
 
 // ─── Error Body ────────────────────────────────────────────────────────────
 
-class _ErrorBody extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-  const _ErrorBody({super.key, required this.message, required this.onRetry});
+class _SyncStatusCard extends StatelessWidget {
+  const _SyncStatusCard({super.key, required this.controller});
+
+  final SyncController controller;
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        SizedBox(height: 40.h),
-
-        Container(
-          width: 110.w,
-          height: 110.w,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(
-              colors: [colors.card, colors.textField],
-              center: const Alignment(-0.3, -0.3),
-            ),
-            border: Border.all(
-              color: const Color(0xFFE74C3C).withOpacity(0.22),
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFE74C3C).withOpacity(0.13),
-                blurRadius: 28,
-                spreadRadius: 4,
-                offset: const Offset(0, 8),
-              ),
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Icon(
-            Icons.wifi_off_rounded,
-            size: 42.sp,
-            color: const Color(0xFFE74C3C),
-          ),
+    return Obx(() {
+      final failed = controller.hasError.value;
+      final complete = controller.isComplete.value;
+      final seconds = controller.retrySeconds.value;
+      final waiting = seconds > 0;
+      final (icon, title, message) = switch ((failed, complete, waiting)) {
+        (true, _, _) => (
+          Icons.error_outline,
+          'sync_failed_title',
+          'sync_failed_retry_hint',
         ),
-
-        SizedBox(height: 28.h),
-
-        Text(
-          'connection_failed'.tr,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: AppTypography.sizeText,
-            fontWeight: FontWeight.w700,
-            color: colors.text,
-            letterSpacing: 0.3,
-          ),
+        (_, true, _) => (
+          Icons.check_circle_outline,
+          'sync_complete',
+          'sync_opening_pos',
         ),
+        (_, _, true) => (
+          Icons.wifi_off_rounded,
+          'sync_paused_title',
+          'sync_paused_hint',
+        ),
+        _ => (
+          Icons.sync_rounded,
+          'sync_reconnecting_title',
+          'sync_reconnecting_hint',
+        ),
+      };
 
-        SizedBox(height: 14.h),
-
-        Container(
-          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+      return ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: DecoratedBox(
           decoration: BoxDecoration(
             color: colors.card,
-            borderRadius: BorderRadius.circular(14.r),
-            border: Border.all(
-              color: const Color(0xFFFFE5E5).withOpacity(0.3),
-              width: 1,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFE74C3C).withOpacity(0.06),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-            ],
+            border: Border.all(color: colors.subtext.withValues(alpha: 0.2)),
+            borderRadius: BorderRadius.circular(20),
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                Icons.info_outline_rounded,
-                size: 15.sp,
-                color: const Color(0xFFE74C3C).withOpacity(0.65),
-              ),
-              SizedBox(width: 10.w),
-              Expanded(
-                child: Text(
-                  message.tr,
-                  style: TextStyle(
-                    fontSize: AppTypography.smallText,
-                    color: colors.text,
-                    height: 1.55,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        SizedBox(height: 28.h),
-
-        // Retry button
-        GestureDetector(
-          onTap: onRetry,
-          child: Container(
-            width: double.infinity,
-            padding: EdgeInsets.symmetric(vertical: 15.h),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF27AE60), Color(0xFF2ECC71)],
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-              ),
-              borderRadius: BorderRadius.circular(14.r),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF2ECC71).withOpacity(0.32),
-                  blurRadius: 16,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(Icons.refresh_rounded, color: Colors.white, size: 18.sp),
-                SizedBox(width: 8.w),
-                Text(
-                  'retry_sync'.tr,
-                  style: TextStyle(
-                    fontSize: AppTypography.sizeText,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    letterSpacing: 0.5,
+                Icon(icon, size: 38, color: colors.text),
+                const SizedBox(height: 16),
+                Semantics(
+                  liveRegion: true,
+                  child: Column(
+                    children: [
+                      Text(
+                        title.tr,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: colors.text,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        message.tr,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: colors.subtext, height: 1.45),
+                      ),
+                    ],
                   ),
                 ),
+                if (!failed) ...[
+                  const SizedBox(height: 20),
+                  LinearProgressIndicator(
+                    value: controller.progress.value,
+                    semanticsLabel: 'syncing_data'.tr,
+                  ),
+                ],
+                if (waiting) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'sync_retry_countdown'.trParams({'seconds': '$seconds'}),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: colors.subtext),
+                  ),
+                ],
+                if (waiting || failed) ...[
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: failed
+                        ? controller.startSync
+                        : controller.retryNow,
+                    icon: const Icon(Icons.refresh),
+                    label: Text('retry_sync'.tr),
+                  ),
+                ],
+                if (failed)
+                  TextButton(
+                    onPressed: () => Get.offAllNamed(Routes.AUTH),
+                    child: Text('back_to_login'.tr),
+                  ),
               ],
             ),
           ),
         ),
-
-        SizedBox(height: 14.h),
-
-        GestureDetector(
-          onTap: () => Get.offAllNamed('/login'),
-          child: Text(
-            'back_to_login'.tr,
-            style: TextStyle(
-              fontSize: AppTypography.smallText,
-              color: colors.subtext,
-              decoration: TextDecoration.underline,
-              decorationColor: colors.subtext,
-              letterSpacing: 0.3,
-            ),
-          ),
-        ),
-
-        SizedBox(height: 40.h),
-      ],
-    );
+      );
+    });
   }
 }
 

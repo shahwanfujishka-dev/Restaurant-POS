@@ -11,6 +11,7 @@ import 'package:get/get_state_manager/src/simple/get_controllers.dart';
 import 'package:get_storage/get_storage.dart';
 
 import '../../../../helper/snackbar_helper.dart';
+import '../../../data/services/api_endpoints.dart';
 import '../../../data/services/api_services.dart';
 import '../../../data/utils/AppState.dart';
 
@@ -224,7 +225,7 @@ class AuthController extends GetxController {
           url; // remove this line if AppState.serverUrl is just a getter over storage
 
       final response = await _apiService.post(
-        'api/get_branch_token',
+        ApiEndpoints.branchToken,
         data: {
           "branch_id": int.parse(bId),
           "company_code": code,
@@ -367,7 +368,7 @@ class AuthController extends GetxController {
       };
       debugPrint("📤 LOGIN REQUEST BODY: $requestBody");
       final response = await _apiService.post(
-        'mobileapp/login',
+        ApiEndpoints.login,
         data: requestBody,
       );
       debugPrint("📥 STATUS CODE: ${response.statusCode}");
@@ -380,7 +381,7 @@ class AuthController extends GetxController {
         if (data['status'] == 200) {
           debugPrint("✅ LOGIN SUCCESS");
 
-          AppState.updateSession(profile: data['profile'] ?? {});
+          await AppState.updateSession(profile: data['profile'] ?? {});
           debugPrint("Branch Disp: ${AppState.branchDisName}");
           Get.offAllNamed('/sync');
         } else {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
+import '../data/utils/AppState.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
 
@@ -165,16 +166,17 @@ class _AppDrawerState extends State<AppDrawer>
             ),
           ),
 
-          _Anim(
-            fade: _fades[4],
-            slide: _slides[4],
-            child: _LangTile(
-              label: 'language'.tr,
-              isArabic: widget.isArabic,
-              dc: dc,
-              onToggle: widget.onToggleLanguage,
+          if (AppState.cmpTaxType == 1)
+            _Anim(
+              fade: _fades[4],
+              slide: _slides[4],
+              child: _LangTile(
+                label: 'language'.tr,
+                isArabic: widget.isArabic,
+                dc: dc,
+                onToggle: widget.onToggleLanguage,
+              ),
             ),
-          ),
 
           _Anim(
             fade: _fades[5],

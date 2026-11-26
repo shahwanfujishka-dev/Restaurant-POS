@@ -1,6 +1,9 @@
 import 'dart:developer';
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -8,6 +11,7 @@ import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:sqflite/sqflite.dart' as mobile_sqflite;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'app/data/services/api_endpoints.dart';
 import 'app/data/services/api_services.dart';
 import 'app/data/services/database_helper.dart';
 import 'app/data/services/local_hub_server.dart';
@@ -20,6 +24,23 @@ import 'app/theme/theme_controller.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase and disable Crashlytics collection in debug mode
+  try {
+    await Firebase.initializeApp();
+    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(!kDebugMode);
+
+    if (!kDebugMode) {
+      FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+      PlatformDispatcher.instance.onError = (error, stack) {
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        return true;
+      };
+    }
+  } catch (e) {
+    debugPrint("Firebase/Crashlytics setup: $e");
+  }
+
 // GetStorage().erase();
   // Capture the existing native database directory on mobile before switching
   // the sqflite-compatible API to the SQLCipher-backed FFI implementation.
@@ -62,58 +83,33 @@ void main() async {
   String initialRoute = AppPages.INITIAL;
   bool sessionExpired = false;
   if (AppState.isLoggedIn) {
-    if (AppState.isSyncInProgress) {
-      initialRoute = Routes.SYNC;
-    } else {
-      try {
-        final tempDio = Dio(
-          BaseOptions(
-            baseUrl: apiService.baseUrl,
-            connectTimeout: const Duration(seconds: 10),
-          ),
-        );
+    final requiresSync = await AppState.requiresMasterSync();
+    initialRoute = requiresSync ? Routes.SYNC : Routes.HOME;
 
-        final response = await tempDio.post(
-          "mobileapp/user/check_active_app",
-          options: Options(headers: {'mobileapptoken': AppState.token}),
-        );
+    try {
+      final tempDio = Dio(
+        BaseOptions(
+          baseUrl: apiService.baseUrl,
+          connectTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+      final response = await tempDio.post(
+        ApiEndpoints.checkActiveApp,
+        options: Options(headers: {'mobileapptoken': AppState.token}),
+      );
+      final body = response.data;
+      final status = body is Map ? body['status'] : null;
+      sessionExpired = status != null && status.toString() != '200';
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      sessionExpired = status == 401 || status == 403;
+      log("Main: Session check failed: ${e.type}");
+    }
 
-        if (response.statusCode == 200 && response.data['status'] == 200) {
-          log("Main: Session active. App State UPI: ${AppState.upiId}");
-          if (AppState.lastSyncedUserId.isNotEmpty &&
-              AppState.lastSyncedUserId != AppState.userId) {
-            log("Main: Synced user (${AppState.lastSyncedUserId}) differs from current user (${AppState.userId}). Routing to Sync.");
-            initialRoute = Routes.SYNC;
-          } else {
-            initialRoute = Routes.HOME;
-          }
-        } else {
-          log(
-            "Main: Session check failed (${response.data['status']}), clearing data.",
-          );
-          await AppState.clearAllData();
-          sessionExpired = true;
-        }
-      } catch (e) {
-        if (e is DioException &&
-            (e.response?.statusCode == 403 ||
-                e.type == DioExceptionType.badResponse)) {
-          log("Main: Session forbidden or bad response, clearing data.");
-          await AppState.clearAllData();
-          sessionExpired = true;
-        } else {
-          log(
-            "Main: Network error during session check, allowing offline access.",
-          );
-          if (AppState.lastSyncedUserId.isNotEmpty &&
-              AppState.lastSyncedUserId != AppState.userId) {
-            log("Main: Synced user (${AppState.lastSyncedUserId}) differs from current user (${AppState.userId}). Routing to Sync.");
-            initialRoute = Routes.SYNC;
-          } else {
-            initialRoute = Routes.HOME;
-          }
-        }
-      }
+    if (sessionExpired) {
+      await AppState.clearAllData();
+      initialRoute = AppPages.INITIAL;
     }
   }
 

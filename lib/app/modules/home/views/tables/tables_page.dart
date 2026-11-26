@@ -87,7 +87,7 @@ class TablesPage extends GetView<TablesController> {
             // ── Table grid ──
             Expanded(
               child: Obx(() {
-                final tables = controller.selectedArea.value?.tables ?? [];
+                final tables = controller.visibleTables;
                 if (tables.isEmpty) {
                   return Center(
                     child: Column(
@@ -220,7 +220,7 @@ class _AreaHeader extends GetView<TablesController> {
           ),
           // ── Stats summary row ──
           Obx(() {
-            final tables = controller.selectedArea.value?.tables ?? [];
+            final tables = controller.visibleTables;
             int vacant = 0, partial = 0, full = 0;
             for (final t in tables) {
               final occ = controller.getOccupiedCountForTable(t);

@@ -27,13 +27,17 @@ class CartItemList extends StatelessWidget {
         itemCount: visibleItems.length,
         itemBuilder: (context, index) {
           final cartItem = visibleItems[index];
-          final itemKey =
-              "${cartItem.product.id}_${cartItem.unit.unitId}_${cartItem.subId ?? index}";
+          final itemKey = ObjectKey(cartItem);
 
           return Dismissible(
-            key: ValueKey(itemKey),
+            key: itemKey,
             direction: DismissDirection.endToStart,
-            confirmDismiss: (_) async => !controller.blockIfProcessing(),
+            confirmDismiss: (_) async {
+              // Let the controller remove the visible row. If processing blocks
+              // removal, Flutter can still return the row to its original position.
+              controller.removeItem(cartItem);
+              return false;
+            },
             background: Container(
               alignment: Alignment.centerRight,
               padding: EdgeInsets.only(right: 20.w),
@@ -48,11 +52,8 @@ class CartItemList extends StatelessWidget {
                 size: 8.sp,
               ),
             ),
-            onDismissed: (direction) {
-              controller.removeItem(cartItem);
-            },
             child: _AnimatedCartItem(
-              key: ValueKey(itemKey),
+              key: itemKey,
               cartItem: cartItem,
               onDelete: () => controller.removeItem(cartItem),
               controller: controller,
