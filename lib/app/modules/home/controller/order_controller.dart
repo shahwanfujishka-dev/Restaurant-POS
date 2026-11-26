@@ -1973,6 +1973,12 @@ class OrdersController extends GetxController {
       );
     }
 
+    final settlementDate = preview['sq_date']?.toString().trim();
+    final settlementTime = preview['sq_time']?.toString().trim();
+    final settlementTimestamp = settlementDate != null && settlementTime != null
+        ? DateTime.tryParse('${settlementDate}T$settlementTime')
+        : null;
+
     final String dateStr =
         preview['sq_date']?.toString() ??
             preview['sales_odr_date']?.toString() ??
@@ -2138,7 +2144,8 @@ class OrdersController extends GetxController {
           : 0.0)
           .toDouble(),
       captainName: captainName,
-      orderTime: _parseOrderTime(preview.isNotEmpty ? preview : responseJson),
+      orderTime: settlementTimestamp ??
+          _parseOrderTime(preview.isNotEmpty ? preview : responseJson),
       areaId: resolvedAreaId,
       areaName: resolvedAreaName,
       priceGroupId:
